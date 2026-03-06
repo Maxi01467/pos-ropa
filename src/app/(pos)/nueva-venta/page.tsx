@@ -1,0 +1,342 @@
+"use client";
+
+import { useState, useMemo } from "react";
+import { Search, ScanBarcode, Plus, Minus, Trash2, ShoppingBag } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { CheckoutDialog } from "@/components/checkout-dialog";
+import { mockProducts, type Product } from "@/lib/mock-data";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+
+interface CartItem {
+    product: Product;
+    quantity: number;
+}
+
+function formatCurrency(amount: number): string {
+    return new Intl.NumberFormat("es-AR", {
+        style: "currency",
+        currency: "ARS",
+        minimumFractionDigits: 0,
+    }).format(amount);
+}
+
+export default function NuevaVentaPage() {
+    const [searchQuery, setSearchQuery] = useState("");
+    const [cart, setCart] = useState<CartItem[]>([]);
+    const [checkoutOpen, setCheckoutOpen] = useState(false);
+
+    // Filter products based on search
+    const filteredProducts = useMemo(() => {
+        if (!searchQuery.trim()) return mockProducts;
+        const q = searchQuery.toLowerCase();
+        return mockProducts.filter(
+            (p) =>
+                p.name.toLowerCase().includes(q) ||
+                p.code.toLowerCase().includes(q) ||
+                p.category.toLowerCase().includes(q)
+        );
+    }, [searchQuery]);
+
+    // Cart operations
+    const addToCart = (product: Product) => {
+        setCart((prev) => {
+            const existing = prev.find((item) => item.product.id === product.id);
+            if (existing) {
+                if (existing.quantity >= product.stock) {
+                    toast.error("Sin stock suficiente", {
+                        description: `Solo quedan ${product.stock} unidades de ${product.name}`,
+                    });
+                    return prev;
+                }
+                return prev.map((item) =>
+                    item.product.id === product.id
+                        ? { ...item, quantity: item.quantity + 1 }
+                        : item
+                );
+            }
+            toast.success("Producto agregado", {
+                description: product.name,
+                duration: 1500,
+            });
+            return [...prev, { product, quantity: 1 }];
+        });
+    };
+
+    const updateQuantity = (productId: string, delta: number) => {
+        setCart((prev) => {
+            return prev
+                .map((item) => {
+                    if (item.product.id !== productId) return item;
+                    const newQty = item.quantity + delta;
+                    if (newQty > item.product.stock) {
+                        toast.error("Sin stock suficiente");
+                        return item;
+                    }
+                    if (newQty <= 0) return null;
+                    return { ...item, quantity: newQty };
+                })
+                .filter(Boolean) as CartItem[];
+        });
+    };
+
+    const removeFromCart = (productId: string) => {
+        setCart((prev) => prev.filter((item) => item.product.id !== productId));
+        toast("Producto eliminado del carrito", { duration: 1500 });
+    };
+
+    const clearCart = () => {
+        setCart([]);
+    };
+
+    // Totals
+    const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+    const totalAmount = cart.reduce(
+        (sum, item) => sum + item.product.price * item.quantity,
+        0
+    );
+
+    return (
+        <div className="flex h-[calc(100vh-4rem)] lg:h-screen flex-col lg:flex-row">
+            {/* LEFT PANEL: Product Search — 60% */}
+            <div className="flex flex-1 flex-col lg:w-[60%] lg:flex-none">
+                {/* Search Header */}
+                <div className="border-b bg-card px-4 py-4 lg:px-6">
+                    <h1 className="mb-3 text-xl font-bold tracking-tight lg:text-2xl">
+                        Nueva Venta
+                    </h1>
+                    <div className="flex gap-2">
+                        <div className="relative flex-1">
+                            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                                type="text"
+                                placeholder="Buscar por nombre o código..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="h-12 pl-11 text-lg"
+                            />
+                        </div>
+                        <Button
+                            variant="outline"
+                            className="h-12 shrink-0 gap-2 px-4"
+                            onClick={() => toast.info("Escáner no disponible en demo")}
+                        >
+                            <ScanBarcode className="size-5" />
+                            <span className="hidden sm:inline">Escanear</span>
+                        </Button>
+                    </div>
+                </div>
+
+                {/* Product Grid */}
+                <ScrollArea className="flex-1 p-4 lg:p-6">
+                    {filteredProducts.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-20 text-center">
+                            <Search className="mb-3 size-12 text-muted-foreground/40" />
+                            <p className="text-lg font-medium text-muted-foreground">
+                                No se encontraron productos
+                            </p>
+                            <p className="text-sm text-muted-foreground/70">
+                                Probá con otro nombre o código
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                            {filteredProducts.map((product) => {
+                                const inCart = cart.find(
+                                    (item) => item.product.id === product.id
+                                );
+                                return (
+                                    <Card
+                                        key={product.id}
+                                        className={cn(
+                                            "cursor-pointer transition-all duration-200 hover:shadow-md hover:border-primary/30",
+                                            inCart && "border-primary/40 bg-primary/[0.03]"
+                                        )}
+                                        onClick={() => addToCart(product)}
+                                    >
+                                        <CardContent className="p-4">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="truncate text-base font-semibold">
+                                                        {product.name}
+                                                    </p>
+                                                    <p className="mt-0.5 text-xs text-muted-foreground">
+                                                        {product.code} · {product.color}
+                                                    </p>
+                                                </div>
+                                                {inCart && (
+                                                    <Badge
+                                                        variant="default"
+                                                        className="shrink-0 bg-primary"
+                                                    >
+                                                        ×{inCart.quantity}
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                            <div className="mt-3 flex items-center justify-between">
+                                                <span className="text-lg font-bold">
+                                                    {formatCurrency(product.price)}
+                                                </span>
+                                                <span
+                                                    className={cn(
+                                                        "text-sm font-medium",
+                                                        product.stock <= 3
+                                                            ? "text-rose-500"
+                                                            : "text-muted-foreground"
+                                                    )}
+                                                >
+                                                    Stock: {product.stock}
+                                                </span>
+                                            </div>
+                                            <div className="mt-2 flex flex-wrap gap-1">
+                                                {product.sizes.map((size) => (
+                                                    <Badge
+                                                        key={size}
+                                                        variant="outline"
+                                                        className="text-xs font-normal"
+                                                    >
+                                                        {size}
+                                                    </Badge>
+                                                ))}
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                );
+                            })}
+                        </div>
+                    )}
+                </ScrollArea>
+            </div>
+
+            {/* RIGHT PANEL: Cart/Ticket — 40% */}
+            <div className="flex flex-col border-t lg:border-t-0 lg:border-l lg:w-[40%] bg-card">
+                {/* Cart Header */}
+                <div className="flex items-center justify-between border-b px-4 py-4 lg:px-6">
+                    <div className="flex items-center gap-2">
+                        <ShoppingBag className="size-5 text-muted-foreground" />
+                        <h2 className="text-lg font-bold">Ticket</h2>
+                        {totalItems > 0 && (
+                            <Badge variant="secondary" className="font-semibold">
+                                {totalItems}
+                            </Badge>
+                        )}
+                    </div>
+                    {cart.length > 0 && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground hover:text-destructive"
+                            onClick={clearCart}
+                        >
+                            Vaciar
+                        </Button>
+                    )}
+                </div>
+
+                {/* Cart Items */}
+                <ScrollArea className="flex-1 px-4 lg:px-6">
+                    {cart.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-16 text-center">
+                            <ShoppingBag className="mb-3 size-16 text-muted-foreground/20" />
+                            <p className="text-base font-medium text-muted-foreground">
+                                Carrito vacío
+                            </p>
+                            <p className="mt-1 text-sm text-muted-foreground/70">
+                                Hacé clic en un producto para agregarlo
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="space-y-1 py-3">
+                            {cart.map((item) => (
+                                <div
+                                    key={item.product.id}
+                                    className="group flex items-center gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-muted/50"
+                                >
+                                    {/* Product info */}
+                                    <div className="min-w-0 flex-1">
+                                        <p className="truncate text-sm font-semibold">
+                                            {item.product.name}
+                                        </p>
+                                        <p className="text-sm text-muted-foreground">
+                                            {formatCurrency(item.product.price)} c/u
+                                        </p>
+                                    </div>
+
+                                    {/* Quantity controls */}
+                                    <div className="flex items-center gap-1">
+                                        <Button
+                                            variant="outline"
+                                            size="icon-sm"
+                                            onClick={() => updateQuantity(item.product.id, -1)}
+                                        >
+                                            <Minus className="size-3.5" />
+                                        </Button>
+                                        <span className="w-8 text-center text-base font-bold">
+                                            {item.quantity}
+                                        </span>
+                                        <Button
+                                            variant="outline"
+                                            size="icon-sm"
+                                            onClick={() => updateQuantity(item.product.id, +1)}
+                                        >
+                                            <Plus className="size-3.5" />
+                                        </Button>
+                                    </div>
+
+                                    {/* Line total */}
+                                    <span className="w-20 text-right text-sm font-bold">
+                                        {formatCurrency(item.product.price * item.quantity)}
+                                    </span>
+
+                                    {/* Remove */}
+                                    <Button
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
+                                        onClick={() => removeFromCart(item.product.id)}
+                                    >
+                                        <Trash2 className="size-3.5" />
+                                    </Button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </ScrollArea>
+
+                {/* Cart Footer: Total + Cobrar */}
+                <div className="border-t bg-card px-4 py-4 lg:px-6">
+                    <div className="mb-4 flex items-center justify-between">
+                        <span className="text-base font-medium text-muted-foreground">
+                            Total
+                        </span>
+                        <span className="text-3xl font-bold tracking-tight">
+                            {formatCurrency(totalAmount)}
+                        </span>
+                    </div>
+                    <Button
+                        size="lg"
+                        className="h-14 w-full bg-emerald-600 text-lg font-bold shadow-lg hover:bg-emerald-700 hover:shadow-xl transition-all duration-200"
+                        disabled={cart.length === 0}
+                        onClick={() => setCheckoutOpen(true)}
+                    >
+                        💵 COBRAR
+                    </Button>
+                </div>
+            </div>
+
+            {/* Checkout Dialog */}
+            <CheckoutDialog
+                open={checkoutOpen}
+                onOpenChange={setCheckoutOpen}
+                total={totalAmount}
+                itemCount={totalItems}
+                onConfirm={clearCart}
+            />
+        </div>
+    );
+}

@@ -1,0 +1,133 @@
+export interface Product {
+    id: string;
+    code: string;
+    name: string;
+    price: number;
+    stock: number;
+    sizes: string[];
+    color: string;
+    category: string;
+}
+
+export const mockProducts: Product[] = [
+    {
+        id: "1",
+        code: "REM-001",
+        name: "Remera Lisa Algodón",
+        price: 12500,
+        stock: 25,
+        sizes: ["S", "M", "L", "XL"],
+        color: "Blanco",
+        category: "Remeras",
+    },
+    {
+        id: "2",
+        code: "REM-002",
+        name: "Remera Estampada Oversize",
+        price: 18900,
+        stock: 15,
+        sizes: ["M", "L", "XL"],
+        color: "Negro",
+        category: "Remeras",
+    },
+    {
+        id: "3",
+        code: "JEA-001",
+        name: "Jean Recto Clásico",
+        price: 35000,
+        stock: 10,
+        sizes: ["36", "38", "40", "42"],
+        color: "Azul",
+        category: "Jeans",
+    },
+    {
+        id: "4",
+        code: "JEA-002",
+        name: "Jean Mom Fit",
+        price: 38500,
+        stock: 8,
+        sizes: ["36", "38", "40"],
+        color: "Celeste",
+        category: "Jeans",
+    },
+    {
+        id: "5",
+        code: "CAM-001",
+        name: "Campera de Jean",
+        price: 45000,
+        stock: 5,
+        sizes: ["S", "M", "L"],
+        color: "Azul Oscuro",
+        category: "Abrigos",
+    },
+    {
+        id: "6",
+        code: "BUZ-001",
+        name: "Buzo Canguro Liso",
+        price: 28000,
+        stock: 12,
+        sizes: ["S", "M", "L", "XL"],
+        color: "Gris",
+        category: "Buzos",
+    },
+    {
+        id: "7",
+        code: "PAN-001",
+        name: "Pantalón Cargo Wide",
+        price: 32000,
+        stock: 7,
+        sizes: ["S", "M", "L"],
+        color: "Verde Militar",
+        category: "Pantalones",
+    },
+    {
+        id: "8",
+        code: "VES-001",
+        name: "Vestido Midi Floral",
+        price: 29900,
+        stock: 6,
+        sizes: ["S", "M", "L"],
+        color: "Multicolor",
+        category: "Vestidos",
+    },
+    {
+        id: "9",
+        code: "TOP-001",
+        name: "Top Crop Costilla",
+        price: 9800,
+        stock: 20,
+        sizes: ["S", "M", "L"],
+        color: "Rosa",
+        category: "Tops",
+    },
+    {
+        id: "10",
+        code: "FAL-001",
+        name: "Falda Plisada Mini",
+        price: 22500,
+        stock: 9,
+        sizes: ["S", "M", "L"],
+        color: "Negro",
+        category: "Faldas",
+    },
+    {
+        id: "11",
+        code: "CAM-002",
+        name: "Camisa Lino Manga Larga",
+        price: 27000,
+        stock: 11,
+        sizes: ["S", "M", "L", "XL"],
+        color: "Beige",
+        category: "Camisas",
+    },
+    {
+        id: "12",
+        code: "SHO-001",
+        name: "Short de Jean",
+        price: 19500,
+        stock: 14,
+        sizes: ["36", "38", "40"],
+        color: "Celeste",
+        category: "Shorts",
+    },
+];

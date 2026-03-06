@@ -12,6 +12,8 @@ import {
     ChevronRight,
     Store,
     Menu,
+    Truck,
+    BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +33,8 @@ const navItems = [
     { href: "/", label: "Inicio", icon: Home },
     { href: "/nueva-venta", label: "Nueva Venta", icon: ShoppingCart },
     { href: "/inventario", label: "Inventario", icon: Package },
+    { href: "/stock", label: "Stock", icon: BarChart3 },
+    { href: "/proveedores", label: "Proveedores", icon: Truck },
     { href: "/caja", label: "Caja", icon: Wallet },
 ];
 

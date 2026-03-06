@@ -1,13 +1,29 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Search, ScanBarcode, Plus, Minus, Trash2, ShoppingBag } from "lucide-react";
+import {
+    Search,
+    ScanBarcode,
+    Plus,
+    Minus,
+    Trash2,
+    ShoppingBag,
+    Sparkles,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter,
+} from "@/components/ui/dialog";
 import { CheckoutDialog } from "@/components/checkout-dialog";
 import { mockProducts, type Product } from "@/lib/mock-data";
 import { toast } from "sonner";
@@ -31,17 +47,27 @@ export default function NuevaVentaPage() {
     const [cart, setCart] = useState<CartItem[]>([]);
     const [checkoutOpen, setCheckoutOpen] = useState(false);
 
+    // Quick-create state
+    const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+    const [quickCreateName, setQuickCreateName] = useState("");
+    const [quickCreatePrice, setQuickCreatePrice] = useState("");
+    const [allProducts, setAllProducts] = useState<Product[]>(mockProducts);
+
     // Filter products based on search
     const filteredProducts = useMemo(() => {
-        if (!searchQuery.trim()) return mockProducts;
+        if (!searchQuery.trim()) return allProducts;
         const q = searchQuery.toLowerCase();
-        return mockProducts.filter(
+        return allProducts.filter(
             (p) =>
                 p.name.toLowerCase().includes(q) ||
                 p.code.toLowerCase().includes(q) ||
                 p.category.toLowerCase().includes(q)
         );
-    }, [searchQuery]);
+    }, [searchQuery, allProducts]);
+
+    // Whether to show the quick-create button
+    const showQuickCreate =
+        searchQuery.trim().length >= 2 && filteredProducts.length === 0;
 
     // Cart operations
     const addToCart = (product: Product) => {
@@ -94,6 +120,41 @@ export default function NuevaVentaPage() {
         setCart([]);
     };
 
+    // Quick-Create handlers
+    const handleOpenQuickCreate = () => {
+        setQuickCreateName(searchQuery.trim());
+        setQuickCreatePrice("");
+        setQuickCreateOpen(true);
+    };
+
+    const handleQuickCreate = () => {
+        const price = parseFloat(quickCreatePrice);
+        if (!quickCreateName.trim() || isNaN(price) || price <= 0) {
+            toast.error("Completá el nombre y un precio válido");
+            return;
+        }
+
+        const newProduct: Product = {
+            id: `quick-${Date.now()}`,
+            code: `QCK-${String(allProducts.length + 1).padStart(3, "0")}`,
+            name: quickCreateName.trim(),
+            price,
+            stock: 999,
+            sizes: [],
+            color: "",
+            category: "Sin categoría",
+        };
+
+        setAllProducts((prev) => [newProduct, ...prev]);
+        addToCart(newProduct);
+        setQuickCreateOpen(false);
+        setSearchQuery("");
+
+        toast.success("Producto creado y agregado al carrito", {
+            description: `${newProduct.name} — ${formatCurrency(price)}`,
+        });
+    };
+
     // Totals
     const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
     const totalAmount = cart.reduce(
@@ -130,11 +191,23 @@ export default function NuevaVentaPage() {
                             <span className="hidden sm:inline">Escanear</span>
                         </Button>
                     </div>
+
+                    {/* Quick-Create Button */}
+                    {showQuickCreate && (
+                        <Button
+                            variant="outline"
+                            className="mt-3 h-12 w-full gap-2 border-dashed border-2 border-primary/40 text-primary font-semibold text-base hover:bg-primary/5 hover:border-primary"
+                            onClick={handleOpenQuickCreate}
+                        >
+                            <Sparkles className="size-5" />
+                            + Crear &quot;{searchQuery.trim()}&quot; rápido
+                        </Button>
+                    )}
                 </div>
 
                 {/* Product Grid */}
                 <ScrollArea className="flex-1 p-4 lg:p-6">
-                    {filteredProducts.length === 0 ? (
+                    {filteredProducts.length === 0 && !showQuickCreate ? (
                         <div className="flex flex-col items-center justify-center py-20 text-center">
                             <Search className="mb-3 size-12 text-muted-foreground/40" />
                             <p className="text-lg font-medium text-muted-foreground">
@@ -142,6 +215,16 @@ export default function NuevaVentaPage() {
                             </p>
                             <p className="text-sm text-muted-foreground/70">
                                 Probá con otro nombre o código
+                            </p>
+                        </div>
+                    ) : filteredProducts.length === 0 && showQuickCreate ? (
+                        <div className="flex flex-col items-center justify-center py-20 text-center">
+                            <Sparkles className="mb-3 size-12 text-muted-foreground/30" />
+                            <p className="text-lg font-medium text-muted-foreground">
+                                &quot;{searchQuery.trim()}&quot; no existe
+                            </p>
+                            <p className="text-sm text-muted-foreground/70">
+                                Usá el botón de arriba para crearlo rápido
                             </p>
                         </div>
                     ) : (
@@ -166,7 +249,8 @@ export default function NuevaVentaPage() {
                                                         {product.name}
                                                     </p>
                                                     <p className="mt-0.5 text-xs text-muted-foreground">
-                                                        {product.code} · {product.color}
+                                                        {product.code}
+                                                        {product.color && ` · ${product.color}`}
                                                     </p>
                                                 </div>
                                                 {inCart && (
@@ -193,17 +277,19 @@ export default function NuevaVentaPage() {
                                                     Stock: {product.stock}
                                                 </span>
                                             </div>
-                                            <div className="mt-2 flex flex-wrap gap-1">
-                                                {product.sizes.map((size) => (
-                                                    <Badge
-                                                        key={size}
-                                                        variant="outline"
-                                                        className="text-xs font-normal"
-                                                    >
-                                                        {size}
-                                                    </Badge>
-                                                ))}
-                                            </div>
+                                            {product.sizes.length > 0 && (
+                                                <div className="mt-2 flex flex-wrap gap-1">
+                                                    {product.sizes.map((size) => (
+                                                        <Badge
+                                                            key={size}
+                                                            variant="outline"
+                                                            className="text-xs font-normal"
+                                                        >
+                                                            {size}
+                                                        </Badge>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </CardContent>
                                     </Card>
                                 );
@@ -257,7 +343,6 @@ export default function NuevaVentaPage() {
                                     key={item.product.id}
                                     className="group flex items-center gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-muted/50"
                                 >
-                                    {/* Product info */}
                                     <div className="min-w-0 flex-1">
                                         <p className="truncate text-sm font-semibold">
                                             {item.product.name}
@@ -267,7 +352,6 @@ export default function NuevaVentaPage() {
                                         </p>
                                     </div>
 
-                                    {/* Quantity controls */}
                                     <div className="flex items-center gap-1">
                                         <Button
                                             variant="outline"
@@ -288,12 +372,10 @@ export default function NuevaVentaPage() {
                                         </Button>
                                     </div>
 
-                                    {/* Line total */}
                                     <span className="w-20 text-right text-sm font-bold">
                                         {formatCurrency(item.product.price * item.quantity)}
                                     </span>
 
-                                    {/* Remove */}
                                     <Button
                                         variant="ghost"
                                         size="icon-sm"
@@ -328,6 +410,69 @@ export default function NuevaVentaPage() {
                     </Button>
                 </div>
             </div>
+
+            {/* Quick Create Dialog */}
+            <Dialog open={quickCreateOpen} onOpenChange={setQuickCreateOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="text-xl">Crear Producto Rápido</DialogTitle>
+                        <DialogDescription>
+                            Creá el producto con lo mínimo para agregarlo al carrito ahora. Después podés completar los detalles desde Inventario.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-2">
+                        <div className="space-y-2">
+                            <Label htmlFor="quick-name" className="text-base">
+                                Nombre del producto
+                            </Label>
+                            <Input
+                                id="quick-name"
+                                value={quickCreateName}
+                                onChange={(e) => setQuickCreateName(e.target.value)}
+                                className="h-12 text-lg"
+                                placeholder="Ej: Pantalón Cargo"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="quick-price" className="text-base">
+                                Precio de Venta
+                            </Label>
+                            <div className="relative">
+                                <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-lg font-medium text-muted-foreground">
+                                    $
+                                </span>
+                                <Input
+                                    id="quick-price"
+                                    type="number"
+                                    value={quickCreatePrice}
+                                    onChange={(e) => setQuickCreatePrice(e.target.value)}
+                                    className="h-12 pl-8 text-lg"
+                                    placeholder="0"
+                                    min="0"
+                                    autoFocus
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button
+                            size="lg"
+                            className="w-full h-13 bg-emerald-600 text-base font-bold hover:bg-emerald-700"
+                            onClick={handleQuickCreate}
+                            disabled={
+                                !quickCreateName.trim() ||
+                                !quickCreatePrice ||
+                                parseFloat(quickCreatePrice) <= 0
+                            }
+                        >
+                            <Plus className="size-5" />
+                            Guardar y Agregar al Carrito
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* Checkout Dialog */}
             <CheckoutDialog

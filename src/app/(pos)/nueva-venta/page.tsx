@@ -34,6 +34,8 @@ interface CartItem {
     quantity: number;
 }
 
+type PriceMode = "retail" | "wholesale";
+
 function formatCurrency(amount: number): string {
     return new Intl.NumberFormat("es-AR", {
         style: "currency",
@@ -46,6 +48,7 @@ export default function NuevaVentaPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const [cart, setCart] = useState<CartItem[]>([]);
     const [checkoutOpen, setCheckoutOpen] = useState(false);
+    const [priceMode, setPriceMode] = useState<PriceMode>("retail");
 
     // Quick-create state
     const [quickCreateOpen, setQuickCreateOpen] = useState(false);
@@ -139,10 +142,12 @@ export default function NuevaVentaPage() {
             code: `QCK-${String(allProducts.length + 1).padStart(3, "0")}`,
             name: quickCreateName.trim(),
             price,
+            wholesalePrice: price,
             stock: 999,
             sizes: [],
             color: "",
             category: "Sin categoría",
+            createdAt: new Date().toISOString(),
         };
 
         setAllProducts((prev) => [newProduct, ...prev]);
@@ -157,8 +162,10 @@ export default function NuevaVentaPage() {
 
     // Totals
     const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+    const getUnitPrice = (product: Product) =>
+        priceMode === "wholesale" ? product.wholesalePrice : product.price;
     const totalAmount = cart.reduce(
-        (sum, item) => sum + item.product.price * item.quantity,
+        (sum, item) => sum + getUnitPrice(item.product) * item.quantity,
         0
     );
 
@@ -263,9 +270,24 @@ export default function NuevaVentaPage() {
                                                 )}
                                             </div>
                                             <div className="mt-3 flex items-center justify-between">
-                                                <span className="text-lg font-bold">
-                                                    {formatCurrency(product.price)}
-                                                </span>
+                                                <div className="space-y-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                                            Venta
+                                                        </span>
+                                                        <span className="text-lg font-bold">
+                                                            {formatCurrency(product.price)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs font-medium uppercase tracking-wide text-blue-600">
+                                                            Mayorista
+                                                        </span>
+                                                        <span className="text-base font-semibold text-blue-600">
+                                                            {formatCurrency(product.wholesalePrice)}
+                                                        </span>
+                                                    </div>
+                                                </div>
                                                 <span
                                                     className={cn(
                                                         "text-sm font-medium",
@@ -347,9 +369,15 @@ export default function NuevaVentaPage() {
                                         <p className="truncate text-sm font-semibold">
                                             {item.product.name}
                                         </p>
-                                        <p className="text-sm text-muted-foreground">
-                                            {formatCurrency(item.product.price)} c/u
-                                        </p>
+                                        <div className="flex flex-col gap-0.5 text-sm">
+                                            <p className="text-muted-foreground">
+                                                Venta: {formatCurrency(item.product.price)} c/u
+                                            </p>
+                                            <p className="font-medium text-blue-600">
+                                                Mayorista:{" "}
+                                                {formatCurrency(item.product.wholesalePrice)} c/u
+                                            </p>
+                                        </div>
                                     </div>
 
                                     <div className="flex items-center gap-1">
@@ -373,7 +401,9 @@ export default function NuevaVentaPage() {
                                     </div>
 
                                     <span className="w-20 text-right text-sm font-bold">
-                                        {formatCurrency(item.product.price * item.quantity)}
+                                        {formatCurrency(
+                                            getUnitPrice(item.product) * item.quantity
+                                        )}
                                     </span>
 
                                     <Button
@@ -392,10 +422,46 @@ export default function NuevaVentaPage() {
 
                 {/* Cart Footer: Total + Cobrar */}
                 <div className="border-t bg-card px-4 py-4 lg:px-6">
+                    <div className="mb-4 flex items-center justify-between rounded-lg border bg-muted/40 p-2">
+                        <div>
+                            <p className="text-sm font-semibold">Modo de precio</p>
+                            <p className="text-xs text-muted-foreground">
+                                Por defecto se cobra precio de venta.
+                            </p>
+                        </div>
+                        <div className="flex rounded-lg border bg-background p-1">
+                            <Button
+                                variant={priceMode === "retail" ? "default" : "ghost"}
+                                size="sm"
+                                onClick={() => setPriceMode("retail")}
+                            >
+                                Venta
+                            </Button>
+                            <Button
+                                variant={priceMode === "wholesale" ? "default" : "ghost"}
+                                size="sm"
+                                className={cn(
+                                    priceMode === "wholesale" &&
+                                        "bg-blue-600 text-white hover:bg-blue-700"
+                                )}
+                                onClick={() => setPriceMode("wholesale")}
+                            >
+                                Mayorista
+                            </Button>
+                        </div>
+                    </div>
                     <div className="mb-4 flex items-center justify-between">
-                        <span className="text-base font-medium text-muted-foreground">
-                            Total
-                        </span>
+                        <div>
+                            <span className="text-base font-medium text-muted-foreground">
+                                Total
+                            </span>
+                            <p className="text-xs text-muted-foreground">
+                                Cobro actual:{" "}
+                                {priceMode === "wholesale"
+                                    ? "precio mayorista"
+                                    : "precio de venta"}
+                            </p>
+                        </div>
                         <span className="text-3xl font-bold tracking-tight">
                             {formatCurrency(totalAmount)}
                         </span>

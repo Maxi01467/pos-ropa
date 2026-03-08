@@ -1,14 +1,136 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// prisma/schema.prisma
 
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ------------------------------------------------------
+// 👥 PERSONAL Y ASISTENCIA
+// ------------------------------------------------------
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  pin       String   @default("1234") // Para el fichaje rápido y cobro
+  role      String   @default("STAFF") // ADMIN o STAFF
+  deviceId  String?  @unique // Si en el futuro usan QR con celular
+  
+  shifts    Shift[]
+  sales     Sale[]
+  
+  createdAt DateTime @default(now())
+}
+
+model Shift {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  
+  checkIn    DateTime  @default(now())
+  checkOut   DateTime?
+  totalHours Decimal?
+  notes      String?
+}
+
+// ------------------------------------------------------
+// 📦 INVENTARIO Y PRODUCTOS
+// ------------------------------------------------------
+model Supplier {
+  id        String    @id @default(cuid())
+  name      String
+  phone     String?
+  notes     String?
+  
+  products  Product[]
+  
+  createdAt DateTime  @default(now())
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  name           String
+  
+  // Los dos precios que maneja el local
+  priceNormal    Decimal  // Transferencia / Tarjeta
+  priceWholesale Decimal  // Efectivo
+  
+  costPrice      Decimal? // Opcional para ver ganancias
+  category       String?
+  
+  supplierId     String?
+  supplier       Supplier? @relation(fields: [supplierId], references: [id])
+  
+  variants       ProductVariant[]
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model ProductVariant {
+  id             String   @id @default(cuid())
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  size           String   @default("Único")
+  color          String   @default("Único")
+  sku            String   @unique // El código de barras a imprimir
+  stock          Int      @default(0) // Stock actual en mostrador
+  
+  movements      StockMovement[]
+  saleItems      SaleItem[]
+  
+  createdAt      DateTime @default(now())
+}
+
+model StockMovement {
+  id             String         @id @default(cuid())
+  variantId      String
+  variant        ProductVariant @relation(fields: [variantId], references: [id])
+  
+  quantity       Int      // Ej: 10 (ingreso) o -2 (corrección)
+  type           String   // INGRESO, AJUSTE, FALLA
+  notes          String?
+  
+  createdAt      DateTime @default(now())
+}
+
+// ------------------------------------------------------
+// 🧾 VENTAS Y BOLETAS (TICKETS)
+// ------------------------------------------------------
+model Sale {
+  id            String     @id @default(cuid())
+  
+  // Este es el número de Boleta físico que verá el cliente
+  ticketNumber  Int        @unique @default(autoincrement()) 
+  
+  total         Decimal
+  paymentMethod String     // EFECTIVO, TRANSFERENCIA, MIXTO
+  
+  userId        String     // Quién hizo la venta
+  user          User       @relation(fields: [userId], references: [id])
+  
+  items         SaleItem[]
+  
+  createdAt     DateTime   @default(now())
+}
+
+model SaleItem {
+  id               String         @id @default(cuid())
+  saleId           String
+  sale             Sale           @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  
+  variantId        String
+  variant          ProductVariant @relation(fields: [variantId], references: [id])
+  
+  quantity         Int
+  priceAtTime      Decimal        // Fundamental: El precio congelado al momento de la venta
+  priceType        String         // NORMAL o WHOLESALE
+  
+  // Control para devoluciones futuras
+  returnedQuantity Int            @default(0) 
 }

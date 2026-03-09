@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { BarcodeLabels } from "@/components/barcode-labels";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -53,6 +54,15 @@ import { toast } from "sonner";
 // Reemplazamos mockSizes por un array constante aquí
 const commonSizes = ["XS", "S", "M", "L", "XL", "XXL", "38", "40", "42", "44", "46", "48"];
 
+type LabelPrintItem = {
+    productName: string;
+    sku: string;
+    size: string;
+    color: string;
+    retailPrice: number;
+    wholesalePrice: number;
+};
+
 export type StockEntry = {
     id: string;
     productId: string;
@@ -69,6 +79,8 @@ type StockProduct = {
     id: string;
     name: string;
     code: string;
+    price: number;
+    wholesalePrice: number;
 };
 
 type StockSupplier = {
@@ -159,6 +171,7 @@ export default function StockPage() {
     const [entries, setEntries] = useState<StockEntry[]>([]);
     const [products, setProducts] = useState<StockProduct[]>([]);
     const [providers, setProviders] = useState<StockSupplier[]>([]);
+    const [labelsToPrint, setLabelsToPrint] = useState<LabelPrintItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -200,6 +213,17 @@ export default function StockPage() {
 
     useEffect(() => {
         loadData();
+    }, []);
+
+    useEffect(() => {
+        const handleAfterPrint = () => {
+            setLabelsToPrint([]);
+        };
+
+        window.addEventListener("afterprint", handleAfterPrint);
+        return () => {
+            window.removeEventListener("afterprint", handleAfterPrint);
+        };
     }, []);
 
     const movements = useMemo(() => buildMovements(entries), [entries]);
@@ -425,11 +449,35 @@ export default function StockPage() {
     };
 
     const handleConfirmPrint = () => {
-        if (selectedMovements.length === 0 || printableTickets === 0) return;
-        toast.success("Etiquetas enviadas a impresión", {
-            description: `${selectedMovements.length} ingreso(s) · ${printableVariants.length} variante(s) · ${printableTickets} ticket(s)`,
-        });
+        const itemsToPrint: LabelPrintItem[] = [];
+
+        for (const variant of printableVariants) {
+            const product = products.find((p) => p.id === variant.productId);
+            const qtyToPrint = clampQuantity(printQuantities[variant.id], variant.quantity);
+
+            for (let i = 0; i < qtyToPrint; i++) {
+                itemsToPrint.push({
+                    productName: product?.name || "Producto",
+                    sku: variant.sku,
+                    size: variant.size,
+                    color: variant.color,
+                    retailPrice: product?.price || 0,
+                    wholesalePrice: product?.wholesalePrice || 0,
+                });
+            }
+        }
+
+        if (itemsToPrint.length === 0) {
+            toast.error("No hay etiquetas para imprimir");
+            return;
+        }
+
+        setLabelsToPrint(itemsToPrint);
+        
         setPrintDialogOpen(false);
+        setTimeout(() => {
+            window.print();
+        }, 300);
     };
 
     if (isLoading) {
@@ -444,7 +492,9 @@ export default function StockPage() {
     }
 
     return (
-        <div className="p-4 lg:p-8">
+    <>
+        {/* Envolvemos todo en un div que se oculta al imprimir */}
+        <div className="print:hidden p-4 lg:p-8">
             <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">
@@ -1107,5 +1157,8 @@ export default function StockPage() {
                 </DialogContent>
             </Dialog>
         </div>
-    );
-}
+
+        {/* 3. Insertamos las etiquetas fuera del div oculto */}
+        <BarcodeLabels items={labelsToPrint} />
+    </>
+)};

@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+// Importamos las nuevas Server Actions
+import { getStockPageData, registerStockEntries } from "@/app/actions/stock-actions";
 import {
     Barcode,
     CalendarDays,
@@ -10,6 +12,7 @@ import {
     PackagePlus,
     Printer,
     X,
+    Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,14 +42,42 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import {
-    mockProducts,
-    mockProviders,
-    mockStockEntries,
-    mockSizes,
-    type StockEntry,
-} from "@/lib/mock-data";
 import { toast } from "sonner";
+
+// Reemplazamos mockSizes por un array constante aquí
+const commonSizes = ["XS", "S", "M", "L", "XL", "XXL", "38", "40", "42", "44", "46", "48"];
+
+export type StockEntry = {
+    id: string;
+    productId: string;
+    providerId?: string;
+    quantity: number;
+    color: string;
+    size: string;
+    sku: string;
+    date: string;
+    mode: "simple" | "avanzado";
+};
+
+type StockProduct = {
+    id: string;
+    name: string;
+    supplierId?: string | null;
+    code: string;
+};
+
+type StockSupplier = {
+    id: string;
+    name: string;
+};
+
+type RegisterStockEntry = {
+    productId: string;
+    quantity: number;
+    color: string;
+    size: string;
+    sku: string;
+};
 
 type StockMovement = {
     id: string;
@@ -57,30 +88,26 @@ type StockMovement = {
     variants: StockEntry[];
 };
 
+// ... Funciones de fecha iguales ...
 function formatDate(dateStr: string): string {
     const date = new Date(dateStr);
     return date.toLocaleDateString("es-AR", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
+        day: "2-digit", month: "2-digit", year: "2-digit",
+        hour: "2-digit", minute: "2-digit",
     });
 }
 
 function formatShortDate(dateStr: string): string {
     const date = new Date(dateStr);
-    return date.toLocaleDateString("es-AR", {
-        day: "2-digit",
-        month: "2-digit",
-    });
+    return date.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" });
 }
 
 function buildMovements(entries: StockEntry[]): StockMovement[] {
     const grouped = new Map<string, StockMovement>();
-
     for (const entry of entries) {
-        const key = `${entry.productId}-${entry.date}`;
+        // Agrupamos por el timestamp real del ingreso para no mezclar movimientos
+        // distintos del mismo producto que ocurrieron el mismo día.
+        const key = `${entry.productId}-${entry.providerId ?? "sin-proveedor"}-${entry.date}`;
         const existing = grouped.get(key);
 
         if (existing) {
@@ -105,41 +132,31 @@ function buildMovements(entries: StockEntry[]): StockMovement[] {
 }
 
 function generateSKU(productCode: string, color: string, size: string) {
-    const cleanColor = color
-        .substring(0, 3)
-        .toUpperCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "");
-
+    const cleanColor = color.substring(0, 3).toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     return `${productCode}-${cleanColor || "UNI"}-${size.toUpperCase()}`;
 }
 
 function getVariantLabel(entry: StockEntry) {
     const parts: string[] = [];
-
-    if (entry.size !== "Único") {
-        parts.push(`Talle ${entry.size}`);
-    }
-
-    if (entry.color !== "Único") {
-        parts.push(`Color ${entry.color}`);
-    }
-
+    if (entry.size !== "Único") parts.push(`Talle ${entry.size}`);
+    if (entry.color !== "Único") parts.push(`Color ${entry.color}`);
     return parts.length > 0 ? parts.join(" - ") : "Talle y color único";
 }
 
 function clampQuantity(rawValue: string | undefined, max: number) {
     const parsed = Number.parseInt(rawValue ?? String(max), 10);
-
-    if (Number.isNaN(parsed)) {
-        return max;
-    }
-
-    return Math.max(0, Math.min(parsed, max));
+    return Number.isNaN(parsed) ? max : Math.max(0, Math.min(parsed, max));
 }
 
 export default function StockPage() {
-    const [entries, setEntries] = useState<StockEntry[]>(mockStockEntries);
+    // Estados de base de datos
+    const [entries, setEntries] = useState<StockEntry[]>([]);
+    const [products, setProducts] = useState<StockProduct[]>([]);
+    const [providers, setProviders] = useState<StockSupplier[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
+
+    // ... Resto de tus estados se mantienen exactamente igual ...
     const [filterProduct, setFilterProduct] = useState("all");
     const [filterProvider, setFilterProvider] = useState("all");
     const [filterDateFrom, setFilterDateFrom] = useState("");
@@ -157,41 +174,39 @@ export default function StockPage() {
     const [selectedMovementIds, setSelectedMovementIds] = useState<string[]>([]);
     const [printDialogOpen, setPrintDialogOpen] = useState(false);
     const [printQuantities, setPrintQuantities] = useState<Record<string, string>>({});
+    
+    const loadData = async () => {
+        try {
+            const data = await getStockPageData();
+            setProducts(data.products);
+            setProviders(data.suppliers);
+            setEntries(data.entries);
+        } catch (error) {
+            toast.error("Error al cargar el stock");
+            console.error(error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadData();
+    }, []);
+
     const movements = useMemo(() => buildMovements(entries), [entries]);
 
     const filteredMovements = useMemo(() => {
         return movements.filter((movement) => {
-            if (filterProduct !== "all" && movement.productId !== filterProduct) {
-                return false;
-            }
-
-            if (filterProvider !== "all" && movement.providerId !== filterProvider) {
-                return false;
-            }
-
-            if (filterDateFrom) {
-                const fromDate = new Date(filterDateFrom);
-                if (new Date(movement.date) < fromDate) {
-                    return false;
-                }
-            }
-
-            if (filterDateTo) {
-                const toDate = new Date(`${filterDateTo}T23:59:59`);
-                if (new Date(movement.date) > toDate) {
-                    return false;
-                }
-            }
-
+            if (filterProduct !== "all" && movement.productId !== filterProduct) return false;
+            if (filterProvider !== "all" && movement.providerId !== filterProvider) return false;
+            if (filterDateFrom && new Date(movement.date) < new Date(filterDateFrom)) return false;
+            if (filterDateTo && new Date(movement.date) > new Date(`${filterDateTo}T23:59:59`)) return false;
             return true;
         });
     }, [movements, filterProduct, filterProvider, filterDateFrom, filterDateTo]);
 
     const selectedMovements = useMemo(
-        () =>
-            filteredMovements.filter((movement) =>
-                selectedMovementIds.includes(movement.id)
-            ),
+        () => filteredMovements.filter((movement) => selectedMovementIds.includes(movement.id)),
         [filteredMovements, selectedMovementIds]
     );
 
@@ -201,31 +216,19 @@ export default function StockPage() {
     );
 
     const printableTickets = printableVariants.reduce(
-        (total, variant) =>
-            total + clampQuantity(printQuantities[variant.id], variant.quantity),
+        (total, variant) => total + clampQuantity(printQuantities[variant.id], variant.quantity),
         0
     );
 
-    const totalUnits = movements.reduce(
-        (sum, movement) => sum + movement.totalQuantity,
-        0
-    );
+    const totalUnits = movements.reduce((sum, movement) => sum + movement.totalQuantity, 0);
     const todayEntries = movements.filter(
-        (movement) =>
-            new Date(movement.date).toDateString() === new Date().toDateString()
+        (movement) => new Date(movement.date).toDateString() === new Date().toDateString()
     ).length;
 
-    const hasActiveFilters =
-        filterProduct !== "all" ||
-        filterProvider !== "all" ||
-        filterDateFrom !== "" ||
-        filterDateTo !== "";
+    const hasActiveFilters = filterProduct !== "all" || filterProvider !== "all" || filterDateFrom !== "" || filterDateTo !== "";
 
-    const getProductName = (id: string) =>
-        mockProducts.find((product) => product.id === id)?.name ?? "Desconocido";
-
-    const getProviderName = (id?: string) =>
-        mockProviders.find((provider) => provider.id === id)?.name ?? "—";
+    const getProductName = (id: string) => products.find((product) => product.id === id)?.name ?? "Desconocido";
+    const getProviderName = (id?: string) => providers.find((provider) => provider.id === id)?.name ?? "—";
 
     const clearFilters = () => {
         setFilterProduct("all");
@@ -251,8 +254,8 @@ export default function StockPage() {
 
     const handleProductChange = (productId: string) => {
         setSelectedProductId(productId);
-        const product = mockProducts.find((item) => item.id === productId);
-        setSelectedProviderId(product?.providerId ?? "");
+        const product = products.find((item) => item.id === productId);
+        setSelectedProviderId(product?.supplierId ?? "");
     };
 
     const toggleSize = (size: string) => {
@@ -261,7 +264,6 @@ export default function StockPage() {
                 ? current.filter((item) => item !== size)
                 : [...current, size]
         );
-
         if (selectedSizes.includes(size)) {
             setSizeQuantities((current) => {
                 const next = { ...current };
@@ -271,26 +273,23 @@ export default function StockPage() {
         }
     };
 
-    const handleSaveStock = () => {
+    // --- AQUÍ ESTÁ LA MAGIA PARA GUARDAR EN BASE DE DATOS ---
+    const handleSaveStock = async () => {
         if (!selectedProductId) {
             toast.error("Seleccioná un producto");
             return;
         }
 
-        const product = mockProducts.find((item) => item.id === selectedProductId);
-        if (!product) {
-            return;
-        }
+        const product = products.find((item) => item.id === selectedProductId);
+        if (!product) return;
 
-        const now = new Date().toISOString();
-        const newEntries: StockEntry[] = [];
+        const newEntries: RegisterStockEntry[] = [];
 
         if (advancedMode) {
             if (!advancedColor.trim()) {
                 toast.error("Ingresá un color");
                 return;
             }
-
             if (selectedSizes.length === 0) {
                 toast.error("Seleccioná al menos un talle");
                 return;
@@ -298,90 +297,89 @@ export default function StockPage() {
 
             for (const size of selectedSizes) {
                 const quantity = Number.parseInt(sizeQuantities[size] ?? "0", 10);
-
                 if (Number.isNaN(quantity) || quantity <= 0) {
                     toast.error(`Ingresá una cantidad válida para el talle ${size}`);
                     return;
                 }
-
                 newEntries.push({
-                    id: `se-${Date.now()}-${size}`,
                     productId: selectedProductId,
-                    providerId: selectedProviderId || undefined,
                     quantity,
                     color: advancedColor.trim(),
                     size,
                     sku: generateSKU(product.code, advancedColor.trim(), size),
-                    date: now,
-                    mode: "avanzado",
                 });
             }
         } else {
             const quantity = Number.parseInt(simpleQuantity, 10);
-
             if (Number.isNaN(quantity) || quantity <= 0) {
                 toast.error("Ingresá una cantidad válida");
                 return;
             }
-
             newEntries.push({
-                id: `se-${Date.now()}`,
                 productId: selectedProductId,
-                providerId: selectedProviderId || undefined,
                 quantity,
                 color: "Único",
                 size: "Único",
                 sku: `${product.code}-UNI`,
-                date: now,
-                mode: "simple",
             });
         }
 
-        setEntries((current) => [...newEntries, ...current]);
-        setStockDialogOpen(false);
-        resetStockForm();
-        toast.success("Ingreso de stock registrado", {
-            description: `${product.name} · ${newEntries.reduce((sum, entry) => sum + entry.quantity, 0)} unidad(es)`,
-        });
+        setIsSaving(true);
+        try {
+            await registerStockEntries(newEntries);
+            await loadData(); // Recargamos la tabla desde Supabase
+            
+            setStockDialogOpen(false);
+            resetStockForm();
+            toast.success("Ingreso de stock registrado", {
+                description: `${product.name} · ${newEntries.reduce((sum, entry) => sum + entry.quantity, 0)} unidad(es)`,
+            });
+        } catch (error) {
+            toast.error("Error al guardar el ingreso en la base de datos");
+            console.error(error);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const toggleMovementSelection = (movementId: string, checked: boolean) => {
         setSelectedMovementIds((current) =>
-            checked
-                ? [...current, movementId]
-                : current.filter((id) => id !== movementId)
+            checked ? [...current, movementId] : current.filter((id) => id !== movementId)
         );
     };
 
     const handleOpenPrintDialog = () => {
-        if (selectedMovements.length === 0) {
-            return;
-        }
-
+        if (selectedMovements.length === 0) return;
         setPrintQuantities((current) => {
             const next = { ...current };
-
             for (const variant of selectedMovements.flatMap((movement) => movement.variants)) {
                 if (!next[variant.id]) {
                     next[variant.id] = String(variant.quantity);
                 }
             }
-
             return next;
         });
         setPrintDialogOpen(true);
     };
 
     const handleConfirmPrint = () => {
-        if (selectedMovements.length === 0 || printableTickets === 0) {
-            return;
-        }
-
+        if (selectedMovements.length === 0 || printableTickets === 0) return;
         toast.success("Etiquetas enviadas a impresión", {
             description: `${selectedMovements.length} ingreso(s) · ${printableVariants.length} variante(s) · ${printableTickets} ticket(s)`,
         });
         setPrintDialogOpen(false);
     };
+
+    if (isLoading) {
+        return (
+            <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
+                <div className="flex flex-col items-center gap-4 text-muted-foreground">
+                    <Loader2 className="size-10 animate-spin text-primary" />
+                    <p className="text-lg font-medium">Cargando movimientos de stock...</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="p-4 lg:p-8">
@@ -502,7 +500,7 @@ export default function StockPage() {
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="all">Todos los productos</SelectItem>
-                                    {mockProducts.map((product) => (
+                                    {products.map((product) => (
                                         <SelectItem key={product.id} value={product.id}>
                                             {product.name}
                                         </SelectItem>
@@ -518,7 +516,7 @@ export default function StockPage() {
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="all">Todos los proveedores</SelectItem>
-                                    {mockProviders.map((provider) => (
+                                    {providers.map((provider) => (
                                         <SelectItem key={provider.id} value={provider.id}>
                                             {provider.name}
                                         </SelectItem>
@@ -741,7 +739,7 @@ export default function StockPage() {
                                         <SelectValue placeholder="Seleccionar producto" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {mockProducts.map((product) => (
+                                        {products.map((product) => (
                                             <SelectItem key={product.id} value={product.id}>
                                                 {product.name}
                                             </SelectItem>
@@ -759,7 +757,7 @@ export default function StockPage() {
                                         <SelectValue placeholder="Seleccionar proveedor" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {mockProviders.map((provider) => (
+                                        {providers.map((provider) => (
                                             <SelectItem key={provider.id} value={provider.id}>
                                                 {provider.name}
                                             </SelectItem>
@@ -795,9 +793,7 @@ export default function StockPage() {
                                     <Input
                                         id="advanced-color"
                                         value={advancedColor}
-                                        onChange={(event) =>
-                                            setAdvancedColor(event.target.value)
-                                        }
+                                        onChange={(event) => setAdvancedColor(event.target.value)}
                                         placeholder="Ej: Negro"
                                         className="h-11"
                                     />
@@ -806,7 +802,7 @@ export default function StockPage() {
                                 <div className="space-y-2">
                                     <Label>Talles</Label>
                                     <div className="flex flex-wrap gap-2">
-                                        {mockSizes.map((size) => {
+                                        {commonSizes.map((size) => {
                                             const active = selectedSizes.includes(size);
                                             return (
                                                 <Button
@@ -827,9 +823,7 @@ export default function StockPage() {
                                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                         {selectedSizes.map((size) => (
                                             <div key={size} className="space-y-2">
-                                                <Label htmlFor={`qty-${size}`}>
-                                                    Cantidad talle {size}
-                                                </Label>
+                                                <Label htmlFor={`qty-${size}`}>Cantidad talle {size}</Label>
                                                 <Input
                                                     id={`qty-${size}`}
                                                     type="number"
@@ -856,9 +850,7 @@ export default function StockPage() {
                                     type="number"
                                     min="0"
                                     value={simpleQuantity}
-                                    onChange={(event) =>
-                                        setSimpleQuantity(event.target.value)
-                                    }
+                                    onChange={(event) => setSimpleQuantity(event.target.value)}
                                     placeholder="0"
                                     className="h-11"
                                 />
@@ -867,16 +859,11 @@ export default function StockPage() {
                     </div>
 
                     <DialogFooter>
-                        <Button
-                            variant="outline"
-                            onClick={() => setStockDialogOpen(false)}
-                        >
+                        <Button variant="outline" onClick={() => setStockDialogOpen(false)} disabled={isSaving}>
                             Cancelar
                         </Button>
-                        <Button
-                            className="bg-emerald-600 hover:bg-emerald-700"
-                            onClick={handleSaveStock}
-                        >
+                        <Button className="bg-emerald-600 hover:bg-emerald-700 gap-2" onClick={handleSaveStock} disabled={isSaving || !selectedProductId}>
+                            {isSaving && <Loader2 className="size-4 animate-spin" />}
                             Guardar ingreso
                         </Button>
                     </DialogFooter>
@@ -888,8 +875,7 @@ export default function StockPage() {
                     <DialogHeader>
                         <DialogTitle>Imprimir etiquetas</DialogTitle>
                         <DialogDescription>
-                            Revisá todo lo que seleccionaste y elegí la cantidad de tickets
-                            a imprimir por cada variante.
+                            Revisá todo lo que seleccionaste y elegí la cantidad de tickets a imprimir por cada variante.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -906,11 +892,7 @@ export default function StockPage() {
                             </TableHeader>
                             <TableBody>
                                 {printableVariants.map((variant) => {
-                                    const previewQuantity = clampQuantity(
-                                        printQuantities[variant.id],
-                                        variant.quantity
-                                    );
-
+                                    const previewQuantity = clampQuantity(printQuantities[variant.id], variant.quantity);
                                     return (
                                         <TableRow key={variant.id}>
                                             <TableCell className="text-sm text-muted-foreground">
@@ -923,9 +905,7 @@ export default function StockPage() {
                                             </TableCell>
                                             <TableCell>{getVariantLabel(variant)}</TableCell>
                                             <TableCell>
-                                                <Badge variant="outline">
-                                                    {variant.quantity} ticket(s)
-                                                </Badge>
+                                                <Badge variant="outline">{variant.quantity} ticket(s)</Badge>
                                             </TableCell>
                                             <TableCell>
                                                 <div className="max-w-36 space-y-1">
@@ -933,10 +913,7 @@ export default function StockPage() {
                                                         type="number"
                                                         min={0}
                                                         max={variant.quantity}
-                                                        value={
-                                                            printQuantities[variant.id] ??
-                                                            String(variant.quantity)
-                                                        }
+                                                        value={printQuantities[variant.id] ?? String(variant.quantity)}
                                                         onChange={(event) =>
                                                             setPrintQuantities((current) => ({
                                                                 ...current,
@@ -944,9 +921,7 @@ export default function StockPage() {
                                                             }))
                                                         }
                                                     />
-                                                    <p className="text-xs text-muted-foreground">
-                                                        Vista previa: {previewQuantity}
-                                                    </p>
+                                                    <p className="text-xs text-muted-foreground">Vista previa: {previewQuantity}</p>
                                                 </div>
                                             </TableCell>
                                             <TableCell>
@@ -963,14 +938,11 @@ export default function StockPage() {
 
                     <DialogFooter className="sm:justify-between">
                         <div className="text-sm text-muted-foreground">
-                            {selectedMovements.length} ingreso(s) · {printableVariants.length} variante(s) ·{" "}
-                            {printableTickets} ticket(s)
+                            {selectedMovements.length} ingreso(s) · {printableVariants.length} variante(s) · {printableTickets} ticket(s)
                         </div>
                         <Button
                             className="bg-emerald-600 hover:bg-emerald-700"
-                            disabled={
-                                selectedMovements.length === 0 || printableTickets === 0
-                            }
+                            disabled={selectedMovements.length === 0 || printableTickets === 0}
                             onClick={handleConfirmPrint}
                         >
                             <Printer className="size-4" />

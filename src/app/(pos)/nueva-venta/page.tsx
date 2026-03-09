@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { getProductsForPOS, getSellers } from "@/app/actions/pos-actions";
 import { createSale } from "@/app/actions/sales-actions";
 import { TicketReceipt } from "@/components/ticket-receipt";
@@ -11,7 +11,6 @@ import {
 } from "@/components/checkout-dialog";
 import {
     Search,
-    ScanBarcode,
     Plus,
     Minus,
     Trash2,
@@ -41,6 +40,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { barcodeFromSku } from "@/lib/barcodes";
 
 export interface POSProduct {
     id: string;
@@ -80,6 +80,18 @@ interface ReceiptData {
 
 type PriceMode = "retail" | "wholesale";
 
+function isEditableTarget(target: EventTarget | null) {
+    if (!(target instanceof HTMLElement)) return false;
+
+    const tagName = target.tagName;
+    return (
+        target.isContentEditable ||
+        tagName === "INPUT" ||
+        tagName === "TEXTAREA" ||
+        tagName === "SELECT"
+    );
+}
+
 function formatCurrency(amount: number): string {
     return new Intl.NumberFormat("es-AR", {
         style: "currency",
@@ -89,6 +101,7 @@ function formatCurrency(amount: number): string {
 }
 
 export default function NuevaVentaPage() {
+    const searchInputRef = useRef<HTMLInputElement>(null); // NUEVO
     const [giftDialogOpen, setGiftDialogOpen] = useState(false);
     const [printGiftCopy, setPrintGiftCopy] = useState(false);
     const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
@@ -161,13 +174,74 @@ export default function NuevaVentaPage() {
         };
     }, []);
 
+    useEffect(() => {
+        const handleGlobalScannerInput = (event: KeyboardEvent) => {
+            if (event.ctrlKey || event.metaKey || event.altKey) return;
+            if (checkoutOpen || giftDialogOpen) return;
+
+            const searchInput = searchInputRef.current;
+            if (!searchInput) return;
+            if (document.activeElement === searchInput) return;
+            if (isEditableTarget(event.target)) return;
+
+            if (event.key === "Enter") {
+                searchInput.focus();
+                return;
+            }
+
+            if (event.key.length !== 1) return;
+
+            searchInput.focus();
+            setSearchQuery((current) => `${current}${event.key}`);
+            event.preventDefault();
+        };
+
+        window.addEventListener("keydown", handleGlobalScannerInput, true);
+        return () => {
+            window.removeEventListener("keydown", handleGlobalScannerInput, true);
+        };
+    }, [checkoutOpen, giftDialogOpen]);
+
+    const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            
+            // Usamos e.currentTarget.value en vez del estado searchQuery porque 
+            // el escáner dispara los eventos en milisegundos.
+            const scannedValue = e.currentTarget.value.trim().toLowerCase();
+            if (!scannedValue) return;
+
+            // Buscamos si el texto coincide EXACTAMENTE con el código de algún producto
+            const matchedProduct = allProducts.find(
+                (p) =>
+                    p.code.toLowerCase() === scannedValue ||
+                    barcodeFromSku(p.code) === scannedValue
+            );
+
+            if (matchedProduct) {
+                // Si existe, lo agregamos al carrito
+                addToCart(matchedProduct);
+                // Vaciamos el input para el próximo escaneo
+                setSearchQuery("");
+                // Mantenemos el cursor en el input
+                setTimeout(() => searchInputRef.current?.focus(), 10);
+            } else {
+                // Opcional: Si tipeó algo largo (ej: un código) y presionó Enter pero no existe
+                if (scannedValue.length >= 4) {
+                    toast.error("Código no encontrado", { description: scannedValue.toUpperCase() });
+                    setSearchQuery(""); // Limpiamos para que no se trabe
+                }
+            }
+        }
+    };
     const filteredProducts = useMemo(() => {
         if (!searchQuery.trim()) return allProducts;
         const q = searchQuery.toLowerCase();
         return allProducts.filter(
             (product) =>
                 product.name.toLowerCase().includes(q) ||
-                product.code.toLowerCase().includes(q)
+                product.code.toLowerCase().includes(q) ||
+                barcodeFromSku(product.code).includes(q)
         );
     }, [searchQuery, allProducts]);
 
@@ -292,6 +366,7 @@ export default function NuevaVentaPage() {
         <>
             <div className="flex h-[calc(100vh-4rem)] print:hidden lg:h-screen flex-col lg:flex-row">
                 <div className="flex flex-1 flex-col lg:w-[60%] lg:flex-none">
+                    {/* Search Header */}
                     <div className="border-b bg-card px-4 py-4 lg:px-6">
                         <h1 className="mb-3 text-xl font-bold tracking-tight lg:text-2xl">
                             Nueva Venta
@@ -300,21 +375,17 @@ export default function NuevaVentaPage() {
                             <div className="relative flex-1">
                                 <Search className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
                                 <Input
+                                    ref={searchInputRef}
                                     type="text"
-                                    placeholder="Buscar por nombre o código..."
+                                    placeholder="Escanear código o buscar por nombre..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="h-12 pl-11 text-lg"
+                                    onKeyDown={handleSearchKeyDown} // Acá atajamos el Enter
+                                    className="h-12 pl-11 text-lg font-medium"
+                                    autoFocus // Pone el cursor automáticamente al entrar a la pantalla
                                 />
                             </div>
-                            <Button
-                                variant="outline"
-                                className="h-12 shrink-0 gap-2 px-4"
-                                onClick={() => toast.info("Escáner no disponible en demo")}
-                            >
-                                <ScanBarcode className="size-5" />
-                                <span className="hidden sm:inline">Escanear</span>
-                            </Button>
+                            {/* El botón de Escanear fue eliminado de acá */}
                         </div>
                     </div>
 

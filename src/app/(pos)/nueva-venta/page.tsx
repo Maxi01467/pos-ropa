@@ -27,7 +27,11 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"; // Importamos Select de shadcn
-import { CheckoutDialog, type PaymentMethod } from "@/components/checkout-dialog";
+import {
+    CheckoutDialog,
+    type PaymentBreakdown,
+    type PaymentMethod,
+} from "@/components/checkout-dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -195,17 +199,19 @@ export default function NuevaVentaPage() {
 
     const paymentMethodMap: Record<
         PaymentMethod,
-        "EFECTIVO" | "TRANSFERENCIA" | "TARJETA" | "MIXTO"
+        "EFECTIVO" | "TRANSFERENCIA" | "MIXTO"
     > = {
         efectivo: "EFECTIVO",
         transferencia: "TRANSFERENCIA",
         mixto: "MIXTO",
     };
 
-    const handleConfirmSale = async (paymentMethod: PaymentMethod) => {
+    const handleConfirmSale = async (payment: PaymentBreakdown) => {
         const sale = await createSale({
             total: totalAmount,
-            paymentMethod: paymentMethodMap[paymentMethod],
+            paymentMethod: paymentMethodMap[payment.paymentMethod],
+            cashAmount: payment.cashAmount,
+            transferAmount: payment.transferAmount,
             userId: selectedSellerId, // Pasamos el ID del vendedor seleccionado
             items: cart.map((item) => ({
                 variantId: item.product.id,

@@ -1,4 +1,3 @@
-// src/app/actions/sales-actions.ts
 "use server";
 
 import { PrismaClient } from "@prisma/client";
@@ -14,7 +13,9 @@ type CreateSaleItemInput = {
 
 type CreateSaleInput = {
     total: number;
-    paymentMethod: "EFECTIVO" | "TRANSFERENCIA" | "TARJETA" | "MIXTO";
+    paymentMethod: "EFECTIVO" | "TRANSFERENCIA" | "MIXTO";
+    cashAmount?: number;
+    transferAmount?: number;
     userId?: string;
     items: CreateSaleItemInput[];
 };
@@ -22,6 +23,27 @@ type CreateSaleInput = {
 export async function createSale(input: CreateSaleInput) {
     if (input.items.length === 0) {
         throw new Error("La venta no tiene items");
+    }
+
+    const cashAmount = input.cashAmount ?? 0;
+    const transferAmount = input.transferAmount ?? 0;
+
+    if (input.paymentMethod === "MIXTO" && cashAmount + transferAmount !== input.total) {
+        throw new Error("La suma de efectivo y transferencia debe coincidir con el total");
+    }
+
+    if (
+        input.paymentMethod === "EFECTIVO" &&
+        (cashAmount !== input.total || transferAmount !== 0)
+    ) {
+        throw new Error("El desglose del pago en efectivo es inválido");
+    }
+
+    if (
+        input.paymentMethod === "TRANSFERENCIA" &&
+        (cashAmount !== 0 || transferAmount !== input.total)
+    ) {
+        throw new Error("El desglose del pago por transferencia es inválido");
     }
 
     const user = input.userId
@@ -58,6 +80,8 @@ export async function createSale(input: CreateSaleInput) {
             data: {
                 total: input.total,
                 paymentMethod: input.paymentMethod,
+                cashAmount,
+                transferAmount,
                 userId: user.id,
                 items: {
                     create: input.items.map((item) => ({
@@ -112,6 +136,8 @@ export async function getSalesHistory() {
         ticketNumber: sale.ticketNumber,
         total: Number(sale.total),
         paymentMethod: sale.paymentMethod,
+        cashAmount: sale.cashAmount ? Number(sale.cashAmount) : undefined,
+        transferAmount: sale.transferAmount ? Number(sale.transferAmount) : undefined,
         date: sale.createdAt.toISOString(),
         sellerName: sale.user.name,
         items: sale.items.map(item => ({

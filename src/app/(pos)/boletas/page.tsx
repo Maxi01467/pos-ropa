@@ -1,4 +1,3 @@
-// src/app/(pos)/boletas/page.tsx
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -12,7 +11,8 @@ import {
     Banknote,
     Loader2,
     Filter,
-    X
+    X,
+    Layers // Nuevo icono para pago mixto
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,7 @@ import {
     DialogDescription,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 interface SaleItem {
     id: string;
@@ -53,6 +54,8 @@ interface SaleTicket {
     ticketNumber: number;
     total: number;
     paymentMethod: string;
+    cashAmount?: number;     // NUEVO: Para el desglose
+    transferAmount?: number; // NUEVO: Para el desglose
     date: string;
     sellerName: string;
     items: SaleItem[];
@@ -101,35 +104,29 @@ export default function BoletasPage() {
         loadSales();
     }, []);
 
-    // Lógica de filtrado combinada (Buscador + Fechas)
+    // Lógica de filtrado
     const filteredSales = useMemo(() => {
         return sales.filter((sale) => {
-            // Filtro por número de boleta
             if (searchQuery && !sale.ticketNumber.toString().includes(searchQuery)) {
                 return false;
             }
-
-            // Filtro por fecha desde
             if (filterDateFrom) {
                 const fromDate = new Date(filterDateFrom);
                 if (new Date(sale.date) < fromDate) {
                     return false;
                 }
             }
-
-            // Filtro por fecha hasta (se le agrega 23:59:59 para incluir todo el día)
             if (filterDateTo) {
                 const toDate = new Date(`${filterDateTo}T23:59:59`);
                 if (new Date(sale.date) > toDate) {
                     return false;
                 }
             }
-
             return true;
         });
     }, [sales, searchQuery, filterDateFrom, filterDateTo]);
 
-    // Estadísticas dinámicas (se actualizan según los filtros activos)
+    // Estadísticas
     const totalRevenue = filteredSales.reduce((sum, sale) => sum + sale.total, 0);
     const totalTickets = filteredSales.length;
 
@@ -165,7 +162,7 @@ export default function BoletasPage() {
                 </div>
             </div>
 
-            {/* Tarjetas de Resumen (Ahora responden a los filtros) */}
+            {/* Tarjetas de Resumen */}
             <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <Card>
                     <CardContent className="flex items-center gap-4 p-4">
@@ -191,7 +188,7 @@ export default function BoletasPage() {
                 </Card>
             </div>
 
-            {/* Barra de Búsqueda y Botón de Filtros */}
+            {/* Buscador y Filtros */}
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <div className="relative flex-1 max-w-md">
                     <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -232,7 +229,7 @@ export default function BoletasPage() {
                 </div>
             </div>
 
-            {/* Panel Desplegable de Filtros de Fecha */}
+            {/* Panel de Fechas */}
             {showFilters && (
                 <div className="mb-6 rounded-lg border bg-muted/30 p-4 max-w-2xl">
                     <div className="grid gap-4 sm:grid-cols-2">
@@ -290,7 +287,7 @@ export default function BoletasPage() {
                             filteredSales.map((sale) => (
                                 <TableRow key={sale.id}>
                                     <TableCell>
-                                        <Badge variant="outline" className="font-mono text-sm">
+                                        <Badge variant="outline" className="font-mono text-sm bg-background">
                                             #{sale.ticketNumber.toString().padStart(4, '0')}
                                         </Badge>
                                     </TableCell>
@@ -304,13 +301,15 @@ export default function BoletasPage() {
                                         {sale.sellerName}
                                     </TableCell>
                                     <TableCell>
-                                        <Badge className={
-                                            sale.paymentMethod === 'EFECTIVO' ? 'bg-emerald-100 text-emerald-700' : 
-                                            sale.paymentMethod === 'TRANSFERENCIA' ? 'bg-blue-100 text-blue-700' : 
-                                            'bg-slate-100 text-slate-700'
-                                        }>
-                                            {sale.paymentMethod === 'EFECTIVO' && <Banknote className="mr-1 size-3" />}
-                                            {sale.paymentMethod === 'TRANSFERENCIA' && <CreditCard className="mr-1 size-3" />}
+                                        <Badge className={cn(
+                                            "gap-1",
+                                            sale.paymentMethod === 'EFECTIVO' && 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200',
+                                            sale.paymentMethod === 'TRANSFERENCIA' && 'bg-blue-100 text-blue-700 hover:bg-blue-200',
+                                            sale.paymentMethod === 'MIXTO' && 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                                        )}>
+                                            {sale.paymentMethod === 'EFECTIVO' && <Banknote className="size-3" />}
+                                            {sale.paymentMethod === 'TRANSFERENCIA' && <CreditCard className="size-3" />}
+                                            {sale.paymentMethod === 'MIXTO' && <Layers className="size-3" />}
                                             {sale.paymentMethod}
                                         </Badge>
                                     </TableCell>
@@ -353,7 +352,7 @@ export default function BoletasPage() {
                                 </DialogDescription>
                             </DialogHeader>
 
-                            <div className="mt-4 rounded-lg border">
+                            <div className="mt-4 max-h-[40vh] overflow-auto rounded-lg border">
                                 <Table>
                                     <TableHeader>
                                         <TableRow className="bg-muted/50 hover:bg-muted/50">
@@ -371,8 +370,8 @@ export default function BoletasPage() {
                                                     <p className="text-xs text-muted-foreground">
                                                         Talle: {item.size} | Color: {item.color}
                                                     </p>
-                                                    <code className="mt-1 block text-[10px] text-muted-foreground">
-                                                        SKU: {item.sku}
+                                                    <code className="mt-1 block w-max rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                                                        {item.sku}
                                                     </code>
                                                 </TableCell>
                                                 <TableCell className="text-center">
@@ -380,7 +379,7 @@ export default function BoletasPage() {
                                                 </TableCell>
                                                 <TableCell className="text-right">
                                                     {formatCurrency(item.priceAtTime)}
-                                                    <p className="text-[10px] text-muted-foreground uppercase">
+                                                    <p className="text-[10px] text-muted-foreground uppercase font-medium">
                                                         {item.priceType === "WHOLESALE" ? "Mayorista" : "Normal"}
                                                     </p>
                                                 </TableCell>
@@ -393,15 +392,47 @@ export default function BoletasPage() {
                                 </Table>
                             </div>
                             
-                            <div className="mt-4 flex items-center justify-between rounded-lg bg-muted/50 p-4">
-                                <div className="space-y-1">
-                                    <p className="text-sm text-muted-foreground">Método de pago</p>
-                                    <p className="font-semibold">{selectedTicket.paymentMethod}</p>
+                            {/* BLOQUE DE DESGLOSE DE PAGO */}
+                            <div className="mt-4 flex flex-col gap-3 rounded-lg bg-muted/30 p-4 border border-border/50">
+                                <div className="flex items-center justify-between">
+                                    <div className="space-y-1">
+                                        <p className="text-sm font-medium text-muted-foreground">Método de pago</p>
+                                        <Badge className={cn(
+                                            "gap-1 uppercase tracking-wider text-xs",
+                                            selectedTicket.paymentMethod === 'EFECTIVO' && 'bg-emerald-100 text-emerald-700',
+                                            selectedTicket.paymentMethod === 'TRANSFERENCIA' && 'bg-blue-100 text-blue-700',
+                                            selectedTicket.paymentMethod === 'MIXTO' && 'bg-purple-100 text-purple-700'
+                                        )}>
+                                            {selectedTicket.paymentMethod}
+                                        </Badge>
+                                    </div>
+                                    <div className="text-right space-y-1">
+                                        <p className="text-sm font-medium text-muted-foreground">Total cobrado</p>
+                                        <p className="text-3xl font-bold tracking-tight">{formatCurrency(selectedTicket.total)}</p>
+                                    </div>
                                 </div>
-                                <div className="text-right space-y-1">
-                                    <p className="text-sm text-muted-foreground">Total cobrado</p>
-                                    <p className="text-2xl font-bold">{formatCurrency(selectedTicket.total)}</p>
-                                </div>
+                                
+                                {/* Desglose exclusivo para MIXTO */}
+                                {selectedTicket.paymentMethod === 'MIXTO' && (
+                                    <div className="mt-2 grid grid-cols-2 gap-4 rounded-md bg-background p-3 border shadow-sm">
+                                        <div>
+                                            <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-bold mb-1">
+                                                En Efectivo
+                                            </p>
+                                            <p className="text-xl font-bold text-emerald-600">
+                                                {formatCurrency(selectedTicket.cashAmount || 0)}
+                                            </p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-bold mb-1">
+                                                Transferencia
+                                            </p>
+                                            <p className="text-xl font-bold text-blue-600">
+                                                {formatCurrency(selectedTicket.transferAmount || 0)}
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </>
                     )}

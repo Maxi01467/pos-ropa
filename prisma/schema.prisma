@@ -111,6 +111,10 @@ model Sale {
   total         Decimal
   paymentMethod String     // EFECTIVO, TRANSFERENCIA, MIXTO
   
+  // Novedad: Guardamos el desglose exacto
+  cashAmount     Decimal?  // Monto en billetes
+  transferAmount Decimal?  // Monto a la cuenta
+  
   userId        String     // Quién hizo la venta
   user          User       @relation(fields: [userId], references: [id])
   

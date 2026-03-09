@@ -25,13 +25,20 @@ import { cn } from "@/lib/utils";
 // Eliminamos "tarjeta" del tipo
 export type PaymentMethod = "efectivo" | "transferencia" | "mixto";
 
+export type PaymentBreakdown = {
+    paymentMethod: PaymentMethod;
+    cashAmount: number;
+    transferAmount: number;
+};
+
 interface CheckoutDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     total: number;
     itemCount: number;
-    // Ajustamos la firma para que devuelva el método seleccionado
-    onConfirm: (method: PaymentMethod) => void;
+    onConfirm: (
+        payment: PaymentBreakdown
+    ) => Promise<{ ticketNumber: number }>;
 }
 
 const paymentMethods: {
@@ -76,12 +83,10 @@ export function CheckoutDialog({
     onConfirm,
 }: CheckoutDialogProps) {
     const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
-    
-    // Estados para el desglose del pago mixto
     const [cashAmount, setCashAmount] = useState<number>(0);
     const [transferAmount, setTransferAmount] = useState<number>(0);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Reiniciar montos al cambiar a mixto o abrir el modal
     useEffect(() => {
         if (open) {
             setSelectedMethod(null);
@@ -90,41 +95,66 @@ export function CheckoutDialog({
         }
     }, [open, total]);
 
-    // Lógica para que los campos se auto-completen
     const handleCashChange = (value: string) => {
         const num = parseFloat(value) || 0;
         setCashAmount(num);
-        // El resto va a transferencia
         setTransferAmount(Math.max(0, total - num));
     };
 
     const handleTransferChange = (value: string) => {
         const num = parseFloat(value) || 0;
         setTransferAmount(num);
-        // El resto va a efectivo
         setCashAmount(Math.max(0, total - num));
     };
 
-    const handleConfirm = () => {
+    const handleConfirm = async () => {
         if (!selectedMethod) {
             toast.error("Seleccioná un método de pago");
             return;
         }
 
-        if (selectedMethod === "mixto" && (cashAmount + transferAmount !== total)) {
+        if (selectedMethod === "mixto" && cashAmount + transferAmount !== total) {
             toast.error("La suma de los montos debe ser igual al total");
             return;
         }
 
         const methodLabel = paymentMethods.find((m) => m.value === selectedMethod)?.label;
+        const paymentData: PaymentBreakdown =
+            selectedMethod === "mixto"
+                ? {
+                      paymentMethod: selectedMethod,
+                      cashAmount,
+                      transferAmount,
+                  }
+                : selectedMethod === "efectivo"
+                  ? {
+                        paymentMethod: selectedMethod,
+                        cashAmount: total,
+                        transferAmount: 0,
+                    }
+                  : {
+                        paymentMethod: selectedMethod,
+                        cashAmount: 0,
+                        transferAmount: total,
+                    };
 
-        onConfirm(selectedMethod);
-        onOpenChange(false);
+        setIsSubmitting(true);
 
-        toast.success("¡Venta registrada!", {
-            description: `${itemCount} art. — ${formatCurrency(total)} (${methodLabel})`,
-            duration: 4000,
-        });
+        try {
+            const sale = await onConfirm(paymentData);
+            onOpenChange(false);
+
+            toast.success("¡Venta registrada!", {
+                description: `Boleta #${sale.ticketNumber.toString().padStart(4, "0")} · ${itemCount} art. — ${formatCurrency(total)} (${methodLabel})`,
+                duration: 4000,
+            });
+        } catch (error) {
+            const message =
+                error instanceof Error ? error.message : "No se pudo registrar la venta";
+            toast.error(message);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -218,10 +248,19 @@ export function CheckoutDialog({
                         size="lg"
                         className="w-full bg-emerald-600 text-lg font-bold hover:bg-emerald-700 h-14 gap-2"
                         onClick={handleConfirm}
-                        disabled={!selectedMethod}
+                        disabled={!selectedMethod || isSubmitting}
                     >
-                        <CheckCircle2 className="size-5" />
-                        Finalizar Venta
+                        {isSubmitting ? (
+                            <>
+                                <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                                Registrando...
+                            </>
+                        ) : (
+                            <>
+                                <CheckCircle2 className="size-5" />
+                                Finalizar Venta
+                            </>
+                        )}
                     </Button>
                 </DialogFooter>
             </DialogContent>

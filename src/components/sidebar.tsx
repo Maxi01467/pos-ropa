@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
     Home,
     ShoppingCart,
@@ -15,6 +15,7 @@ import {
     Truck,
     BarChart3,
     ReceiptText,
+    LogOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,7 +38,7 @@ const navItems = [
     { href: "/stock", label: "Stock", icon: BarChart3 },
     { href: "/proveedores", label: "Proveedores", icon: Truck },
     { href: "/caja", label: "Caja", icon: Wallet },
-    {href: "/boletas", label: "Boletas", icon: ReceiptText,}
+    { href: "/boletas", label: "Boletas", icon: ReceiptText },
 ];
 
 function NavLink({
@@ -95,6 +96,30 @@ function SidebarContent({
     onNavClick?: () => void;
 }) {
     const pathname = usePathname();
+    const router = useRouter();
+
+    const handleLogout = () => {
+        // Borramos las credenciales de la sesión
+        localStorage.removeItem("pos_session");
+        localStorage.removeItem("pos_user");
+        
+        // Redirigimos al Login
+        router.push("/login");
+    };
+
+    const logoutButton = (
+        <Button
+            variant="ghost"
+            onClick={handleLogout}
+            className={cn(
+                "w-full text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition-colors",
+                collapsed ? "justify-center px-0 h-10" : "justify-start gap-3 h-12 px-3"
+            )}
+        >
+            <LogOut className="size-5 shrink-0" />
+            {!collapsed && <span className="font-medium text-base">Cerrar Sesión</span>}
+        </Button>
+    );
 
     return (
         <div className="flex h-full flex-col">
@@ -131,16 +156,29 @@ function SidebarContent({
                 ))}
             </nav>
 
-            {/* Collapse toggle (desktop only) */}
-            {onToggle && (
-                <div className="border-t p-3">
+            {/* Bottom Actions (Logout & Collapse) */}
+            <div className="border-t p-3 space-y-2">
+                {/* Botón de Logout */}
+                {collapsed ? (
+                    <Tooltip>
+                        <TooltipTrigger asChild>{logoutButton}</TooltipTrigger>
+                        <TooltipContent side="right" sideOffset={10}>
+                            Cerrar Sesión
+                        </TooltipContent>
+                    </Tooltip>
+                ) : (
+                    logoutButton
+                )}
+
+                {/* Collapse toggle (desktop only) */}
+                {onToggle && (
                     <Button
                         variant="ghost"
                         size="sm"
                         onClick={onToggle}
                         className={cn(
                             "w-full justify-center text-muted-foreground",
-                            !collapsed && "justify-start"
+                            !collapsed && "justify-start gap-3 px-3 h-10"
                         )}
                     >
                         {collapsed ? (
@@ -152,8 +190,8 @@ function SidebarContent({
                             </>
                         )}
                     </Button>
-                </div>
-            )}
+                )}
+            </div>
         </div>
     );
 }

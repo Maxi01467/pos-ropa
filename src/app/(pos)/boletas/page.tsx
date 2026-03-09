@@ -1,7 +1,7 @@
 // src/app/(pos)/boletas/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { getSalesHistory } from "@/app/actions/sales-actions";
 import {
     ReceiptText,
@@ -10,10 +10,13 @@ import {
     Calendar,
     CreditCard,
     Banknote,
-    Loader2
+    Loader2,
+    Filter,
+    X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -33,7 +36,6 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 
-// Interfaces basadas en lo que devuelve nuestra Server Action
 interface SaleItem {
     id: string;
     productName: string;
@@ -75,7 +77,13 @@ function formatDate(dateStr: string): string {
 export default function BoletasPage() {
     const [sales, setSales] = useState<SaleTicket[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    
+    // Estados de filtrado
     const [searchQuery, setSearchQuery] = useState("");
+    const [filterDateFrom, setFilterDateFrom] = useState("");
+    const [filterDateTo, setFilterDateTo] = useState("");
+    const [showFilters, setShowFilters] = useState(false);
+    
     const [selectedTicket, setSelectedTicket] = useState<SaleTicket | null>(null);
 
     useEffect(() => {
@@ -93,14 +101,44 @@ export default function BoletasPage() {
         loadSales();
     }, []);
 
-    // Filtrar boletas por número de ticket
-    const filteredSales = sales.filter((sale) =>
-        sale.ticketNumber.toString().includes(searchQuery)
-    );
+    // Lógica de filtrado combinada (Buscador + Fechas)
+    const filteredSales = useMemo(() => {
+        return sales.filter((sale) => {
+            // Filtro por número de boleta
+            if (searchQuery && !sale.ticketNumber.toString().includes(searchQuery)) {
+                return false;
+            }
 
-    // Estadísticas rápidas
-    const totalRevenue = sales.reduce((sum, sale) => sum + sale.total, 0);
-    const totalTickets = sales.length;
+            // Filtro por fecha desde
+            if (filterDateFrom) {
+                const fromDate = new Date(filterDateFrom);
+                if (new Date(sale.date) < fromDate) {
+                    return false;
+                }
+            }
+
+            // Filtro por fecha hasta (se le agrega 23:59:59 para incluir todo el día)
+            if (filterDateTo) {
+                const toDate = new Date(`${filterDateTo}T23:59:59`);
+                if (new Date(sale.date) > toDate) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+    }, [sales, searchQuery, filterDateFrom, filterDateTo]);
+
+    // Estadísticas dinámicas (se actualizan según los filtros activos)
+    const totalRevenue = filteredSales.reduce((sum, sale) => sum + sale.total, 0);
+    const totalTickets = filteredSales.length;
+
+    const hasActiveDateFilters = filterDateFrom !== "" || filterDateTo !== "";
+
+    const clearDateFilters = () => {
+        setFilterDateFrom("");
+        setFilterDateTo("");
+    };
 
     if (isLoading) {
         return (
@@ -127,7 +165,7 @@ export default function BoletasPage() {
                 </div>
             </div>
 
-            {/* Tarjetas de Resumen */}
+            {/* Tarjetas de Resumen (Ahora responden a los filtros) */}
             <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <Card>
                     <CardContent className="flex items-center gap-4 p-4">
@@ -153,9 +191,9 @@ export default function BoletasPage() {
                 </Card>
             </div>
 
-            {/* Buscador */}
-            <div className="mb-6 flex max-w-md items-center gap-2">
-                <div className="relative flex-1">
+            {/* Barra de Búsqueda y Botón de Filtros */}
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="relative flex-1 max-w-md">
                     <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                         placeholder="Buscar por N° de Boleta..."
@@ -165,7 +203,60 @@ export default function BoletasPage() {
                         type="number"
                     />
                 </div>
+                
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant={showFilters ? "secondary" : "outline"}
+                        className="h-11 gap-2"
+                        onClick={() => setShowFilters(!showFilters)}
+                    >
+                        <Filter className="size-4" />
+                        Fechas
+                        {hasActiveDateFilters && (
+                            <Badge variant="default" className="ml-1 flex size-5 items-center justify-center rounded-full p-0 text-xs">
+                                !
+                            </Badge>
+                        )}
+                    </Button>
+                    {hasActiveDateFilters && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-11 gap-1 text-muted-foreground"
+                            onClick={clearDateFilters}
+                        >
+                            <X className="size-3.5" />
+                            Limpiar fechas
+                        </Button>
+                    )}
+                </div>
             </div>
+
+            {/* Panel Desplegable de Filtros de Fecha */}
+            {showFilters && (
+                <div className="mb-6 rounded-lg border bg-muted/30 p-4 max-w-2xl">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                            <Label className="text-sm font-medium">Desde</Label>
+                            <Input
+                                type="date"
+                                value={filterDateFrom}
+                                onChange={(event) => setFilterDateFrom(event.target.value)}
+                                className="h-10 bg-background"
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label className="text-sm font-medium">Hasta</Label>
+                            <Input
+                                type="date"
+                                value={filterDateTo}
+                                onChange={(event) => setFilterDateTo(event.target.value)}
+                                className="h-10 bg-background"
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Tabla Principal */}
             <div className="rounded-xl border bg-card">
@@ -188,6 +279,11 @@ export default function BoletasPage() {
                                     <p className="text-lg font-medium text-muted-foreground">
                                         No se encontraron boletas
                                     </p>
+                                    {(searchQuery || hasActiveDateFilters) && (
+                                        <p className="mt-1 text-sm text-muted-foreground/70">
+                                            Probá ajustando los filtros de búsqueda
+                                        </p>
+                                    )}
                                 </TableCell>
                             </TableRow>
                         ) : (

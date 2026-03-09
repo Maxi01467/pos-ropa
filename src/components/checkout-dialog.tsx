@@ -21,14 +21,14 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-type PaymentMethod = "efectivo" | "transferencia" | "tarjeta" | "mixto";
+export type PaymentMethod = "efectivo" | "transferencia" | "tarjeta" | "mixto";
 
 interface CheckoutDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     total: number;
     itemCount: number;
-    onConfirm: () => void;
+    onConfirm: (paymentMethod: PaymentMethod) => Promise<{ ticketNumber: number }>;
 }
 
 const paymentMethods: {
@@ -80,8 +80,9 @@ export function CheckoutDialog({
 }: CheckoutDialogProps) {
     const [selectedMethod, setSelectedMethod] =
         useState<PaymentMethod | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const handleConfirm = () => {
+    const handleConfirm = async () => {
         if (!selectedMethod) {
             toast.error("Seleccioná un método de pago");
             return;
@@ -91,14 +92,24 @@ export function CheckoutDialog({
             (m) => m.value === selectedMethod
         )?.label;
 
-        onConfirm();
-        setSelectedMethod(null);
-        onOpenChange(false);
+        setIsSubmitting(true);
 
-        toast.success("¡Venta registrada con éxito!", {
-            description: `${itemCount} artículo${itemCount > 1 ? "s" : ""} — ${formatCurrency(total)} (${methodLabel})`,
-            duration: 4000,
-        });
+        try {
+            const sale = await onConfirm(selectedMethod);
+            setSelectedMethod(null);
+            onOpenChange(false);
+
+            toast.success("¡Venta registrada con éxito!", {
+                description: `Boleta #${sale.ticketNumber.toString().padStart(4, "0")} · ${itemCount} artículo${itemCount > 1 ? "s" : ""} · ${formatCurrency(total)} (${methodLabel})`,
+                duration: 4000,
+            });
+        } catch (error) {
+            const message =
+                error instanceof Error ? error.message : "No se pudo registrar la venta";
+            toast.error(message);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -170,10 +181,19 @@ export function CheckoutDialog({
                         size="lg"
                         className="w-full bg-emerald-600 text-lg font-bold hover:bg-emerald-700 h-14"
                         onClick={handleConfirm}
-                        disabled={!selectedMethod}
+                        disabled={!selectedMethod || isSubmitting}
                     >
+                        {isSubmitting ? (
+                            <span className="flex items-center gap-2">
+                                <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                                Registrando...
+                            </span>
+                        ) : (
+                            <>
                         <CheckCircle2 className="size-5" />
                         Confirmar Venta
+                            </>
+                        )}
                     </Button>
                 </DialogFooter>
             </DialogContent>

@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { getProductsForPOS } from "@/app/actions/pos-actions";
+import { createSale } from "@/app/actions/sales-actions";
 import {
     Search,
     ScanBarcode,
@@ -16,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { CheckoutDialog } from "@/components/checkout-dialog";
+import { CheckoutDialog, type PaymentMethod } from "@/components/checkout-dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -57,10 +58,27 @@ export default function NuevaVentaPage() {
     const [isLoadingProducts, setIsLoadingProducts] = useState(true);
     const [productsError, setProductsError] = useState<string | null>(null);
 
+    const loadProducts = async () => {
+        setIsLoadingProducts(true);
+        setProductsError(null);
+
+        try {
+            const products = await getProductsForPOS();
+            setAllProducts(products);
+        } catch (error) {
+            console.error("Error loading POS products:", error);
+            setProductsError("No se pudieron cargar los productos.");
+            setAllProducts([]);
+            toast.error("No se pudieron cargar los productos");
+        } finally {
+            setIsLoadingProducts(false);
+        }
+    };
+
     useEffect(() => {
         let cancelled = false;
 
-        const loadProducts = async () => {
+        const loadProductsOnMount = async () => {
             setIsLoadingProducts(true);
             setProductsError(null);
 
@@ -82,7 +100,7 @@ export default function NuevaVentaPage() {
             }
         };
 
-        loadProducts();
+        loadProductsOnMount();
 
         return () => {
             cancelled = true;
@@ -167,6 +185,33 @@ export default function NuevaVentaPage() {
         (sum, item) => sum + getUnitPrice(item.product) * item.quantity,
         0
     );
+
+    const paymentMethodMap: Record<
+        PaymentMethod,
+        "EFECTIVO" | "TRANSFERENCIA" | "TARJETA" | "MIXTO"
+    > = {
+        efectivo: "EFECTIVO",
+        transferencia: "TRANSFERENCIA",
+        tarjeta: "TARJETA",
+        mixto: "MIXTO",
+    };
+
+    const handleConfirmSale = async (paymentMethod: PaymentMethod) => {
+        const sale = await createSale({
+            total: totalAmount,
+            paymentMethod: paymentMethodMap[paymentMethod],
+            items: cart.map((item) => ({
+                variantId: item.product.id,
+                quantity: item.quantity,
+                priceAtTime: getUnitPrice(item.product),
+                priceType: priceMode === "wholesale" ? "WHOLESALE" : "NORMAL",
+            })),
+        });
+
+        clearCart();
+        await loadProducts();
+        return sale;
+    };
 
     return (
         <div className="flex h-[calc(100vh-4rem)] lg:h-screen flex-col lg:flex-row">
@@ -477,7 +522,7 @@ export default function NuevaVentaPage() {
                 onOpenChange={setCheckoutOpen}
                 total={totalAmount}
                 itemCount={totalItems}
-                onConfirm={clearCart}
+                onConfirm={handleConfirmSale}
             />
         </div>
     );

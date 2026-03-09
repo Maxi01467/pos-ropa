@@ -4,6 +4,9 @@
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
+const PAPER_WIDTH_MM = 80;
+const HORIZONTAL_PADDING_MM = 4;
+
 interface TicketReceiptProps {
     data: {
         ticketNumber: number;
@@ -32,64 +35,107 @@ export function TicketReceipt({ data }: TicketReceiptProps) {
     if (!data) return null;
 
     return (
-        // Estas clases de Tailwind son la magia: 
-        // "hidden" lo oculta en pantalla normal.
-        // "print:block" lo muestra SOLO al imprimir.
-        <div className="hidden print:block print:w-[80mm] print:bg-white print:text-black font-mono text-sm p-4 absolute top-0 left-0">
-            
-            {/* Cabecera de la tienda (Cambiá esto por el nombre del local de tu mamá) */}
-            <div className="text-center mb-4">
-                <h1 className="font-bold text-xl uppercase">Mi Tienda de Ropa</h1>
-                <p className="text-xs">Salta, Argentina</p>
-                <p className="text-xs">CUIT: 27-XXXXXXXX-X</p>
-            </div>
+        <div className="hidden print:block">
+            <style>{`
+                @media print {
+                    @page {
+                        size: ${PAPER_WIDTH_MM}mm auto;
+                        margin: 0;
+                    }
 
-            {/* Datos del Ticket */}
-            <div className="border-b border-black border-dashed pb-2 mb-2 text-xs">
-                <p>Ticket N°: {data.ticketNumber.toString().padStart(5, '0')}</p>
-                <p>Fecha: {format(data.date, "dd/MM/yyyy HH:mm", { locale: es })}</p>
-                <p>Vendedor: {data.sellerName}</p>
-            </div>
+                    html,
+                    body {
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        background: #fff !important;
+                    }
+                }
+            `}</style>
 
-            {/* Detalle de Productos */}
-            <div className="border-b border-black border-dashed pb-2 mb-2 text-xs">
-                <table className="w-full text-left">
-                    <thead>
-                        <tr>
-                            <th className="font-bold w-12">Cant</th>
-                            <th className="font-bold">Descripción</th>
-                            <th className="font-bold text-right">Subt.</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {data.items.map((item, index) => (
-                            <tr key={index} className="align-top">
-                                <td>{item.quantity}x</td>
-                                <td className="pr-1">{item.name}</td>
-                                <td className="text-right">{formatCurrency(item.subtotal)}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
+            <div className="fixed inset-0 z-[9999] bg-white text-black">
+                <article
+                    className="bg-white font-mono text-black"
+                    style={{
+                        width: `${PAPER_WIDTH_MM}mm`,
+                        padding: `3mm ${HORIZONTAL_PADDING_MM}mm 6mm`,
+                        fontSize: "11px",
+                        lineHeight: 1.25,
+                    }}
+                >
+                    <header className="border-b border-dashed border-black pb-2 text-center">
+                        <h1 className="text-[18px] font-bold uppercase tracking-wide">
+                            Mi Tienda de Ropa
+                        </h1>
+                        <p className="text-[11px]">Salta, Argentina</p>
+                        <p className="text-[11px]">CUIT: 27-XXXXXXXX-X</p>
+                    </header>
 
-            {/* Totales */}
-            <div className="text-right mb-4">
-                <p className="font-bold text-lg">
-                    TOTAL: {formatCurrency(data.total)}
-                </p>
-                <p className="text-xs uppercase">Pago: {data.paymentMethod}</p>
-            </div>
+                    <section className="border-b border-dashed border-black py-2 text-[11px]">
+                        <div className="flex items-start justify-between gap-3">
+                            <span className="font-semibold">Ticket</span>
+                            <span>{data.ticketNumber.toString().padStart(5, "0")}</span>
+                        </div>
+                        <div className="flex items-start justify-between gap-3">
+                            <span className="font-semibold">Fecha</span>
+                            <span>{format(data.date, "dd/MM/yyyy HH:mm", { locale: es })}</span>
+                        </div>
+                        <div className="flex items-start justify-between gap-3">
+                            <span className="font-semibold">Vendedor</span>
+                            <span className="text-right">{data.sellerName}</span>
+                        </div>
+                    </section>
 
-            {/* Pie del ticket */}
-            <div className="text-center text-xs mt-6 mb-8">
-                <p>¡Gracias por su compra!</p>
-                <p>Los cambios se realizan dentro</p>
-                <p>de los 15 días con este ticket.</p>
+                    <section className="border-b border-dashed border-black py-2">
+                        <table className="w-full table-fixed text-left text-[11px]">
+                            <thead>
+                                <tr className="border-b border-dashed border-black">
+                                    <th className="w-[10mm] pb-1 font-bold">Cant</th>
+                                    <th className="pb-1 font-bold">Detalle</th>
+                                    <th className="w-[22mm] pb-1 text-right font-bold">Importe</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {data.items.map((item, index) => (
+                                    <tr key={index} className="align-top">
+                                        <td className="py-1 pr-1">{item.quantity}x</td>
+                                        <td className="py-1 pr-2">
+                                            <div className="whitespace-normal break-words">{item.name}</div>
+                                            <div className="text-[10px]">
+                                                {formatCurrency(item.price)} c/u
+                                            </div>
+                                        </td>
+                                        <td className="py-1 text-right align-top">
+                                            {formatCurrency(item.subtotal)}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </section>
+
+                    <section className="space-y-1 border-b border-dashed border-black py-2 text-[11px]">
+                        <div className="flex items-center justify-between">
+                            <span className="font-semibold">Items</span>
+                            <span>{data.items.reduce((sum, item) => sum + item.quantity, 0)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-[16px] font-bold">
+                            <span>TOTAL</span>
+                            <span>{formatCurrency(data.total)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <span className="font-semibold">Pago</span>
+                            <span className="uppercase">{data.paymentMethod}</span>
+                        </div>
+                    </section>
+
+                    <footer className="pt-3 text-center text-[11px]">
+                        <p>Gracias por su compra</p>
+                        <p>Cambios dentro de 15 dias con ticket</p>
+                    </footer>
+
+                    <div style={{ height: "10mm" }} />
+                </article>
             </div>
-            
-            {/* Espacio extra abajo para el corte de papel */}
-            <div className="h-8"></div>
         </div>
     );
 }

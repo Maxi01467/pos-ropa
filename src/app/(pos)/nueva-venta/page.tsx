@@ -44,7 +44,6 @@ export interface POSProduct {
     stock: number;
     sizes: string[];
     color: string;
-    category: string;
     productId?: string;
 }
 
@@ -125,8 +124,7 @@ export default function NuevaVentaPage() {
         return allProducts.filter(
             (p) =>
                 p.name.toLowerCase().includes(q) ||
-                p.code.toLowerCase().includes(q) ||
-                p.category.toLowerCase().includes(q)
+                p.code.toLowerCase().includes(q) 
         );
     }, [searchQuery, allProducts]);
 

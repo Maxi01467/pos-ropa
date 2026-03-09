@@ -32,13 +32,6 @@ import {
     DialogDescription,
     DialogFooter,
 } from "@/components/ui/dialog";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
 import { toast } from "sonner";
 
 // Interfaz adaptada a lo que devuelve nuestra BD
@@ -49,15 +42,7 @@ export interface DBProduct {
     price: number;
     wholesalePrice: number;
     costPrice?: number;
-    category: string;
-    providerId: string;
-    providerName: string;
     stock: number;
-}
-
-interface DBSupplier {
-    id: string;
-    name: string;
 }
 
 function formatCurrency(amount: number): string {
@@ -71,13 +56,10 @@ function formatCurrency(amount: number): string {
 export default function InventarioPage() {
     // Estados de base de datos
     const [products, setProducts] = useState<DBProduct[]>([]);
-    const [categories, setCategories] = useState<string[]>([]);
-    const [providers, setProviders] = useState<DBSupplier[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
 
     const [searchQuery, setSearchQuery] = useState("");
-    const [filterCategory, setFilterCategory] = useState("all");
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<DBProduct | null>(null);
 
@@ -86,16 +68,12 @@ export default function InventarioPage() {
     const [formPrice, setFormPrice] = useState("");
     const [formWholesalePrice, setFormWholesalePrice] = useState("");
     const [formCostPrice, setFormCostPrice] = useState("");
-    const [formCategory, setFormCategory] = useState("");
-    const [formProviderId, setFormProviderId] = useState("");
 
     // Cargar datos al iniciar
     const loadData = async () => {
         try {
             const data = await getInventoryData();
             setProducts(data.products);
-            setCategories(data.categories);
-            setProviders(data.suppliers);
         } catch (error) {
             toast.error("Error al cargar el inventario");
             console.error(error);
@@ -113,8 +91,6 @@ export default function InventarioPage() {
         setFormPrice("");
         setFormWholesalePrice("");
         setFormCostPrice("");
-        setFormCategory("");
-        setFormProviderId("");
         setEditingProduct(null);
     };
 
@@ -129,8 +105,6 @@ export default function InventarioPage() {
         setFormPrice(String(product.price));
         setFormWholesalePrice(String(product.wholesalePrice));
         setFormCostPrice(product.costPrice ? String(product.costPrice) : "");
-        setFormCategory(product.category || "");
-        setFormProviderId(product.providerId || "");
         setDialogOpen(true);
     };
 
@@ -168,8 +142,6 @@ export default function InventarioPage() {
                 price,
                 wholesalePrice,
                 costPrice,
-                category: formCategory,
-                providerId: formProviderId,
             };
 
             if (editingProduct) {
@@ -198,9 +170,8 @@ export default function InventarioPage() {
             await deleteProduct(product.id);
             setProducts((prev) => prev.filter((p) => p.id !== product.id));
             toast.success("Producto eliminado", { description: product.name });
-            // Re-evaluar categorías en caso de que se haya borrado la última
-            loadData(); 
-        } catch (error) {
+            loadData();
+        } catch {
             toast.error("Error al eliminar el producto");
         }
     };
@@ -208,15 +179,13 @@ export default function InventarioPage() {
     // Filter
     const filteredProducts = useMemo(() => {
         return products.filter((p) => {
-            const matchesSearch =
+            return (
                 !searchQuery.trim() ||
                 p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                p.code.toLowerCase().includes(searchQuery.toLowerCase());
-            const matchesCategory =
-                filterCategory === "all" || p.category === filterCategory;
-            return matchesSearch && matchesCategory;
+                p.code.toLowerCase().includes(searchQuery.toLowerCase())
+            );
         });
-    }, [products, searchQuery, filterCategory]);
+    }, [products, searchQuery]);
 
     // Stats
     const totalProducts = products.length;
@@ -299,9 +268,9 @@ export default function InventarioPage() {
                             <TrendingUp className="size-5" />
                         </div>
                         <div>
-                            <p className="text-sm text-muted-foreground">Categorías</p>
+                            <p className="text-sm text-muted-foreground">Con stock cargado</p>
                             <p className="text-2xl font-bold">
-                                {categories.length}
+                                {products.filter((product) => product.stock > 0).length}
                             </p>
                         </div>
                     </CardContent>
@@ -319,19 +288,6 @@ export default function InventarioPage() {
                         className="h-11 pl-10"
                     />
                 </div>
-                <Select value={filterCategory} onValueChange={setFilterCategory}>
-                    <SelectTrigger className="h-11 w-full sm:w-48">
-                        <SelectValue placeholder="Categoría" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">Todas las categorías</SelectItem>
-                        {categories.map((cat) => (
-                            <SelectItem key={cat} value={cat}>
-                                {cat}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
             </div>
 
             {/* Product List */}
@@ -339,16 +295,16 @@ export default function InventarioPage() {
                 <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed py-20 text-center">
                     <Package className="mb-4 size-16 text-muted-foreground/30" />
                     <p className="text-xl font-medium text-muted-foreground">
-                        {searchQuery || filterCategory !== "all"
+                        {searchQuery
                             ? "No se encontraron productos"
                             : "Sin productos aún"}
                     </p>
                     <p className="mt-1 text-sm text-muted-foreground/70">
-                        {searchQuery || filterCategory !== "all"
+                        {searchQuery
                             ? "Probá con otros filtros"
                             : "Creá tu primer producto para empezar"}
                     </p>
-                    {!searchQuery && filterCategory === "all" && (
+                    {!searchQuery && (
                         <Button className="mt-6 gap-2" size="lg" onClick={handleOpenNew}>
                             <Plus className="size-5" />
                             Nuevo Producto
@@ -422,16 +378,9 @@ export default function InventarioPage() {
                                 )}
 
                                 <div className="mt-3 flex flex-wrap gap-1.5">
-                                    {product.category && (
-                                        <Badge variant="secondary" className="text-xs">
-                                            {product.category}
-                                        </Badge>
-                                    )}
-                                    {product.providerName !== "Sin proveedor" && (
-                                        <Badge variant="outline" className="text-xs">
-                                            {product.providerName}
-                                        </Badge>
-                                    )}
+                                    <Badge variant="outline" className="text-xs">
+                                        Stock: {product.stock}
+                                    </Badge>
                                 </div>
                             </CardContent>
                         </Card>
@@ -548,47 +497,6 @@ export default function InventarioPage() {
                                 Margen de ganancia: {margin}% sobre costo
                             </p>
                         )}
-
-                        {/* Category + Provider */}
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="space-y-2">
-                                <Label className="text-base">Categoría</Label>
-                                <Input
-                                    value={formCategory}
-                                    onChange={(e) => setFormCategory(e.target.value)}
-                                    className="h-11 text-base"
-                                    placeholder="Ej: Remeras"
-                                    list="category-suggestions"
-                                />
-                                <datalist id="category-suggestions">
-                                    {categories.map((cat) => (
-                                        <option key={cat} value={cat} />
-                                    ))}
-                                </datalist>
-                            </div>
-                            <div className="space-y-2">
-                                <Label className="text-base">Proveedor</Label>
-                                <Select
-                                    value={formProviderId}
-                                    onValueChange={setFormProviderId}
-                                >
-                                    <SelectTrigger className="h-11 text-base">
-                                        <SelectValue placeholder="Seleccionar" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {providers.map((prov) => (
-                                            <SelectItem
-                                                key={prov.id}
-                                                value={prov.id}
-                                                className="text-base"
-                                            >
-                                                {prov.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
                     </div>
 
                     <DialogFooter className="gap-2 sm:gap-0">

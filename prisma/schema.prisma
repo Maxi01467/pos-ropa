@@ -46,8 +46,7 @@ model Supplier {
   phone     String?
   notes     String?
   
-  products  Product[]
-  
+  stockMovements StockMovement[]  
   createdAt DateTime  @default(now())
 }
 
@@ -60,10 +59,6 @@ model Product {
   priceWholesale Decimal  // Efectivo
   
   costPrice      Decimal? // Opcional para ver ganancias
-  category       String?
-  
-  supplierId     String?
-  supplier       Supplier? @relation(fields: [supplierId], references: [id])
   
   variants       ProductVariant[]
   
@@ -92,6 +87,9 @@ model StockMovement {
   variantId      String
   variant        ProductVariant @relation(fields: [variantId], references: [id])
   
+  supplierId     String?
+  supplier       Supplier? @relation(fields: [supplierId], references: [id])
+
   quantity       Int      // Ej: 10 (ingreso) o -2 (corrección)
   type           String   // INGRESO, AJUSTE, FALLA
   notes          String?

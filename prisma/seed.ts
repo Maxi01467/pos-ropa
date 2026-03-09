@@ -35,8 +35,6 @@ async function main() {
       priceNormal: 15000,     // Precio Transferencia
       priceWholesale: 12000,  // Precio Efectivo
       costPrice: 8000,
-      category: 'Remeras',
-      supplierId: supplier.id,
       variants: {
         create: [
           { size: 'S', color: 'Blanco', sku: 'REM-LIS-S-BLA', stock: 10 },
@@ -55,8 +53,6 @@ async function main() {
       priceNormal: 35000,
       priceWholesale: 29000,
       costPrice: 20000,
-      category: 'Pantalones',
-      supplierId: supplier.id,
       variants: {
         create: [
           { size: '38', color: 'Negro', sku: 'CARGO-38-NEG', stock: 8 },

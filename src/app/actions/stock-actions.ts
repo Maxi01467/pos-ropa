@@ -16,7 +16,6 @@ type RegisterStockEntry = {
 type StockPageProduct = {
     id: string;
     name: string;
-    supplierId: string | null;
     code: string;
 };
 
@@ -41,7 +40,7 @@ type StockPageEntry = {
 export async function getStockPageData() {
     // Buscamos productos y proveedores para los selects
     const products = await prisma.product.findMany({
-        select: { id: true, name: true, supplierId: true }
+        select: { id: true, name: true }
     });
 
     const suppliers = await prisma.supplier.findMany({
@@ -54,7 +53,7 @@ export async function getStockPageData() {
         include: {
             variant: {
                 include: { product: true }
-            }
+            },
         },
         orderBy: { createdAt: 'desc' }
     });
@@ -63,7 +62,7 @@ export async function getStockPageData() {
     const formattedEntries: StockPageEntry[] = movements.map((m) => ({
         id: m.id,
         productId: m.variant.productId,
-        providerId: m.variant.product.supplierId || undefined,
+        providerId: m.supplierId || undefined,
         quantity: m.quantity,
         color: m.variant.color,
         size: m.variant.size,

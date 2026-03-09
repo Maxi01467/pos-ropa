@@ -5,36 +5,23 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// 1. Traer todos los datos iniciales
+// 1. Traer todos los productos (sin proveedores ni categorías)
 export async function getInventoryData() {
     const products = await prisma.product.findMany({
-        include: { supplier: true, variants: true },
+        include: { variants: true },
         orderBy: { createdAt: 'desc' }
     });
-    
-    const suppliers = await prisma.supplier.findMany();
-
-    // Extraemos las categorías únicas que ya existen en los productos
-    const categories = Array.from(
-        new Set(products.map(p => p.category).filter(Boolean))
-    ) as string[];
 
     return {
         products: products.map(p => ({
             id: p.id,
-            code: p.id.slice(-6).toUpperCase(), // Generamos un código visual corto
+            code: p.id.slice(-6).toUpperCase(), 
             name: p.name,
             price: Number(p.priceNormal),
             wholesalePrice: Number(p.priceWholesale),
             costPrice: p.costPrice ? Number(p.costPrice) : undefined,
-            category: p.category || "",
-            providerId: p.supplierId || "",
-            providerName: p.supplier?.name || "Sin proveedor",
-            // Calculamos el stock total sumando las variantes
             stock: p.variants.reduce((acc, v) => acc + v.stock, 0), 
-        })),
-        suppliers: suppliers.map(s => ({ id: s.id, name: s.name })),
-        categories
+        }))
     };
 }
 
@@ -46,8 +33,6 @@ export async function createProduct(data: any) {
             priceNormal: data.price,
             priceWholesale: data.wholesalePrice,
             costPrice: data.costPrice,
-            category: data.category,
-            supplierId: data.providerId || null,
         }
     });
 }
@@ -61,8 +46,6 @@ export async function updateProduct(id: string, data: any) {
             priceNormal: data.price,
             priceWholesale: data.wholesalePrice,
             costPrice: data.costPrice,
-            category: data.category,
-            supplierId: data.providerId || null,
         }
     });
 }

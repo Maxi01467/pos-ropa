@@ -39,7 +39,6 @@ export async function getProductsForPOS() {
           stock: 0,
           sizes: [],
           color: "",
-          category: product.category || "General",
           productId: product.id,
         },
       ];
@@ -54,7 +53,6 @@ export async function getProductsForPOS() {
       stock: variant.stock,
       sizes: [variant.size],
       color: variant.color,
-      category: product.category || "General",
       productId: product.id,
     }));
   });

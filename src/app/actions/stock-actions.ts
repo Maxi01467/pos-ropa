@@ -17,6 +17,8 @@ type StockPageProduct = {
     id: string;
     name: string;
     code: string;
+    price: number;
+    wholesalePrice: number;
 };
 
 type StockPageSupplier = {
@@ -40,7 +42,7 @@ type StockPageEntry = {
 export async function getStockPageData() {
     // Buscamos productos y proveedores para los selects
     const products = await prisma.product.findMany({
-        select: { id: true, name: true }
+        select: { id: true, name: true, priceNormal: true, priceWholesale: true }
     });
 
     const suppliers = await prisma.supplier.findMany({
@@ -73,7 +75,13 @@ export async function getStockPageData() {
 
     return {
         products: products.map(
-            (p): StockPageProduct => ({ ...p, code: p.id.slice(-6).toUpperCase() })
+            (p): StockPageProduct => ({
+                id: p.id,
+                name: p.name,
+                code: p.id.slice(-6).toUpperCase(),
+                price: Number(p.priceNormal),
+                wholesalePrice: Number(p.priceWholesale),
+            })
         ),
         suppliers: suppliers as StockPageSupplier[],
         entries: formattedEntries,

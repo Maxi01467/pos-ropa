@@ -1,6 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+// Importamos las nuevas Server Actions
+import { 
+    getSuppliers, 
+    createSupplier, 
+    updateSupplier, 
+    deleteSupplier 
+} from "@/app/actions/supplier-actions";
 import {
     Plus,
     Truck,
@@ -9,6 +16,7 @@ import {
     Pencil,
     Trash2,
     Search,
+    Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,19 +32,47 @@ import {
     DialogDescription,
     DialogFooter,
 } from "@/components/ui/dialog";
-import { mockProviders, type Provider } from "@/lib/mock-data";
 import { toast } from "sonner";
 
+// Interfaz adaptada a la Base de Datos
+export interface DBSupplier {
+    id: string;
+    name: string;
+    phone: string | null;
+    notes: string | null;
+}
+
 export default function ProveedoresPage() {
-    const [providers, setProviders] = useState<Provider[]>(mockProviders);
+    // Estados de base de datos
+    const [providers, setProviders] = useState<DBSupplier[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
+
     const [dialogOpen, setDialogOpen] = useState(false);
-    const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
+    const [editingProvider, setEditingProvider] = useState<DBSupplier | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
 
     // Form state
     const [formName, setFormName] = useState("");
     const [formPhone, setFormPhone] = useState("");
     const [formNotes, setFormNotes] = useState("");
+
+    // Cargar datos al iniciar
+    const loadData = async () => {
+        try {
+            const data = await getSuppliers();
+            setProviders(data);
+        } catch (error) {
+            toast.error("Error al cargar los proveedores");
+            console.error(error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadData();
+    }, []);
 
     const resetForm = () => {
         setFormName("");
@@ -50,58 +86,77 @@ export default function ProveedoresPage() {
         setDialogOpen(true);
     };
 
-    const handleOpenEdit = (provider: Provider) => {
+    const handleOpenEdit = (provider: DBSupplier) => {
         setEditingProvider(provider);
         setFormName(provider.name);
-        setFormPhone(provider.phone);
-        setFormNotes(provider.notes);
+        setFormPhone(provider.phone || "");
+        setFormNotes(provider.notes || "");
         setDialogOpen(true);
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!formName.trim()) {
             toast.error("El nombre es obligatorio");
             return;
         }
 
-        if (editingProvider) {
-            setProviders((prev) =>
-                prev.map((p) =>
-                    p.id === editingProvider.id
-                        ? { ...p, name: formName.trim(), phone: formPhone.trim(), notes: formNotes.trim() }
-                        : p
-                )
-            );
-            toast.success("Proveedor actualizado", {
-                description: formName.trim(),
-            });
-        } else {
-            const newProvider: Provider = {
-                id: `prov-${Date.now()}`,
+        setIsSaving(true);
+        try {
+            const providerData = {
                 name: formName.trim(),
                 phone: formPhone.trim(),
                 notes: formNotes.trim(),
             };
-            setProviders((prev) => [newProvider, ...prev]);
-            toast.success("Proveedor creado", {
-                description: formName.trim(),
-            });
-        }
 
-        setDialogOpen(false);
-        resetForm();
+            if (editingProvider) {
+                await updateSupplier(editingProvider.id, providerData);
+                toast.success("Proveedor actualizado");
+            } else {
+                await createSupplier(providerData);
+                toast.success("Proveedor creado con éxito");
+            }
+
+            await loadData();
+            setDialogOpen(false);
+            resetForm();
+        } catch (error) {
+            toast.error("Hubo un error al guardar el proveedor");
+            console.error(error);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
-    const handleDelete = (provider: Provider) => {
-        setProviders((prev) => prev.filter((p) => p.id !== provider.id));
-        toast.success("Proveedor eliminado", {
-            description: provider.name,
-        });
+    const handleDelete = async (provider: DBSupplier) => {
+        if (!confirm(`¿Estás seguro de eliminar a ${provider.name}?`)) return;
+
+        try {
+            await deleteSupplier(provider.id);
+            setProviders((prev) => prev.filter((p) => p.id !== provider.id));
+            toast.success("Proveedor eliminado", { description: provider.name });
+        } catch (error) {
+            // Si el proveedor tiene productos asociados, Prisma tira error por Foreign Key
+            toast.error("No se puede eliminar", { 
+                description: "Este proveedor tiene productos asociados. Eliminá sus productos primero." 
+            });
+            console.error(error);
+        }
     };
 
     const filteredProviders = providers.filter((p) =>
         p.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
+
+    if (isLoading) {
+        return (
+            <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
+                <div className="flex flex-col items-center gap-4 text-muted-foreground">
+                    <Loader2 className="size-10 animate-spin text-primary" />
+                    <p className="text-lg font-medium">Cargando proveedores...</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="p-4 lg:p-8">
@@ -211,7 +266,7 @@ export default function ProveedoresPage() {
                                 {provider.notes && (
                                     <div className="mt-3 flex items-start gap-2 rounded-lg bg-muted/50 px-3 py-2.5">
                                         <StickyNote className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-                                        <p className="text-sm text-muted-foreground leading-relaxed">
+                                        <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
                                             {provider.notes}
                                         </p>
                                     </div>
@@ -293,15 +348,17 @@ export default function ProveedoresPage() {
                             size="lg"
                             className="flex-1"
                             onClick={() => setDialogOpen(false)}
+                            disabled={isSaving}
                         >
                             Cancelar
                         </Button>
                         <Button
                             size="lg"
-                            className="flex-1 bg-emerald-600 font-bold hover:bg-emerald-700"
+                            className="flex-1 bg-emerald-600 font-bold hover:bg-emerald-700 gap-2"
                             onClick={handleSave}
-                            disabled={!formName.trim()}
+                            disabled={!formName.trim() || isSaving}
                         >
+                            {isSaving && <Loader2 className="size-4 animate-spin" />}
                             {editingProvider ? "Guardar Cambios" : "Crear Proveedor"}
                         </Button>
                     </DialogFooter>

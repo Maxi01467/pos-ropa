@@ -14,6 +14,7 @@ import {
     Menu,
     Truck,
     BarChart3,
+    ReceiptText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,6 +37,7 @@ const navItems = [
     { href: "/stock", label: "Stock", icon: BarChart3 },
     { href: "/proveedores", label: "Proveedores", icon: Truck },
     { href: "/caja", label: "Caja", icon: Wallet },
+    {href: "/boletas", label: "Boletas", icon: ReceiptText,}
 ];
 
 function NavLink({

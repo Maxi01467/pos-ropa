@@ -6,27 +6,44 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 export async function getProductsForPOS() {
-  // Traemos todas las variantes e incluimos los datos de su producto padre
-  const variants = await prisma.productVariant.findMany({
+  const products = await prisma.product.findMany({
     include: {
-      product: true,
+      variants: true,
     },
-    // Opcional: Solo traer las que tengan stock > 0
-    // where: { stock: { gt: 0 } } 
+    orderBy: {
+      createdAt: "desc",
+    },
   });
 
-  // Mapeamos los datos de Prisma al formato exacto que espera tu UI
-  return variants.map((v) => ({
-    id: v.id, // ID de la variante (vital para el lector de código de barras)
-    code: v.sku, 
-    name: `${v.product.name} - Talle ${v.size}`, // Ej: "Pantalón Cargo - Talle 38"
-    // Convertimos de Prisma Decimal a Number normal para el frontend
-    price: Number(v.product.priceNormal),
-    wholesalePrice: Number(v.product.priceWholesale),
-    stock: v.stock,
-    sizes: [v.size], 
-    color: v.color,
-    category: v.product.category || "General",
-    productId: v.productId,
-  }));
+  return products.flatMap((product) => {
+    if (product.variants.length === 0) {
+      return [
+        {
+          id: product.id,
+          code: product.id.slice(-6).toUpperCase(),
+          name: product.name,
+          price: Number(product.priceNormal),
+          wholesalePrice: Number(product.priceWholesale),
+          stock: 0,
+          sizes: [],
+          color: "",
+          category: product.category || "General",
+          productId: product.id,
+        },
+      ];
+    }
+
+    return product.variants.map((variant) => ({
+      id: variant.id,
+      code: variant.sku,
+      name: `${product.name} - Talle ${variant.size}`,
+      price: Number(product.priceNormal),
+      wholesalePrice: Number(product.priceWholesale),
+      stock: variant.stock,
+      sizes: [variant.size],
+      color: variant.color,
+      category: product.category || "General",
+      productId: product.id,
+    }));
+  });
 }

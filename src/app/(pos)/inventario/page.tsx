@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+// Importamos nuestras nuevas Server Actions
+import { 
+    getInventoryData, 
+    createProduct, 
+    updateProduct, 
+    deleteProduct 
+} from "@/app/actions/inventory-actions";
 import {
     Package,
     Plus,
@@ -9,6 +16,7 @@ import {
     Trash2,
     DollarSign,
     TrendingUp,
+    Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,13 +39,26 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import {
-    mockProducts as initialProducts,
-    mockCategories,
-    mockProviders,
-    type Product,
-} from "@/lib/mock-data";
 import { toast } from "sonner";
+
+// Interfaz adaptada a lo que devuelve nuestra BD
+export interface DBProduct {
+    id: string;
+    code: string;
+    name: string;
+    price: number;
+    wholesalePrice: number;
+    costPrice?: number;
+    category: string;
+    providerId: string;
+    providerName: string;
+    stock: number;
+}
+
+interface DBSupplier {
+    id: string;
+    name: string;
+}
 
 function formatCurrency(amount: number): string {
     return new Intl.NumberFormat("es-AR", {
@@ -48,11 +69,17 @@ function formatCurrency(amount: number): string {
 }
 
 export default function InventarioPage() {
-    const [products, setProducts] = useState<Product[]>(initialProducts);
+    // Estados de base de datos
+    const [products, setProducts] = useState<DBProduct[]>([]);
+    const [categories, setCategories] = useState<string[]>([]);
+    const [providers, setProviders] = useState<DBSupplier[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
+
     const [searchQuery, setSearchQuery] = useState("");
     const [filterCategory, setFilterCategory] = useState("all");
     const [dialogOpen, setDialogOpen] = useState(false);
-    const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+    const [editingProduct, setEditingProduct] = useState<DBProduct | null>(null);
 
     // Form state
     const [formName, setFormName] = useState("");
@@ -61,6 +88,25 @@ export default function InventarioPage() {
     const [formCostPrice, setFormCostPrice] = useState("");
     const [formCategory, setFormCategory] = useState("");
     const [formProviderId, setFormProviderId] = useState("");
+
+    // Cargar datos al iniciar
+    const loadData = async () => {
+        try {
+            const data = await getInventoryData();
+            setProducts(data.products);
+            setCategories(data.categories);
+            setProviders(data.suppliers);
+        } catch (error) {
+            toast.error("Error al cargar el inventario");
+            console.error(error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadData();
+    }, []);
 
     const resetForm = () => {
         setFormName("");
@@ -77,7 +123,7 @@ export default function InventarioPage() {
         setDialogOpen(true);
     };
 
-    const handleOpenEdit = (product: Product) => {
+    const handleOpenEdit = (product: DBProduct) => {
         setEditingProduct(product);
         setFormName(product.name);
         setFormPrice(String(product.price));
@@ -88,7 +134,7 @@ export default function InventarioPage() {
         setDialogOpen(true);
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!formName.trim()) {
             toast.error("El nombre es obligatorio");
             return;
@@ -106,7 +152,7 @@ export default function InventarioPage() {
                 : parsedCostPrice;
         const parsedWholesalePrice = parseFloat(formWholesalePrice);
         const wholesalePrice =
-            costPrice !== undefined
+            costPrice !== undefined && isNaN(parsedWholesalePrice)
                 ? Math.round(costPrice * 1.2)
                 : parsedWholesalePrice;
 
@@ -115,53 +161,48 @@ export default function InventarioPage() {
             return;
         }
 
-        if (editingProduct) {
-            setProducts((prev) =>
-                prev.map((p) =>
-                    p.id === editingProduct.id
-                        ? {
-                            ...p,
-                            name: formName.trim(),
-                            price,
-                            wholesalePrice,
-                            costPrice,
-                            category: formCategory,
-                            providerId: formProviderId || undefined,
-                        }
-                        : p
-                )
-            );
-            toast.success("Producto actualizado", {
-                description: formName.trim(),
-            });
-        } else {
-            const newProduct: Product = {
-                id: `prod-${Date.now()}`,
-                code: `PRD-${String(products.length + 1).padStart(3, "0")}`,
+        setIsSaving(true);
+        try {
+            const productData = {
                 name: formName.trim(),
                 price,
                 wholesalePrice,
                 costPrice,
                 category: formCategory,
-                providerId: formProviderId || undefined,
-                stock: 0,
-                color: "",
-                sizes: [],
-                createdAt: new Date().toISOString().split("T")[0],
+                providerId: formProviderId,
             };
-            setProducts((prev) => [newProduct, ...prev]);
-            toast.success("Producto creado", {
-                description: `${formName.trim()} — ${formatCurrency(price)}`,
-            });
-        }
 
-        setDialogOpen(false);
-        resetForm();
+            if (editingProduct) {
+                await updateProduct(editingProduct.id, productData);
+                toast.success("Producto actualizado");
+            } else {
+                await createProduct(productData);
+                toast.success("Producto creado con éxito");
+            }
+            
+            await loadData(); // Recargamos la tabla
+            setDialogOpen(false);
+            resetForm();
+        } catch (error) {
+            toast.error("Hubo un error al guardar");
+            console.error(error);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
-    const handleDelete = (product: Product) => {
-        setProducts((prev) => prev.filter((p) => p.id !== product.id));
-        toast.success("Producto eliminado", { description: product.name });
+    const handleDelete = async (product: DBProduct) => {
+        if (!confirm(`¿Estás seguro de eliminar ${product.name}?`)) return;
+        
+        try {
+            await deleteProduct(product.id);
+            setProducts((prev) => prev.filter((p) => p.id !== product.id));
+            toast.success("Producto eliminado", { description: product.name });
+            // Re-evaluar categorías en caso de que se haya borrado la última
+            loadData(); 
+        } catch (error) {
+            toast.error("Error al eliminar el producto");
+        }
     };
 
     // Filter
@@ -195,8 +236,16 @@ export default function InventarioPage() {
             ? (((salePriceNum - costPriceNum) / costPriceNum) * 100).toFixed(0)
             : null;
 
-    const getProviderName = (id?: string) =>
-        mockProviders.find((p) => p.id === id)?.name ?? "—";
+    if (isLoading) {
+        return (
+            <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
+                <div className="flex flex-col items-center gap-4 text-muted-foreground">
+                    <Loader2 className="size-10 animate-spin text-primary" />
+                    <p className="text-lg font-medium">Cargando inventario...</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="p-4 lg:p-8">
@@ -252,7 +301,7 @@ export default function InventarioPage() {
                         <div>
                             <p className="text-sm text-muted-foreground">Categorías</p>
                             <p className="text-2xl font-bold">
-                                {new Set(products.map((p) => p.category).filter(Boolean)).size}
+                                {categories.length}
                             </p>
                         </div>
                     </CardContent>
@@ -276,7 +325,7 @@ export default function InventarioPage() {
                     </SelectTrigger>
                     <SelectContent>
                         <SelectItem value="all">Todas las categorías</SelectItem>
-                        {mockCategories.map((cat) => (
+                        {categories.map((cat) => (
                             <SelectItem key={cat} value={cat}>
                                 {cat}
                             </SelectItem>
@@ -378,9 +427,9 @@ export default function InventarioPage() {
                                             {product.category}
                                         </Badge>
                                     )}
-                                    {product.providerId && (
+                                    {product.providerName !== "Sin proveedor" && (
                                         <Badge variant="outline" className="text-xs">
-                                            {getProviderName(product.providerId)}
+                                            {product.providerName}
                                         </Badge>
                                     )}
                                 </div>
@@ -504,18 +553,18 @@ export default function InventarioPage() {
                         <div className="grid gap-4 sm:grid-cols-2">
                             <div className="space-y-2">
                                 <Label className="text-base">Categoría</Label>
-                                <Select value={formCategory} onValueChange={setFormCategory}>
-                                    <SelectTrigger className="h-11 text-base">
-                                        <SelectValue placeholder="Seleccionar" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {mockCategories.map((cat) => (
-                                            <SelectItem key={cat} value={cat} className="text-base">
-                                                {cat}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                <Input
+                                    value={formCategory}
+                                    onChange={(e) => setFormCategory(e.target.value)}
+                                    className="h-11 text-base"
+                                    placeholder="Ej: Remeras"
+                                    list="category-suggestions"
+                                />
+                                <datalist id="category-suggestions">
+                                    {categories.map((cat) => (
+                                        <option key={cat} value={cat} />
+                                    ))}
+                                </datalist>
                             </div>
                             <div className="space-y-2">
                                 <Label className="text-base">Proveedor</Label>
@@ -527,7 +576,7 @@ export default function InventarioPage() {
                                         <SelectValue placeholder="Seleccionar" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {mockProviders.map((prov) => (
+                                        {providers.map((prov) => (
                                             <SelectItem
                                                 key={prov.id}
                                                 value={prov.id}
@@ -547,15 +596,17 @@ export default function InventarioPage() {
                             variant="outline"
                             size="lg"
                             onClick={() => setDialogOpen(false)}
+                            disabled={isSaving}
                         >
                             Cancelar
                         </Button>
                         <Button
                             size="lg"
-                            className="bg-emerald-600 font-bold hover:bg-emerald-700"
+                            className="bg-emerald-600 font-bold hover:bg-emerald-700 gap-2"
                             onClick={handleSave}
-                            disabled={!formName.trim() || !formPrice || salePriceNum <= 0}
+                            disabled={!formName.trim() || !formPrice || salePriceNum <= 0 || isSaving}
                         >
+                            {isSaving && <Loader2 className="size-4 animate-spin" />}
                             {editingProduct ? "Guardar Cambios" : "Crear Producto"}
                         </Button>
                     </DialogFooter>

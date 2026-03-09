@@ -26,6 +26,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import {
     Select,
     SelectContent,
     SelectItem,
@@ -82,6 +89,8 @@ function formatCurrency(amount: number): string {
 }
 
 export default function NuevaVentaPage() {
+    const [giftDialogOpen, setGiftDialogOpen] = useState(false);
+    const [printGiftCopy, setPrintGiftCopy] = useState(false);
     const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
     const [cart, setCart] = useState<CartItem[]>([]);
@@ -92,6 +101,14 @@ export default function NuevaVentaPage() {
     const [productsError, setProductsError] = useState<string | null>(null);
     const [sellers, setSellers] = useState<Seller[]>([]);
     const [selectedSellerId, setSelectedSellerId] = useState("");
+    const triggerPrint = (gift: boolean) => {
+        setPrintGiftCopy(gift);
+        setGiftDialogOpen(false);
+
+        setTimeout(() => {
+            window.print();
+        }, 350);
+    };
 
     useEffect(() => {
         let cancelled = false;
@@ -134,6 +151,7 @@ export default function NuevaVentaPage() {
 
     useEffect(() => {
         const handleAfterPrint = () => {
+            setPrintGiftCopy(false);
             setReceiptData(null);
         };
 
@@ -265,10 +283,7 @@ export default function NuevaVentaPage() {
         const updatedProducts = await getProductsForPOS();
         setAllProducts(updatedProducts);
         setReceiptData(nextReceiptData);
-
-        setTimeout(() => {
-            window.print();
-        }, 300);
+        setGiftDialogOpen(true);
 
         return sale;
     };
@@ -606,7 +621,87 @@ export default function NuevaVentaPage() {
                 />
             </div>
 
-            <TicketReceipt data={receiptData} />
+            <GiftOptionDialog
+                open={giftDialogOpen}
+                onClose={() => {
+                    setGiftDialogOpen(false);
+                    setPrintGiftCopy(false);
+                    setReceiptData(null);
+                }}
+                onSelect={triggerPrint}
+            />
+
+            {receiptData && (
+                <div className="hidden print:block">
+                    <style>{`
+                        @media print {
+                            @page {
+                                size: 80mm auto;
+                                margin: 0;
+                            }
+
+                            html,
+                            body {
+                                margin: 0 !important;
+                                padding: 0 !important;
+                                background: #fff !important;
+                            }
+                        }
+                    `}</style>
+
+                    <div className="fixed inset-0 z-[9999] bg-white text-black">
+                        <div className="flex flex-col">
+                            <div
+                                style={{
+                                    breakAfter: printGiftCopy ? "page" : "auto",
+                                    pageBreakAfter: printGiftCopy ? "always" : "auto",
+                                }}
+                            >
+                                <TicketReceipt data={receiptData} />
+                            </div>
+                            {printGiftCopy && <TicketReceipt data={receiptData} isGift />}
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
+    );
+}
+
+function GiftOptionDialog({
+    open,
+    onClose,
+    onSelect,
+}: {
+    open: boolean;
+    onClose: () => void;
+    onSelect: (isGift: boolean) => void;
+}) {
+    return (
+        <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+            <DialogContent className="sm:max-w-sm text-center">
+                <DialogHeader>
+                    <DialogTitle className="text-xl">Venta Exitosa</DialogTitle>
+                    <DialogDescription>
+                        ¿Desea imprimir un ticket de regalo (sin precios)?
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-3 pt-4">
+                    <Button
+                        variant="outline"
+                        className="h-12 text-base"
+                        onClick={() => onSelect(false)}
+                    >
+                        Solo Boleta Normal
+                    </Button>
+                    <Button
+                        className="h-12 bg-emerald-600 text-base hover:bg-emerald-700"
+                        onClick={() => onSelect(true)}
+                    >
+                        Imprimir Ambos (Regalo)
+                    </Button>
+                </div>
+            </DialogContent>
+        </Dialog>
     );
 }

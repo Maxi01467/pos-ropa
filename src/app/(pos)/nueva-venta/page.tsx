@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { getProductsForPOS } from "@/app/actions/pos-actions";
 import {
     Search,
     ScanBarcode,
@@ -8,29 +9,32 @@ import {
     Minus,
     Trash2,
     ShoppingBag,
-    Sparkles,
+    Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogDescription,
-    DialogFooter,
-} from "@/components/ui/dialog";
 import { CheckoutDialog } from "@/components/checkout-dialog";
-import { mockProducts, type Product } from "@/lib/mock-data";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
+export interface POSProduct {
+    id: string;
+    code: string;
+    name: string;
+    price: number;
+    wholesalePrice: number;
+    stock: number;
+    sizes: string[];
+    color: string;
+    category: string;
+    productId?: string;
+}
+
 interface CartItem {
-    product: Product;
+    product: POSProduct;
     quantity: number;
 }
 
@@ -49,12 +53,41 @@ export default function NuevaVentaPage() {
     const [cart, setCart] = useState<CartItem[]>([]);
     const [checkoutOpen, setCheckoutOpen] = useState(false);
     const [priceMode, setPriceMode] = useState<PriceMode>("retail");
+    const [allProducts, setAllProducts] = useState<POSProduct[]>([]);
+    const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+    const [productsError, setProductsError] = useState<string | null>(null);
 
-    // Quick-create state
-    const [quickCreateOpen, setQuickCreateOpen] = useState(false);
-    const [quickCreateName, setQuickCreateName] = useState("");
-    const [quickCreatePrice, setQuickCreatePrice] = useState("");
-    const [allProducts, setAllProducts] = useState<Product[]>(mockProducts);
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadProducts = async () => {
+            setIsLoadingProducts(true);
+            setProductsError(null);
+
+            try {
+                const products = await getProductsForPOS();
+
+                if (cancelled) return;
+                setAllProducts(products);
+            } catch (error) {
+                if (cancelled) return;
+                console.error("Error loading POS products:", error);
+                setProductsError("No se pudieron cargar los productos.");
+                setAllProducts([]);
+                toast.error("No se pudieron cargar los productos");
+            } finally {
+                if (!cancelled) {
+                    setIsLoadingProducts(false);
+                }
+            }
+        };
+
+        loadProducts();
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     // Filter products based on search
     const filteredProducts = useMemo(() => {
@@ -68,13 +101,16 @@ export default function NuevaVentaPage() {
         );
     }, [searchQuery, allProducts]);
 
-    // Whether to show the quick-create button
-    const showQuickCreate =
-        searchQuery.trim().length >= 2 && filteredProducts.length === 0;
-
     // Cart operations
-    const addToCart = (product: Product) => {
+    const addToCart = (product: POSProduct) => {
         setCart((prev) => {
+            if (product.stock <= 0) {
+                toast.error("Producto sin stock", {
+                    description: product.name,
+                });
+                return prev;
+            }
+
             const existing = prev.find((item) => item.product.id === product.id);
             if (existing) {
                 if (existing.quantity >= product.stock) {
@@ -123,46 +159,9 @@ export default function NuevaVentaPage() {
         setCart([]);
     };
 
-    // Quick-Create handlers
-    const handleOpenQuickCreate = () => {
-        setQuickCreateName(searchQuery.trim());
-        setQuickCreatePrice("");
-        setQuickCreateOpen(true);
-    };
-
-    const handleQuickCreate = () => {
-        const price = parseFloat(quickCreatePrice);
-        if (!quickCreateName.trim() || isNaN(price) || price <= 0) {
-            toast.error("Completá el nombre y un precio válido");
-            return;
-        }
-
-        const newProduct: Product = {
-            id: `quick-${Date.now()}`,
-            code: `QCK-${String(allProducts.length + 1).padStart(3, "0")}`,
-            name: quickCreateName.trim(),
-            price,
-            wholesalePrice: price,
-            stock: 999,
-            sizes: [],
-            color: "",
-            category: "Sin categoría",
-            createdAt: new Date().toISOString(),
-        };
-
-        setAllProducts((prev) => [newProduct, ...prev]);
-        addToCart(newProduct);
-        setQuickCreateOpen(false);
-        setSearchQuery("");
-
-        toast.success("Producto creado y agregado al carrito", {
-            description: `${newProduct.name} — ${formatCurrency(price)}`,
-        });
-    };
-
     // Totals
     const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-    const getUnitPrice = (product: Product) =>
+    const getUnitPrice = (product: POSProduct) =>
         priceMode === "wholesale" ? product.wholesalePrice : product.price;
     const totalAmount = cart.reduce(
         (sum, item) => sum + getUnitPrice(item.product) * item.quantity,
@@ -198,23 +197,28 @@ export default function NuevaVentaPage() {
                             <span className="hidden sm:inline">Escanear</span>
                         </Button>
                     </div>
-
-                    {/* Quick-Create Button */}
-                    {showQuickCreate && (
-                        <Button
-                            variant="outline"
-                            className="mt-3 h-12 w-full gap-2 border-dashed border-2 border-primary/40 text-primary font-semibold text-base hover:bg-primary/5 hover:border-primary"
-                            onClick={handleOpenQuickCreate}
-                        >
-                            <Sparkles className="size-5" />
-                            + Crear &quot;{searchQuery.trim()}&quot; rápido
-                        </Button>
-                    )}
                 </div>
 
                 {/* Product Grid */}
                 <ScrollArea className="flex-1 p-4 lg:p-6">
-                    {filteredProducts.length === 0 && !showQuickCreate ? (
+                    {isLoadingProducts ? (
+                        <div className="flex flex-col items-center justify-center py-20 text-center">
+                            <Loader2 className="mb-3 size-10 animate-spin text-muted-foreground" />
+                            <p className="text-lg font-medium text-muted-foreground">
+                                Cargando productos
+                            </p>
+                        </div>
+                    ) : productsError ? (
+                        <div className="flex flex-col items-center justify-center py-20 text-center">
+                            <Search className="mb-3 size-12 text-muted-foreground/40" />
+                            <p className="text-lg font-medium text-muted-foreground">
+                                {productsError}
+                            </p>
+                            <p className="text-sm text-muted-foreground/70">
+                                Verificá la conexión con la base de datos
+                            </p>
+                        </div>
+                    ) : filteredProducts.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-20 text-center">
                             <Search className="mb-3 size-12 text-muted-foreground/40" />
                             <p className="text-lg font-medium text-muted-foreground">
@@ -222,16 +226,6 @@ export default function NuevaVentaPage() {
                             </p>
                             <p className="text-sm text-muted-foreground/70">
                                 Probá con otro nombre o código
-                            </p>
-                        </div>
-                    ) : filteredProducts.length === 0 && showQuickCreate ? (
-                        <div className="flex flex-col items-center justify-center py-20 text-center">
-                            <Sparkles className="mb-3 size-12 text-muted-foreground/30" />
-                            <p className="text-lg font-medium text-muted-foreground">
-                                &quot;{searchQuery.trim()}&quot; no existe
-                            </p>
-                            <p className="text-sm text-muted-foreground/70">
-                                Usá el botón de arriba para crearlo rápido
                             </p>
                         </div>
                     ) : (
@@ -476,69 +470,6 @@ export default function NuevaVentaPage() {
                     </Button>
                 </div>
             </div>
-
-            {/* Quick Create Dialog */}
-            <Dialog open={quickCreateOpen} onOpenChange={setQuickCreateOpen}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="text-xl">Crear Producto Rápido</DialogTitle>
-                        <DialogDescription>
-                            Creá el producto con lo mínimo para agregarlo al carrito ahora. Después podés completar los detalles desde Inventario.
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="space-y-4 py-2">
-                        <div className="space-y-2">
-                            <Label htmlFor="quick-name" className="text-base">
-                                Nombre del producto
-                            </Label>
-                            <Input
-                                id="quick-name"
-                                value={quickCreateName}
-                                onChange={(e) => setQuickCreateName(e.target.value)}
-                                className="h-12 text-lg"
-                                placeholder="Ej: Pantalón Cargo"
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="quick-price" className="text-base">
-                                Precio de Venta
-                            </Label>
-                            <div className="relative">
-                                <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-lg font-medium text-muted-foreground">
-                                    $
-                                </span>
-                                <Input
-                                    id="quick-price"
-                                    type="number"
-                                    value={quickCreatePrice}
-                                    onChange={(e) => setQuickCreatePrice(e.target.value)}
-                                    className="h-12 pl-8 text-lg"
-                                    placeholder="0"
-                                    min="0"
-                                    autoFocus
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    <DialogFooter>
-                        <Button
-                            size="lg"
-                            className="w-full h-13 bg-emerald-600 text-base font-bold hover:bg-emerald-700"
-                            onClick={handleQuickCreate}
-                            disabled={
-                                !quickCreateName.trim() ||
-                                !quickCreatePrice ||
-                                parseFloat(quickCreatePrice) <= 0
-                            }
-                        >
-                            <Plus className="size-5" />
-                            Guardar y Agregar al Carrito
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
 
             {/* Checkout Dialog */}
             <CheckoutDialog

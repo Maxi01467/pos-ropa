@@ -3,9 +3,11 @@
 
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+import Barcode from "react-barcode";
+import { barcodeFromTicketNumber } from "@/lib/barcodes";
 
-const PAPER_WIDTH_MM = 80;
-const HORIZONTAL_PADDING_MM = 4;
+const PAPER_WIDTH_MM = 72;
+const HORIZONTAL_PADDING_MM = 3;
 
 interface TicketReceiptProps {
     data: {
@@ -35,19 +37,23 @@ function formatCurrency(amount: number): string {
 export function TicketReceipt({ data, isGift = false }: TicketReceiptProps) {
     if (!data) return null;
 
+    const ticketBarcode = barcodeFromTicketNumber(data.ticketNumber);
+
     return (
         <article
             className="bg-white font-mono text-black"
             style={{
                 width: `${PAPER_WIDTH_MM}mm`,
                 padding: `3mm ${HORIZONTAL_PADDING_MM}mm 6mm`,
+                boxSizing: "border-box",
+                margin: "0 auto",
                 fontSize: "11px",
                 lineHeight: 1.25,
             }}
         >
             <header className="border-b border-dashed border-black pb-2 text-center">
                 <h1 className="text-[18px] font-bold uppercase tracking-wide">
-                    Mi Tienda de Ropa
+                    GANGAFITS
                 </h1>
                 {isGift && (
                     <p className="mt-1 bg-black py-0.5 text-[12px] font-bold text-white">
@@ -78,10 +84,10 @@ export function TicketReceipt({ data, isGift = false }: TicketReceiptProps) {
                 <table className="w-full table-fixed text-[11px]">
                     <thead>
                         <tr className="border-b border-dashed border-black">
-                            <th className="w-[10mm] pb-1 text-left font-bold">Cant</th>
+                            <th className="w-[9mm] pb-1 text-left font-bold">Cant</th>
                             <th className="pb-1 text-left font-bold">Detalle</th>
                             {!isGift && (
-                                <th className="w-[22mm] pb-1 text-right font-bold">Importe</th>
+                                <th className="w-[20mm] pb-1 text-right font-bold">Importe</th>
                             )}
                         </tr>
                     </thead>
@@ -124,8 +130,25 @@ export function TicketReceipt({ data, isGift = false }: TicketReceiptProps) {
             )}
 
             <footer className="pt-3 text-center text-[11px]">
+                <div className="mb-3 flex flex-col items-center">
+                    <Barcode
+                        value={ticketBarcode}
+                        format="EAN13"
+                        renderer="svg"
+                        width={1.6}
+                        height={34}
+                        margin={0}
+                        textMargin={1}
+                        fontSize={10}
+                        background="transparent"
+                        lineColor="#000000"
+                    />
+                    <p className="mt-1 text-[10px] font-semibold">
+                        {ticketBarcode}
+                    </p>
+                </div>
                 <p>Gracias por su compra</p>
-                <p>Cambios: 30 dias con este ticket</p>
+                <p>Cambios: 15 dias con este ticket</p>
             </footer>
             <div style={{ height: "10mm" }} />
         </article>

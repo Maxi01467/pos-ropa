@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { getProductsForPOS } from "@/app/actions/pos-actions";
+// Importamos getSellers
+import { getProductsForPOS, getSellers } from "@/app/actions/pos-actions";
 import { createSale } from "@/app/actions/sales-actions";
 import {
     Search,
@@ -11,12 +12,21 @@ import {
     Trash2,
     ShoppingBag,
     Loader2,
+    UserCircle, // Nuevo icono
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label"; // Importamos Label
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"; // Importamos Select de shadcn
 import { CheckoutDialog, type PaymentMethod } from "@/components/checkout-dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -58,41 +68,38 @@ export default function NuevaVentaPage() {
     const [isLoadingProducts, setIsLoadingProducts] = useState(true);
     const [productsError, setProductsError] = useState<string | null>(null);
 
-    const loadProducts = async () => {
-        setIsLoadingProducts(true);
-        setProductsError(null);
-
-        try {
-            const products = await getProductsForPOS();
-            setAllProducts(products);
-        } catch (error) {
-            console.error("Error loading POS products:", error);
-            setProductsError("No se pudieron cargar los productos.");
-            setAllProducts([]);
-            toast.error("No se pudieron cargar los productos");
-        } finally {
-            setIsLoadingProducts(false);
-        }
-    };
+    // Estados para Vendedores
+    const [sellers, setSellers] = useState<{ id: string; name: string }[]>([]);
+    const [selectedSellerId, setSelectedSellerId] = useState<string>("");
 
     useEffect(() => {
         let cancelled = false;
 
-        const loadProductsOnMount = async () => {
+        const loadInitialData = async () => {
             setIsLoadingProducts(true);
             setProductsError(null);
 
             try {
-                const products = await getProductsForPOS();
+                // Cargamos productos y vendedores en paralelo
+                const [products, sellersData] = await Promise.all([
+                    getProductsForPOS(),
+                    getSellers()
+                ]);
 
                 if (cancelled) return;
+
                 setAllProducts(products);
+                setSellers(sellersData);
+                
+                // Si hay vendedores, seleccionamos el primero por defecto
+                if (sellersData.length > 0) {
+                    setSelectedSellerId(sellersData[0].id);
+                }
             } catch (error) {
                 if (cancelled) return;
-                console.error("Error loading POS products:", error);
-                setProductsError("No se pudieron cargar los productos.");
-                setAllProducts([]);
-                toast.error("No se pudieron cargar los productos");
+                console.error("Error loading initial data:", error);
+                setProductsError("No se pudieron cargar los datos.");
+                toast.error("Error al conectar con la base de datos");
             } finally {
                 if (!cancelled) {
                     setIsLoadingProducts(false);
@@ -100,7 +107,7 @@ export default function NuevaVentaPage() {
             }
         };
 
-        loadProductsOnMount();
+        loadInitialData();
 
         return () => {
             cancelled = true;
@@ -192,7 +199,6 @@ export default function NuevaVentaPage() {
     > = {
         efectivo: "EFECTIVO",
         transferencia: "TRANSFERENCIA",
-        tarjeta: "TARJETA",
         mixto: "MIXTO",
     };
 
@@ -200,6 +206,7 @@ export default function NuevaVentaPage() {
         const sale = await createSale({
             total: totalAmount,
             paymentMethod: paymentMethodMap[paymentMethod],
+            userId: selectedSellerId, // Pasamos el ID del vendedor seleccionado
             items: cart.map((item) => ({
                 variantId: item.product.id,
                 quantity: item.quantity,
@@ -209,7 +216,10 @@ export default function NuevaVentaPage() {
         });
 
         clearCart();
-        await loadProducts();
+        // Recargamos productos para actualizar stocks visualmente
+        const updatedProducts = await getProductsForPOS();
+        setAllProducts(updatedProducts);
+        
         return sale;
     };
 
@@ -461,6 +471,27 @@ export default function NuevaVentaPage() {
 
                 {/* Cart Footer: Total + Cobrar */}
                 <div className="border-t bg-card px-4 py-4 lg:px-6">
+                    
+                    {/* SELECTOR DE VENDEDOR EN EL FOOTER */}
+                    <div className="mb-4 space-y-2">
+                        <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                            <UserCircle className="size-3.5" />
+                            Vendedor Atendiendo
+                        </Label>
+                        <Select value={selectedSellerId} onValueChange={setSelectedSellerId}>
+                            <SelectTrigger className="h-10 bg-background">
+                                <SelectValue placeholder="Seleccionar vendedor" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {sellers.map((seller) => (
+                                    <SelectItem key={seller.id} value={seller.id}>
+                                        {seller.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
                     <div className="mb-4 flex items-center justify-between rounded-lg border bg-muted/40 p-2">
                         <div>
                             <p className="text-sm font-semibold">Modo de precio</p>
@@ -508,7 +539,7 @@ export default function NuevaVentaPage() {
                     <Button
                         size="lg"
                         className="h-14 w-full bg-emerald-600 text-lg font-bold shadow-lg hover:bg-emerald-700 hover:shadow-xl transition-all duration-200"
-                        disabled={cart.length === 0}
+                        disabled={cart.length === 0 || !selectedSellerId}
                         onClick={() => setCheckoutOpen(true)}
                     >
                         💵 COBRAR

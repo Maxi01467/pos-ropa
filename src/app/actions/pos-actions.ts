@@ -5,6 +5,18 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+export async function getSellers() {
+    const users = await prisma.user.findMany({
+        select: {
+            id: true,
+            name: true,
+            role: true,
+        },
+        orderBy: { name: 'asc' }
+    });
+    return users;
+}
+
 export async function getProductsForPOS() {
   const products = await prisma.product.findMany({
     include: {

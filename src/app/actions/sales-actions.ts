@@ -15,6 +15,7 @@ type CreateSaleItemInput = {
 type CreateSaleInput = {
     total: number;
     paymentMethod: "EFECTIVO" | "TRANSFERENCIA" | "TARJETA" | "MIXTO";
+    userId?: string;
     items: CreateSaleItemInput[];
 };
 
@@ -23,10 +24,15 @@ export async function createSale(input: CreateSaleInput) {
         throw new Error("La venta no tiene items");
     }
 
-    const user = await prisma.user.findFirst({
-        orderBy: { createdAt: "asc" },
-        select: { id: true },
-    });
+    const user = input.userId
+        ? await prisma.user.findUnique({
+              where: { id: input.userId },
+              select: { id: true },
+          })
+        : await prisma.user.findFirst({
+              orderBy: { createdAt: "asc" },
+              select: { id: true },
+          });
 
     if (!user) {
         throw new Error("No hay usuarios configurados para registrar ventas");

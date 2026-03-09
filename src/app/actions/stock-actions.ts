@@ -11,6 +11,7 @@ type RegisterStockEntry = {
     color: string;
     size: string;
     sku: string;
+    supplierId?: string;
 };
 
 type StockPageProduct = {
@@ -38,7 +39,6 @@ type StockPageEntry = {
 
 // 1. Traer los datos iniciales para la pantalla
 export async function getStockPageData() {
-    // Buscamos productos y proveedores para los selects
     const products = await prisma.product.findMany({
         select: { id: true, name: true }
     });
@@ -47,9 +47,7 @@ export async function getStockPageData() {
         select: { id: true, name: true }
     });
 
-    // Buscamos el historial de ingresos y traemos los datos de la variante asociada
     const movements = await prisma.stockMovement.findMany({
-        where: { type: "INGRESO" },
         include: {
             variant: {
                 include: { product: true }
@@ -58,7 +56,6 @@ export async function getStockPageData() {
         orderBy: { createdAt: 'desc' }
     });
 
-    // Mapeamos los movimientos de la BD al formato (StockEntry) que espera tu frontend
     const formattedEntries: StockPageEntry[] = movements.map((m) => ({
         id: m.id,
         productId: m.variant.productId,
@@ -82,23 +79,18 @@ export async function getStockPageData() {
 
 // 2. Registrar nuevos ingresos (Usa Transacciones para máxima seguridad)
 export async function registerStockEntries(entries: RegisterStockEntry[]) {
-    // entries recibe un array con: { productId, quantity, color, size, sku }
-    
     return await prisma.$transaction(async (tx) => {
         for (const entry of entries) {
-            // A. Buscamos si ya existe esta variante exacta (por el SKU)
             let variant = await tx.productVariant.findUnique({
                 where: { sku: entry.sku }
             });
 
             if (variant) {
-                // Si existe, le sumamos el stock nuevo
                 variant = await tx.productVariant.update({
                     where: { id: variant.id },
                     data: { stock: { increment: entry.quantity } }
                 });
             } else {
-                // Si es un talle/color nuevo para este producto, lo creamos
                 variant = await tx.productVariant.create({
                     data: {
                         productId: entry.productId,
@@ -110,14 +102,46 @@ export async function registerStockEntries(entries: RegisterStockEntry[]) {
                 });
             }
 
-            // B. Registramos el movimiento en el historial
             await tx.stockMovement.create({
                 data: {
                     variantId: variant.id,
+                    supplierId: entry.supplierId || null,
                     quantity: entry.quantity,
                     type: "INGRESO",
                     notes: "Ingreso desde panel de stock"
                 }
+            });
+        }
+    });
+}
+
+export async function reduceStockEntries(entries: RegisterStockEntry[]) {
+    return await prisma.$transaction(async (tx) => {
+        for (const entry of entries) {
+            const variant = await tx.productVariant.findUnique({
+                where: { sku: entry.sku },
+            });
+
+            if (!variant || variant.productId !== entry.productId) {
+                throw new Error("La variante a descontar no existe");
+            }
+
+            if (variant.stock < entry.quantity) {
+                throw new Error(`Stock insuficiente para ${entry.sku}`);
+            }
+
+            await tx.productVariant.update({
+                where: { id: variant.id },
+                data: { stock: { decrement: entry.quantity } },
+            });
+
+            await tx.stockMovement.create({
+                data: {
+                    variantId: variant.id,
+                    quantity: -entry.quantity,
+                    type: "AJUSTE",
+                    notes: "Salida desde panel de stock",
+                },
             });
         }
     });

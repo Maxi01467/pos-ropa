@@ -1,16 +1,21 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
-// Importamos las nuevas Server Actions
-import { getStockPageData, registerStockEntries } from "@/app/actions/stock-actions";
+import {
+    getStockPageData,
+    registerStockEntries,
+    reduceStockEntries,
+} from "@/app/actions/stock-actions";
 import {
     Barcode,
     CalendarDays,
     Eye,
     Filter,
+    Minus,
     Package,
     PackagePlus,
     Printer,
+    Search,
     X,
     Loader2
 } from "lucide-react";
@@ -19,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
     Dialog,
     DialogContent,
@@ -62,7 +68,6 @@ export type StockEntry = {
 type StockProduct = {
     id: string;
     name: string;
-    supplierId?: string | null;
     code: string;
 };
 
@@ -77,6 +82,7 @@ type RegisterStockEntry = {
     color: string;
     size: string;
     sku: string;
+    supplierId?: string;
 };
 
 type StockMovement = {
@@ -163,9 +169,12 @@ export default function StockPage() {
     const [filterDateTo, setFilterDateTo] = useState("");
     const [showFilters, setShowFilters] = useState(false);
     const [stockDialogOpen, setStockDialogOpen] = useState(false);
+    const [stockAction, setStockAction] = useState<"add" | "remove">("add");
     const [advancedMode, setAdvancedMode] = useState(false);
     const [selectedProductId, setSelectedProductId] = useState("");
     const [selectedProviderId, setSelectedProviderId] = useState("");
+    const [productSearchQuery, setProductSearchQuery] = useState("");
+    const [providerSearchQuery, setProviderSearchQuery] = useState("");
     const [simpleQuantity, setSimpleQuantity] = useState("");
     const [advancedColor, setAdvancedColor] = useState("");
     const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
@@ -211,7 +220,10 @@ export default function StockPage() {
     );
 
     const printableVariants = useMemo(
-        () => selectedMovements.flatMap((movement) => movement.variants),
+        () =>
+            selectedMovements
+                .flatMap((movement) => movement.variants)
+                .filter((variant) => variant.quantity > 0),
         [selectedMovements]
     );
 
@@ -226,6 +238,22 @@ export default function StockPage() {
     ).length;
 
     const hasActiveFilters = filterProduct !== "all" || filterProvider !== "all" || filterDateFrom !== "" || filterDateTo !== "";
+    const searchedProducts = useMemo(() => {
+        const query = productSearchQuery.trim().toLowerCase();
+        if (!query) return products;
+        return products.filter(
+            (product) =>
+                product.name.toLowerCase().includes(query) ||
+                product.code.toLowerCase().includes(query)
+        );
+    }, [products, productSearchQuery]);
+    const searchedProviders = useMemo(() => {
+        const query = providerSearchQuery.trim().toLowerCase();
+        if (!query) return providers;
+        return providers.filter((provider) =>
+            provider.name.toLowerCase().includes(query)
+        );
+    }, [providers, providerSearchQuery]);
 
     const getProductName = (id: string) => products.find((product) => product.id === id)?.name ?? "Desconocido";
     const getProviderName = (id?: string) => providers.find((provider) => provider.id === id)?.name ?? "—";
@@ -240,22 +268,42 @@ export default function StockPage() {
     const resetStockForm = () => {
         setSelectedProductId("");
         setSelectedProviderId("");
+        setProductSearchQuery("");
+        setProviderSearchQuery("");
         setSimpleQuantity("");
         setAdvancedColor("");
         setSelectedSizes([]);
         setSizeQuantities({});
         setAdvancedMode(false);
+        setStockAction("add");
     };
 
     const handleOpenNewStock = () => {
         resetStockForm();
+        setStockAction("add");
+        setStockDialogOpen(true);
+    };
+
+    const handleOpenReduceStock = () => {
+        resetStockForm();
+        setStockAction("remove");
         setStockDialogOpen(true);
     };
 
     const handleProductChange = (productId: string) => {
         setSelectedProductId(productId);
         const product = products.find((item) => item.id === productId);
-        setSelectedProviderId(product?.supplierId ?? "");
+        if (product) {
+            setProductSearchQuery(product.name);
+        }
+    };
+
+    const handleProviderChange = (providerId: string) => {
+        setSelectedProviderId(providerId);
+        const provider = providers.find((item) => item.id === providerId);
+        if (provider) {
+            setProviderSearchQuery(provider.name);
+        }
     };
 
     const toggleSize = (size: string) => {
@@ -273,7 +321,6 @@ export default function StockPage() {
         }
     };
 
-    // --- AQUÍ ESTÁ LA MAGIA PARA GUARDAR EN BASE DE DATOS ---
     const handleSaveStock = async () => {
         if (!selectedProductId) {
             toast.error("Seleccioná un producto");
@@ -307,6 +354,7 @@ export default function StockPage() {
                     color: advancedColor.trim(),
                     size,
                     sku: generateSKU(product.code, advancedColor.trim(), size),
+                    supplierId: selectedProviderId || undefined,
                 });
             }
         } else {
@@ -321,21 +369,35 @@ export default function StockPage() {
                 color: "Único",
                 size: "Único",
                 sku: `${product.code}-UNI`,
+                supplierId: selectedProviderId || undefined,
             });
         }
 
         setIsSaving(true);
         try {
-            await registerStockEntries(newEntries);
-            await loadData(); // Recargamos la tabla desde Supabase
+            if (stockAction === "add") {
+                await registerStockEntries(newEntries);
+            } else {
+                await reduceStockEntries(newEntries);
+            }
+            await loadData();
             
             setStockDialogOpen(false);
             resetStockForm();
-            toast.success("Ingreso de stock registrado", {
+            toast.success(
+                stockAction === "add" ? "Ingreso de stock registrado" : "Stock reducido",
+                {
                 description: `${product.name} · ${newEntries.reduce((sum, entry) => sum + entry.quantity, 0)} unidad(es)`,
-            });
+                }
+            );
         } catch (error) {
-            toast.error("Error al guardar el ingreso en la base de datos");
+            const message =
+                error instanceof Error
+                    ? error.message
+                    : stockAction === "add"
+                      ? "Error al guardar el ingreso en la base de datos"
+                      : "Error al reducir stock";
+            toast.error(message);
             console.error(error);
         } finally {
             setIsSaving(false);
@@ -389,7 +451,7 @@ export default function StockPage() {
                         Stock
                     </h1>
                     <p className="mt-1 text-muted-foreground">
-                        Ingresá y consultá las entradas de mercadería
+                        Gestioná ingresos y bajas de stock
                     </p>
                 </div>
                 <div className="flex gap-2">
@@ -403,6 +465,15 @@ export default function StockPage() {
                         <Barcode className="size-5" />
                         <span className="hidden sm:inline">Imprimir Etiquetas</span>
                         <span className="sm:hidden">Etiquetas</span>
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="lg"
+                        className="h-12 gap-2 border-rose-200 text-base text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                        onClick={handleOpenReduceStock}
+                    >
+                        <Minus className="size-5" />
+                        Reducir Stock
                     </Button>
                     <Button
                         size="lg"
@@ -423,7 +494,7 @@ export default function StockPage() {
                         </div>
                         <div>
                             <p className="text-sm text-muted-foreground">
-                                Total unidades ingresadas
+                                Variacion total stock
                             </p>
                             <p className="text-2xl font-bold">{totalUnits}</p>
                         </div>
@@ -436,7 +507,7 @@ export default function StockPage() {
                         </div>
                         <div>
                             <p className="text-sm text-muted-foreground">
-                                Ingresos registrados
+                                Movimientos registrados
                             </p>
                             <p className="text-2xl font-bold">{movements.length}</p>
                         </div>
@@ -448,7 +519,7 @@ export default function StockPage() {
                             <CalendarDays className="size-5" />
                         </div>
                         <div>
-                            <p className="text-sm text-muted-foreground">Ingresos hoy</p>
+                            <p className="text-sm text-muted-foreground">Movimientos hoy</p>
                             <p className="text-2xl font-bold">{todayEntries}</p>
                         </div>
                     </CardContent>
@@ -554,7 +625,7 @@ export default function StockPage() {
                             <TableHead className="font-semibold">Fecha</TableHead>
                             <TableHead className="font-semibold">Producto Principal</TableHead>
                             <TableHead className="font-semibold">
-                                Cantidad Total Ingresada
+                                Variacion
                             </TableHead>
                             <TableHead className="font-semibold">Proveedor</TableHead>
                             <TableHead className="text-right font-semibold">
@@ -569,8 +640,8 @@ export default function StockPage() {
                                     <Package className="mx-auto mb-3 size-12 text-muted-foreground/30" />
                                     <p className="text-lg font-medium text-muted-foreground">
                                         {hasActiveFilters
-                                            ? "No hay ingresos con estos filtros"
-                                            : "Sin ingresos de stock aún"}
+                                            ? "No hay movimientos con estos filtros"
+                                            : "Sin movimientos de stock aun"}
                                     </p>
                                     <p className="mt-1 text-sm text-muted-foreground/70">
                                         {hasActiveFilters
@@ -610,8 +681,15 @@ export default function StockPage() {
                                         </div>
                                     </TableCell>
                                     <TableCell>
-                                        <Badge className="bg-emerald-100 text-sm font-bold text-emerald-700">
-                                            +{movement.totalQuantity}
+                                        <Badge
+                                            className={
+                                                movement.totalQuantity >= 0
+                                                    ? "bg-emerald-100 text-sm font-bold text-emerald-700"
+                                                    : "bg-rose-100 text-sm font-bold text-rose-700"
+                                            }
+                                        >
+                                            {movement.totalQuantity > 0 ? "+" : ""}
+                                            {movement.totalQuantity}
                                         </Badge>
                                     </TableCell>
                                     <TableCell className="text-sm text-muted-foreground">
@@ -649,7 +727,7 @@ export default function StockPage() {
                             <DialogHeader>
                                 <DialogTitle>Detalle de Ingreso e Impresión</DialogTitle>
                                 <DialogDescription>
-                                    {getProductName(selectedMovement.productId)} - Ingreso{" "}
+                                    {getProductName(selectedMovement.productId)} - Movimiento{" "}
                                     {formatShortDate(selectedMovement.date)}
                                 </DialogDescription>
                             </DialogHeader>
@@ -659,7 +737,7 @@ export default function StockPage() {
                                     <TableHeader>
                                         <TableRow className="hover:bg-transparent">
                                             <TableHead>Variante</TableHead>
-                                            <TableHead>Cantidad ingresada</TableHead>
+                                            <TableHead>Cantidad</TableHead>
                                             <TableHead>SKU</TableHead>
                                             <TableHead className="text-right">
                                                 Acción
@@ -681,6 +759,7 @@ export default function StockPage() {
                                                 </TableCell>
                                                 <TableCell>
                                                     <Badge variant="outline">
+                                                        {variant.quantity > 0 ? "+" : ""}
                                                         {variant.quantity} unidad(es)
                                                     </Badge>
                                                 </TableCell>
@@ -690,22 +769,28 @@ export default function StockPage() {
                                                     </code>
                                                 </TableCell>
                                                 <TableCell className="text-right">
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        className="gap-2"
-                                                        onClick={() =>
-                                                            toast.success(
-                                                                "Etiqueta enviada a impresión",
-                                                                {
-                                                                    description: `${getVariantLabel(variant)} · ${variant.quantity} ticket(s)`,
-                                                                }
-                                                            )
-                                                        }
-                                                    >
-                                                        <Printer className="size-4" />
-                                                        Impresión rápida
-                                                    </Button>
+                                                    {variant.quantity > 0 ? (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="gap-2"
+                                                            onClick={() =>
+                                                                toast.success(
+                                                                    "Etiqueta enviada a impresión",
+                                                                    {
+                                                                        description: `${getVariantLabel(variant)} · ${variant.quantity} ticket(s)`,
+                                                                    }
+                                                                )
+                                                            }
+                                                        >
+                                                            <Printer className="size-4" />
+                                                            Impresión rápida
+                                                        </Button>
+                                                    ) : (
+                                                        <span className="text-xs text-muted-foreground">
+                                                            No aplica
+                                                        </span>
+                                                    )}
                                                 </TableCell>
                                             </TableRow>
                                         ))}
@@ -720,51 +805,113 @@ export default function StockPage() {
             <Dialog open={stockDialogOpen} onOpenChange={setStockDialogOpen}>
                 <DialogContent className="sm:max-w-2xl">
                     <DialogHeader>
-                        <DialogTitle className="text-xl">Ingresar Stock</DialogTitle>
+                        <DialogTitle className="text-xl">
+                            {stockAction === "add" ? "Ingresar Stock" : "Reducir Stock"}
+                        </DialogTitle>
                         <DialogDescription>
-                            Registrá un ingreso simple o cargá varias variantes del mismo
-                            producto en un solo movimiento.
+                            {stockAction === "add"
+                                ? "Registrá un ingreso simple o cargá varias variantes del mismo producto en un solo movimiento."
+                                : "Descontá stock simple o por variantes del producto seleccionado."}
                         </DialogDescription>
                     </DialogHeader>
 
                     <div className="space-y-4 py-2">
-                        <div className="grid gap-4 sm:grid-cols-2">
+                        <div
+                            className={
+                                stockAction === "add"
+                                    ? "grid gap-4 sm:grid-cols-2"
+                                    : "grid gap-4"
+                            }
+                        >
                             <div className="space-y-2">
                                 <Label>Producto</Label>
-                                <Select
-                                    value={selectedProductId}
-                                    onValueChange={handleProductChange}
-                                >
-                                    <SelectTrigger className="h-11">
-                                        <SelectValue placeholder="Seleccionar producto" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {products.map((product) => (
-                                            <SelectItem key={product.id} value={product.id}>
-                                                {product.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                <div className="rounded-lg border bg-background">
+                                    <div className="relative border-b">
+                                        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                                        <Input
+                                            value={productSearchQuery}
+                                            onChange={(event) => setProductSearchQuery(event.target.value)}
+                                            placeholder="Buscar producto por nombre o codigo"
+                                            className="h-11 border-0 pl-9 shadow-none focus-visible:ring-0"
+                                        />
+                                    </div>
+                                    <ScrollArea className="h-44">
+                                        <div className="p-2">
+                                            {searchedProducts.length === 0 ? (
+                                                <p className="px-2 py-3 text-sm text-muted-foreground">
+                                                    No se encontraron productos
+                                                </p>
+                                            ) : (
+                                                searchedProducts.map((product) => (
+                                                    <button
+                                                        key={product.id}
+                                                        type="button"
+                                                        onClick={() => handleProductChange(product.id)}
+                                                        className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                                                            selectedProductId === product.id
+                                                                ? "bg-emerald-50 text-emerald-700"
+                                                                : "hover:bg-muted"
+                                                        }`}
+                                                    >
+                                                        <span className="font-medium">
+                                                            {product.name}
+                                                        </span>
+                                                        <span className="text-xs text-muted-foreground">
+                                                            {product.code}
+                                                        </span>
+                                                    </button>
+                                                ))
+                                            )}
+                                        </div>
+                                    </ScrollArea>
+                                </div>
                             </div>
-                            <div className="space-y-2">
-                                <Label>Proveedor</Label>
-                                <Select
-                                    value={selectedProviderId}
-                                    onValueChange={setSelectedProviderId}
-                                >
-                                    <SelectTrigger className="h-11">
-                                        <SelectValue placeholder="Seleccionar proveedor" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {providers.map((provider) => (
-                                            <SelectItem key={provider.id} value={provider.id}>
-                                                {provider.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
+                            {stockAction === "add" && (
+                                <div className="space-y-2">
+                                    <Label>Proveedor</Label>
+                                    <div className="rounded-lg border bg-background">
+                                        <div className="relative border-b">
+                                            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                                            <Input
+                                                value={providerSearchQuery}
+                                                onChange={(event) =>
+                                                    setProviderSearchQuery(event.target.value)
+                                                }
+                                                placeholder="Buscar proveedor"
+                                                className="h-11 border-0 pl-9 shadow-none focus-visible:ring-0"
+                                            />
+                                        </div>
+                                        <ScrollArea className="h-44">
+                                            <div className="p-2">
+                                                {searchedProviders.length === 0 ? (
+                                                    <p className="px-2 py-3 text-sm text-muted-foreground">
+                                                        No se encontraron proveedores
+                                                    </p>
+                                                ) : (
+                                                    searchedProviders.map((provider) => (
+                                                        <button
+                                                            key={provider.id}
+                                                            type="button"
+                                                            onClick={() =>
+                                                                handleProviderChange(provider.id)
+                                                            }
+                                                            className={`flex w-full items-center rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                                                                selectedProviderId === provider.id
+                                                                    ? "bg-emerald-50 text-emerald-700"
+                                                                    : "hover:bg-muted"
+                                                            }`}
+                                                        >
+                                                            <span className="font-medium">
+                                                                {provider.name}
+                                                            </span>
+                                                        </button>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </ScrollArea>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex rounded-lg border p-1">
@@ -862,9 +1009,17 @@ export default function StockPage() {
                         <Button variant="outline" onClick={() => setStockDialogOpen(false)} disabled={isSaving}>
                             Cancelar
                         </Button>
-                        <Button className="bg-emerald-600 hover:bg-emerald-700 gap-2" onClick={handleSaveStock} disabled={isSaving || !selectedProductId}>
+                        <Button
+                            className={
+                                stockAction === "add"
+                                    ? "bg-emerald-600 hover:bg-emerald-700 gap-2"
+                                    : "bg-rose-600 hover:bg-rose-700 gap-2"
+                            }
+                            onClick={handleSaveStock}
+                            disabled={isSaving || !selectedProductId}
+                        >
                             {isSaving && <Loader2 className="size-4 animate-spin" />}
-                            Guardar ingreso
+                            {stockAction === "add" ? "Guardar ingreso" : "Confirmar baja"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

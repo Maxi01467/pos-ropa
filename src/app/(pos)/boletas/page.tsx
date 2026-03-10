@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { barcodeFromTicketNumber } from "@/lib/barcodes";
 
 interface SaleItem {
     id: string;
@@ -107,7 +108,11 @@ export default function BoletasPage() {
     // Lógica de filtrado
     const filteredSales = useMemo(() => {
         return sales.filter((sale) => {
-            if (searchQuery && !sale.ticketNumber.toString().includes(searchQuery)) {
+            const normalizedQuery = searchQuery.trim();
+            const matchesTicketNumber = sale.ticketNumber.toString().includes(normalizedQuery);
+            const matchesBarcode = barcodeFromTicketNumber(sale.ticketNumber).includes(normalizedQuery);
+
+            if (normalizedQuery && !matchesTicketNumber && !matchesBarcode) {
                 return false;
             }
             if (filterDateFrom) {

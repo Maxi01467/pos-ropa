@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
+import { authenticateUser } from "@/app/actions/auth-actions";
 
 export default function LoginPage() {
     const [username, setUsername] = useState("");
@@ -16,25 +17,26 @@ export default function LoginPage() {
     const [isLoading, setIsLoading] = useState(false);
     const router = useRouter();
 
-    const handleLogin = (e: React.FormEvent) => {
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
 
-        // Simulamos la consulta a la base de datos (luego lo conectamos con Prisma)
-        setTimeout(() => {
-            // Por ahora, el usuario es "admin" y la contra "1234"
-            if (username.toLowerCase().trim() === "admin" && password === "1234") {
-                // Guardamos una "llave" temporal en el navegador
-                localStorage.setItem("pos_session", "true");
-                localStorage.setItem("pos_user", username);
-                
-                toast.success("¡Acceso concedido!");
-                router.push("/"); // Redirigimos al sistema
-            } else {
-                toast.error("Usuario o contraseña incorrectos");
-                setIsLoading(false);
-            }
-        }, 800);
+        try {
+            const user = await authenticateUser(username, password);
+
+            localStorage.setItem("pos_session", "true");
+            localStorage.setItem("pos_user", user.name);
+            localStorage.setItem("pos_user_id", user.id);
+            localStorage.setItem("pos_role", user.role);
+
+            toast.success("¡Acceso concedido!");
+            router.push(user.role === "ADMIN" ? "/" : "/nueva-venta");
+        } catch (error) {
+            const message =
+                error instanceof Error ? error.message : "No se pudo iniciar sesión";
+            toast.error(message);
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -75,7 +77,7 @@ export default function LoginPage() {
                             <Input 
                                 id="password" 
                                 type="password" 
-                                placeholder="••••" 
+                                placeholder="PIN" 
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 className="h-11 text-base tracking-widest"

@@ -30,6 +30,8 @@ import {
     SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { canAccessPath } from "@/lib/permissions";
+import { useSessionSnapshot } from "@/lib/session-client";
 
 const navItems = [
     { href: "/", label: "Inicio", icon: Home },
@@ -39,7 +41,9 @@ const navItems = [
     { href: "/proveedores", label: "Proveedores", icon: Truck },
     { href: "/caja", label: "Caja", icon: Wallet },
     { href: "/boletas", label: "Boletas", icon: ReceiptText },
-];
+] as const;
+
+type NavItem = (typeof navItems)[number];
 
 function NavLink({
     item,
@@ -47,7 +51,7 @@ function NavLink({
     collapsed,
     onClick,
 }: {
-    item: (typeof navItems)[0];
+    item: NavItem;
     isActive: boolean;
     collapsed: boolean;
     onClick?: () => void;
@@ -97,11 +101,15 @@ function SidebarContent({
 }) {
     const pathname = usePathname();
     const router = useRouter();
+    const { role } = useSessionSnapshot();
+
+    const visibleItems = navItems.filter((item) => canAccessPath(role ?? "ADMIN", item.href));
 
     const handleLogout = () => {
         // Borramos las credenciales de la sesión
         localStorage.removeItem("pos_session");
         localStorage.removeItem("pos_user");
+        localStorage.removeItem("pos_role");
         
         // Redirigimos al Login
         router.push("/login");
@@ -145,7 +153,7 @@ function SidebarContent({
 
             {/* Navigation */}
             <nav className="flex-1 space-y-1 p-3">
-                {navItems.map((item) => (
+                {visibleItems.map((item) => (
                     <NavLink
                         key={item.href}
                         item={item}

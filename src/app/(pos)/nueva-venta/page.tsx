@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import { getProductsForPOS, getSellers } from "@/app/actions/pos-actions";
-import { createSale } from "@/app/actions/sales-actions";
+import { createExchangeSale, createSale, getSalesHistory } from "@/app/actions/sales-actions";
 import { TicketReceipt } from "@/components/ticket-receipt";
 import {
     CheckoutDialog,
@@ -17,6 +17,8 @@ import {
     ShoppingBag,
     Loader2,
     UserCircle,
+    ReceiptText,
+    RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,7 +42,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { barcodeFromSku } from "@/lib/barcodes";
+import { barcodeFromSku, barcodeFromTicketNumber } from "@/lib/barcodes";
 
 export interface POSProduct {
     id: string;
@@ -76,6 +78,42 @@ interface ReceiptData {
     }[];
     total: number;
     paymentMethod: string;
+    exchangeCredit?: number;
+    exchangedTicketNumber?: number;
+}
+
+interface ExchangeSaleItem {
+    id: string;
+    productName: string;
+    size: string;
+    color: string;
+    sku: string;
+    quantity: number;
+    priceAtTime: number;
+    priceType: string;
+    returnedQuantity: number;
+}
+
+interface ExchangeSaleTicket {
+    id: string;
+    ticketNumber: number;
+    total: number;
+    paymentMethod: string;
+    date: string;
+    sellerName: string;
+    items: ExchangeSaleItem[];
+}
+
+interface AppliedExchange {
+    saleId: string;
+    ticketNumber: number;
+    credit: number;
+    items: Array<{
+        saleItemId: string;
+        quantity: number;
+        label: string;
+        amount: number;
+    }>;
 }
 
 type PriceMode = "retail" | "wholesale";
@@ -102,7 +140,9 @@ function formatCurrency(amount: number): string {
 
 export default function NuevaVentaPage() {
     const searchInputRef = useRef<HTMLInputElement>(null); // NUEVO
+    const exchangeSearchInputRef = useRef<HTMLInputElement>(null);
     const [giftDialogOpen, setGiftDialogOpen] = useState(false);
+    const [exchangeDialogOpen, setExchangeDialogOpen] = useState(false);
     const [printGiftCopy, setPrintGiftCopy] = useState(false);
     const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
@@ -110,6 +150,12 @@ export default function NuevaVentaPage() {
     const [checkoutOpen, setCheckoutOpen] = useState(false);
     const [priceMode, setPriceMode] = useState<PriceMode>("retail");
     const [allProducts, setAllProducts] = useState<POSProduct[]>([]);
+    const [exchangeSales, setExchangeSales] = useState<ExchangeSaleTicket[]>([]);
+    const [isLoadingExchangeSales, setIsLoadingExchangeSales] = useState(false);
+    const [exchangeSearchQuery, setExchangeSearchQuery] = useState("");
+    const [selectedExchangeSale, setSelectedExchangeSale] = useState<ExchangeSaleTicket | null>(null);
+    const [exchangeQuantities, setExchangeQuantities] = useState<Record<string, string>>({});
+    const [appliedExchange, setAppliedExchange] = useState<AppliedExchange | null>(null);
     const [isLoadingProducts, setIsLoadingProducts] = useState(true);
     const [productsError, setProductsError] = useState<string | null>(null);
     const [sellers, setSellers] = useState<Seller[]>([]);
@@ -177,7 +223,7 @@ export default function NuevaVentaPage() {
     useEffect(() => {
         const handleGlobalScannerInput = (event: KeyboardEvent) => {
             if (event.ctrlKey || event.metaKey || event.altKey) return;
-            if (checkoutOpen || giftDialogOpen) return;
+            if (checkoutOpen || giftDialogOpen || exchangeDialogOpen) return;
 
             const searchInput = searchInputRef.current;
             if (!searchInput) return;
@@ -200,7 +246,12 @@ export default function NuevaVentaPage() {
         return () => {
             window.removeEventListener("keydown", handleGlobalScannerInput, true);
         };
-    }, [checkoutOpen, giftDialogOpen]);
+    }, [checkoutOpen, exchangeDialogOpen, giftDialogOpen]);
+
+    useEffect(() => {
+        if (!exchangeDialogOpen) return;
+        setTimeout(() => exchangeSearchInputRef.current?.focus(), 0);
+    }, [exchangeDialogOpen]);
 
     const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter") {
@@ -313,6 +364,10 @@ export default function NuevaVentaPage() {
         (sum, item) => sum + getUnitPrice(item.product) * item.quantity,
         0
     );
+    const exchangeCredit = appliedExchange?.credit ?? 0;
+    const balanceAmount = totalAmount - exchangeCredit;
+    const payableAmount = Math.max(balanceAmount, 0);
+    const hasExchangeOverage = balanceAmount < 0;
 
     const paymentMethodMap: Record<
         PaymentMethod,
@@ -323,20 +378,46 @@ export default function NuevaVentaPage() {
         mixto: "MIXTO",
     };
 
-    const handleConfirmSale = async (payment: PaymentBreakdown) => {
-        const sale = await createSale({
-            total: totalAmount,
-            paymentMethod: paymentMethodMap[payment.paymentMethod],
-            cashAmount: payment.cashAmount,
-            transferAmount: payment.transferAmount,
+    const finalizeSale = async (payment?: PaymentBreakdown) => {
+        const paymentMethod: "EFECTIVO" | "TRANSFERENCIA" | "MIXTO" | "CAMBIO" =
+            payment?.paymentMethod
+                ? paymentMethodMap[payment.paymentMethod]
+                : "CAMBIO";
+
+        const saleItems: Array<{
+            variantId: string;
+            quantity: number;
+            priceAtTime: number;
+            priceType: "WHOLESALE" | "NORMAL";
+        }> = cart.map((item) => ({
+            variantId: item.product.id,
+            quantity: item.quantity,
+            priceAtTime: getUnitPrice(item.product),
+            priceType: priceMode === "wholesale" ? "WHOLESALE" : "NORMAL",
+        }));
+
+        const exchangePayload = {
+            total: payableAmount,
+            paymentMethod,
+            cashAmount: payment?.cashAmount ?? 0,
+            transferAmount: payment?.transferAmount ?? 0,
             userId: selectedSellerId,
-            items: cart.map((item) => ({
-                variantId: item.product.id,
-                quantity: item.quantity,
-                priceAtTime: getUnitPrice(item.product),
-                priceType: priceMode === "wholesale" ? "WHOLESALE" : "NORMAL",
-            })),
-        });
+            items: saleItems,
+        };
+
+        const sale = appliedExchange
+            ? await createExchangeSale({
+                  ...exchangePayload,
+                  originalSaleId: appliedExchange.saleId,
+                  returnedItems: appliedExchange.items.map((item) => ({
+                      saleItemId: item.saleItemId,
+                      quantity: item.quantity,
+                  })),
+              })
+            : await createSale({
+                  ...exchangePayload,
+                  paymentMethod: paymentMethodMap[payment!.paymentMethod],
+              });
 
         const nextReceiptData: ReceiptData = {
             ticketNumber: sale.ticketNumber,
@@ -349,17 +430,113 @@ export default function NuevaVentaPage() {
                 price: getUnitPrice(item.product),
                 subtotal: getUnitPrice(item.product) * item.quantity,
             })),
-            total: totalAmount,
-            paymentMethod: paymentMethodMap[payment.paymentMethod],
+            total: payableAmount,
+            paymentMethod,
+            exchangeCredit: appliedExchange?.credit,
+            exchangedTicketNumber: appliedExchange?.ticketNumber,
         };
 
         clearCart();
         const updatedProducts = await getProductsForPOS();
         setAllProducts(updatedProducts);
+        setAppliedExchange(null);
         setReceiptData(nextReceiptData);
         setGiftDialogOpen(true);
 
         return sale;
+    };
+
+    const handleConfirmSale = async (payment: PaymentBreakdown) => finalizeSale(payment);
+
+    const handleDirectExchangeCheckout = async () => {
+        try {
+            const sale = await finalizeSale();
+            toast.success("¡Cambio registrado!", {
+                description: `Boleta #${sale.ticketNumber.toString().padStart(4, "0")} · saldo $0`,
+                duration: 4000,
+            });
+        } catch (error) {
+            const message =
+                error instanceof Error ? error.message : "No se pudo registrar el cambio";
+            toast.error(message);
+        }
+    };
+
+    const loadExchangeSales = async () => {
+        setIsLoadingExchangeSales(true);
+        try {
+            const sales = await getSalesHistory();
+            setExchangeSales(sales);
+        } catch (error) {
+            toast.error("No se pudieron cargar las boletas");
+            console.error(error);
+        } finally {
+            setIsLoadingExchangeSales(false);
+        }
+    };
+
+    const handleOpenExchangeDialog = async () => {
+        if (exchangeSales.length === 0) {
+            await loadExchangeSales();
+        }
+        setExchangeSearchQuery("");
+        setSelectedExchangeSale(null);
+        setExchangeQuantities({});
+        setExchangeDialogOpen(true);
+    };
+
+    const filteredExchangeSales = useMemo(() => {
+        const query = exchangeSearchQuery.trim();
+        if (!query) return exchangeSales.slice(0, 20);
+
+        return exchangeSales.filter((sale) => {
+            return (
+                sale.ticketNumber.toString().includes(query) ||
+                barcodeFromTicketNumber(sale.ticketNumber).includes(query)
+            );
+        });
+    }, [exchangeSales, exchangeSearchQuery]);
+
+    const selectedExchangeItems = useMemo(() => {
+        if (!selectedExchangeSale) return [];
+
+        return selectedExchangeSale.items
+            .map((item) => {
+                const quantity = Number.parseInt(exchangeQuantities[item.id] ?? "0", 10);
+                const safeQuantity = Number.isNaN(quantity) ? 0 : quantity;
+                const availableQuantity = item.quantity - item.returnedQuantity;
+                return {
+                    ...item,
+                    selectedQuantity: Math.max(0, Math.min(safeQuantity, availableQuantity)),
+                    availableQuantity,
+                };
+            })
+            .filter((item) => item.selectedQuantity > 0);
+    }, [exchangeQuantities, selectedExchangeSale]);
+
+    const selectedExchangeCredit = selectedExchangeItems.reduce(
+        (sum, item) => sum + item.selectedQuantity * item.priceAtTime,
+        0
+    );
+
+    const handleApplyExchange = () => {
+        if (!selectedExchangeSale || selectedExchangeItems.length === 0) {
+            toast.error("Seleccioná al menos un producto para cambiar");
+            return;
+        }
+
+        setAppliedExchange({
+            saleId: selectedExchangeSale.id,
+            ticketNumber: selectedExchangeSale.ticketNumber,
+            credit: selectedExchangeCredit,
+            items: selectedExchangeItems.map((item) => ({
+                saleItemId: item.id,
+                quantity: item.selectedQuantity,
+                label: `${item.productName} ${item.size !== "Único" ? `· ${item.size}` : ""}`,
+                amount: item.selectedQuantity * item.priceAtTime,
+            })),
+        });
+        setExchangeDialogOpen(false);
     };
 
     return (
@@ -385,7 +562,14 @@ export default function NuevaVentaPage() {
                                     autoFocus // Pone el cursor automáticamente al entrar a la pantalla
                                 />
                             </div>
-                            {/* El botón de Escanear fue eliminado de acá */}
+                            <Button
+                                variant="outline"
+                                className="h-12 shrink-0 gap-2 px-4"
+                                onClick={handleOpenExchangeDialog}
+                            >
+                                <RotateCcw className="size-4" />
+                                Cambio
+                            </Button>
                         </div>
                     </div>
 
@@ -606,6 +790,29 @@ export default function NuevaVentaPage() {
                     </ScrollArea>
 
                     <div className="border-t bg-card px-4 py-4 lg:px-6">
+                        {appliedExchange && (
+                            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                        <p className="font-semibold text-amber-900">
+                                            Cambio aplicado · Boleta #{appliedExchange.ticketNumber.toString().padStart(5, "0")}
+                                        </p>
+                                        <p className="text-xs text-amber-800">
+                                            {appliedExchange.items.length} producto(s) seleccionado(s)
+                                        </p>
+                                    </div>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-amber-900 hover:bg-amber-100"
+                                        onClick={() => setAppliedExchange(null)}
+                                    >
+                                        Quitar
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="mb-4 space-y-2">
                             <Label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                 <UserCircle className="size-3.5" />
@@ -656,10 +863,16 @@ export default function NuevaVentaPage() {
                                 </Button>
                             </div>
                         </div>
+                        {appliedExchange && (
+                            <div className="mb-3 flex items-center justify-between text-sm text-amber-700">
+                                <span>Crédito por cambio</span>
+                                <span className="font-semibold">-{formatCurrency(exchangeCredit)}</span>
+                            </div>
+                        )}
                         <div className="mb-4 flex items-center justify-between">
                             <div>
                                 <span className="text-base font-medium text-muted-foreground">
-                                    Total
+                                    Total a cobrar
                                 </span>
                                 <p className="text-xs text-muted-foreground">
                                     Cobro actual:{" "}
@@ -667,18 +880,27 @@ export default function NuevaVentaPage() {
                                         ? "precio mayorista"
                                         : "precio de venta"}
                                 </p>
+                                {hasExchangeOverage && (
+                                    <p className="text-xs text-rose-600">
+                                        El cambio supera la nueva venta. Ajustá el carrito o quitá productos del cambio.
+                                    </p>
+                                )}
                             </div>
                             <span className="text-3xl font-bold tracking-tight">
-                                {formatCurrency(totalAmount)}
+                                {formatCurrency(payableAmount)}
                             </span>
                         </div>
                         <Button
                             size="lg"
                             className="h-14 w-full bg-emerald-600 text-lg font-bold shadow-lg transition-all duration-200 hover:bg-emerald-700 hover:shadow-xl"
-                            disabled={cart.length === 0 || !selectedSellerId}
-                            onClick={() => setCheckoutOpen(true)}
+                            disabled={cart.length === 0 || !selectedSellerId || hasExchangeOverage}
+                            onClick={() =>
+                                payableAmount === 0 && appliedExchange
+                                    ? void handleDirectExchangeCheckout()
+                                    : setCheckoutOpen(true)
+                            }
                         >
-                            COBRAR
+                            {payableAmount === 0 && appliedExchange ? "FINALIZAR CAMBIO" : "COBRAR"}
                         </Button>
                     </div>
                 </div>
@@ -686,11 +908,35 @@ export default function NuevaVentaPage() {
                 <CheckoutDialog
                     open={checkoutOpen}
                     onOpenChange={setCheckoutOpen}
-                    total={totalAmount}
+                    total={payableAmount}
                     itemCount={totalItems}
                     onConfirm={handleConfirmSale}
                 />
             </div>
+
+            <ExchangeDialog
+                open={exchangeDialogOpen}
+                onOpenChange={setExchangeDialogOpen}
+                isLoading={isLoadingExchangeSales}
+                sales={filteredExchangeSales}
+                searchQuery={exchangeSearchQuery}
+                onSearchQueryChange={setExchangeSearchQuery}
+                selectedSale={selectedExchangeSale}
+                onSelectSale={(sale) => {
+                    setSelectedExchangeSale(sale);
+                    setExchangeQuantities({});
+                }}
+                exchangeQuantities={exchangeQuantities}
+                onQuantityChange={(saleItemId, quantity) =>
+                    setExchangeQuantities((current) => ({
+                        ...current,
+                        [saleItemId]: quantity,
+                    }))
+                }
+                selectedCredit={selectedExchangeCredit}
+                onConfirm={handleApplyExchange}
+                searchInputRef={exchangeSearchInputRef}
+            />
 
             <GiftOptionDialog
                 open={giftDialogOpen}
@@ -771,6 +1017,167 @@ function GiftOptionDialog({
                     >
                         Imprimir Ambos (Regalo)
                     </Button>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function ExchangeDialog({
+    open,
+    onOpenChange,
+    isLoading,
+    sales,
+    searchQuery,
+    onSearchQueryChange,
+    selectedSale,
+    onSelectSale,
+    exchangeQuantities,
+    onQuantityChange,
+    selectedCredit,
+    onConfirm,
+    searchInputRef,
+}: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    isLoading: boolean;
+    sales: ExchangeSaleTicket[];
+    searchQuery: string;
+    onSearchQueryChange: (value: string) => void;
+    selectedSale: ExchangeSaleTicket | null;
+    onSelectSale: (sale: ExchangeSaleTicket) => void;
+    exchangeQuantities: Record<string, string>;
+    onQuantityChange: (saleItemId: string, quantity: string) => void;
+    selectedCredit: number;
+    onConfirm: () => void;
+    searchInputRef: React.RefObject<HTMLInputElement | null>;
+}) {
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="max-h-[85vh] sm:max-w-4xl">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2 text-xl">
+                        <ReceiptText className="size-5" />
+                        Aplicar Cambio
+                    </DialogTitle>
+                    <DialogDescription>
+                        Buscá una boleta, elegí los productos a cambiar y aplicá el crédito.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+                    <div className="space-y-3">
+                        <Input
+                            ref={searchInputRef}
+                            placeholder="Escanear o buscar N° de boleta..."
+                            value={searchQuery}
+                            onChange={(event) => onSearchQueryChange(event.target.value)}
+                        />
+
+                        <div className="max-h-[52vh] space-y-2 overflow-y-auto rounded-lg border p-2">
+                            {isLoading ? (
+                                <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
+                                    <Loader2 className="mr-2 size-4 animate-spin" />
+                                    Cargando boletas...
+                                </div>
+                            ) : sales.length === 0 ? (
+                                <div className="py-10 text-center text-sm text-muted-foreground">
+                                    No se encontraron boletas.
+                                </div>
+                            ) : (
+                                sales.map((sale) => (
+                                    <button
+                                        key={sale.id}
+                                        type="button"
+                                        className={cn(
+                                            "w-full rounded-lg border px-3 py-2 text-left transition-colors",
+                                            selectedSale?.id === sale.id
+                                                ? "border-emerald-600 bg-emerald-50"
+                                                : "hover:border-muted-foreground/30 hover:bg-muted/40"
+                                        )}
+                                        onClick={() => onSelectSale(sale)}
+                                    >
+                                        <p className="font-semibold">
+                                            Boleta #{sale.ticketNumber.toString().padStart(5, "0")}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">
+                                            {new Date(sale.date).toLocaleDateString("es-AR")}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">
+                                            {sale.items.length} item(s)
+                                        </p>
+                                    </button>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="rounded-lg border">
+                        {!selectedSale ? (
+                            <div className="flex h-full min-h-[260px] items-center justify-center text-sm text-muted-foreground">
+                                Seleccioná una boleta para ver sus productos.
+                            </div>
+                        ) : (
+                            <div className="flex h-full flex-col">
+                                <div className="border-b p-4">
+                                    <p className="font-semibold">
+                                        Boleta #{selectedSale.ticketNumber.toString().padStart(5, "0")}
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        {selectedSale.sellerName} · {new Date(selectedSale.date).toLocaleString("es-AR")}
+                                    </p>
+                                </div>
+                                <div className="max-h-[44vh] space-y-2 overflow-y-auto p-4">
+                                    {selectedSale.items.map((item) => {
+                                        const availableQuantity = item.quantity - item.returnedQuantity;
+                                        const value = exchangeQuantities[item.id] ?? "";
+
+                                        return (
+                                            <div
+                                                key={item.id}
+                                                className="grid gap-3 rounded-lg border p-3 sm:grid-cols-[minmax(0,1fr)_100px]"
+                                            >
+                                                <div>
+                                                    <p className="font-medium">{item.productName}</p>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        {item.size !== "Único" ? `Talle ${item.size} · ` : ""}
+                                                        {item.color}
+                                                    </p>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Disponible para cambio: {availableQuantity} · {formatCurrency(item.priceAtTime)} c/u
+                                                    </p>
+                                                </div>
+                                                <Input
+                                                    type="number"
+                                                    min={0}
+                                                    max={availableQuantity}
+                                                    disabled={availableQuantity === 0}
+                                                    value={value}
+                                                    onChange={(event) =>
+                                                        onQuantityChange(item.id, event.target.value)
+                                                    }
+                                                />
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                <div className="border-t p-4">
+                                    <div className="mb-3 flex items-center justify-between font-semibold">
+                                        <span>Crédito a aplicar</span>
+                                        <span>{formatCurrency(selectedCredit)}</span>
+                                    </div>
+                                    <Button
+                                        className="w-full bg-emerald-600 hover:bg-emerald-700"
+                                        disabled={selectedCredit <= 0}
+                                        onClick={onConfirm}
+                                    >
+                                        Aplicar cambio
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </DialogContent>
         </Dialog>

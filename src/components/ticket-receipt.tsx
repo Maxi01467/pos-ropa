@@ -22,6 +22,8 @@ interface TicketReceiptProps {
         }[];
         total: number;
         paymentMethod: string;
+        exchangeCredit?: number;
+        exchangedTicketNumber?: number;
     } | null;
     isGift?: boolean; // NUEVA PROP
 }
@@ -112,6 +114,14 @@ export function TicketReceipt({ data, isGift = false }: TicketReceiptProps) {
 
             {!isGift ? (
                 <section className="space-y-1 border-b border-dashed border-black py-2 text-[11px]">
+                    {data.exchangeCredit ? (
+                        <div className="flex justify-between">
+                            <span>
+                                Cambio ticket #{data.exchangedTicketNumber?.toString().padStart(5, "0")}
+                            </span>
+                            <span>-{formatCurrency(data.exchangeCredit)}</span>
+                        </div>
+                    ) : null}
                     <div className="flex justify-between text-[16px] font-bold">
                         <span>TOTAL</span>
                         <span>{formatCurrency(data.total)}</span>

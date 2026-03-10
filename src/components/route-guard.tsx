@@ -1,30 +1,65 @@
 // src/components/route-guard.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { canAccessPath } from "@/lib/permissions";
+import { useSessionSnapshot } from "@/lib/session-client";
 
 export function RouteGuard({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const pathname = usePathname();
-    const [isAuthorized, setIsAuthorized] = useState(false);
+    const { hasSession, role } = useSessionSnapshot();
+    const isLoginRoute = pathname === "/login";
 
     useEffect(() => {
-        // Revisamos si existe la llave de sesión en el navegador
-        const session = localStorage.getItem("pos_session");
-        
-        if (!session && pathname !== "/login") {
-            // Si no hay sesión y no está en la página de login, lo pateamos afuera
+        if (!hasSession && !isLoginRoute) {
             router.push("/login");
-        } else {
-            // Si todo está bien, lo dejamos pasar
-            setIsAuthorized(true);
+            return;
         }
-    }, [router, pathname]);
 
-    // Mientras revisa (que es instantáneo), mostramos un loader en vez de la pantalla
-    if (!isAuthorized) {
+        if (hasSession && role && !isLoginRoute && !canAccessPath(role, pathname)) {
+            router.push("/nueva-venta");
+            return;
+        }
+
+        if (hasSession && role && isLoginRoute) {
+            router.push(role === "ADMIN" ? "/" : "/nueva-venta");
+            return;
+        }
+
+        if (hasSession && role === "STAFF" && pathname === "/") {
+            router.push("/nueva-venta");
+            return;
+        }
+    }, [hasSession, isLoginRoute, pathname, role, router]);
+
+    if (!isLoginRoute && !hasSession) {
+        return (
+            <div className="flex h-screen w-full items-center justify-center bg-background">
+                <Loader2 className="size-10 animate-spin text-emerald-600" />
+            </div>
+        );
+    }
+
+    if (!isLoginRoute && (!role || !canAccessPath(role, pathname))) {
+        return (
+            <div className="flex h-screen w-full items-center justify-center bg-background">
+                <Loader2 className="size-10 animate-spin text-emerald-600" />
+            </div>
+        );
+    }
+
+    if (isLoginRoute && hasSession) {
+        return (
+            <div className="flex h-screen w-full items-center justify-center bg-background">
+                <Loader2 className="size-10 animate-spin text-emerald-600" />
+            </div>
+        );
+    }
+
+    if (hasSession && role === "STAFF" && pathname === "/") {
         return (
             <div className="flex h-screen w-full items-center justify-center bg-background">
                 <Loader2 className="size-10 animate-spin text-emerald-600" />

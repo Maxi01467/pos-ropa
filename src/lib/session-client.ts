@@ -6,11 +6,15 @@ import { getStoredRole, type SessionRole } from "@/lib/permissions";
 type SessionSnapshot = {
     hasSession: boolean;
     role: SessionRole | null;
+    userId: string | null;
+    userName: string | null;
 };
 
 const EMPTY_SESSION_SNAPSHOT: SessionSnapshot = {
     hasSession: false,
     role: null,
+    userId: null,
+    userName: null,
 };
 
 let lastSnapshot: SessionSnapshot = EMPTY_SESSION_SNAPSHOT;
@@ -23,9 +27,10 @@ function getSnapshot(): SessionSnapshot {
 
     const hasSession = localStorage.getItem("pos_session") === "true";
     const storedUser = localStorage.getItem("pos_user");
+    const storedUserId = localStorage.getItem("pos_user_id");
     const storedRole = localStorage.getItem("pos_role");
     const role = hasSession ? getStoredRole(storedRole, storedUser) : null;
-    const snapshotKey = `${hasSession}:${role ?? ""}`;
+    const snapshotKey = `${hasSession}:${role ?? ""}:${storedUserId ?? ""}:${storedUser ?? ""}`;
 
     if (snapshotKey === lastSnapshotKey) {
         return lastSnapshot;
@@ -35,6 +40,8 @@ function getSnapshot(): SessionSnapshot {
     lastSnapshot = {
         hasSession,
         role,
+        userId: hasSession ? storedUserId : null,
+        userName: hasSession ? storedUser : null,
     };
 
     return lastSnapshot;

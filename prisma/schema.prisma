@@ -18,7 +18,11 @@ model User {
   name      String
   pin       String   @default("1234") // Para el fichaje rápido y cobro
   role      String   @default("STAFF") // ADMIN o STAFF
+  active    Boolean  @default(true)
   deviceId  String?  @unique // Si en el futuro usan QR con celular
+
+  openedSessions     CashSession[] @relation("OpenedSessions") // Nuevo
+  closedSessions     CashSession[] @relation("ClosedSessions") // Nuevo
   
   shifts    Shift[]
   sales     Sale[]
@@ -35,6 +39,46 @@ model Shift {
   checkOut   DateTime?
   totalHours Decimal?
   notes      String?
+}
+
+// ------------------------------------------------------
+// 💰 GESTIÓN DE CAJA (ARQUEO)
+// ------------------------------------------------------
+model CashSession {
+  id             String    @id @default(cuid())
+  
+  // Quién abrió y quién cerró
+  openedById     String
+  openedBy       User      @relation("OpenedSessions", fields: [openedById], references: [id])
+  closedById     String?
+  closedBy       User?     @relation("ClosedSessions", fields: [closedById], references: [id])
+  
+  status         String    @default("OPEN") // OPEN, CLOSED
+  
+  openingDate    DateTime  @default(now())
+  closingDate    DateTime?
+  
+  // Valores monetarios
+  initialAmount  Decimal   // El "cambio" con el que se empieza
+  expectedAmount Decimal?  // Lo que el sistema calcula que debería haber
+  actualAmount   Decimal?  // Lo que el usuario contó físicamente
+  difference     Decimal?  // Diferencia entre lo esperado y lo real
+  
+  // Relaciones
+  sales          Sale[]
+  movements      CashMovement[]
+}
+
+model CashMovement {
+  id           String      @id @default(cuid())
+  sessionId    String
+  session      CashSession @relation(fields: [sessionId], references: [id])
+  
+  amount       Decimal
+  type         String      // INGRESO (ej: cambio extra), EGRESO (ej: pago correo)
+  reason       String      // Descripción del movimiento
+  
+  createdAt    DateTime    @default(now())
 }
 
 // ------------------------------------------------------
@@ -117,6 +161,10 @@ model Sale {
   user          User       @relation(fields: [userId], references: [id])
   
   items         SaleItem[]
+
+  // Relación con la caja activa
+  cashSessionId String?      // Opcional por si haces ventas fuera de una sesión
+  cashSession   CashSession? @relation(fields: [cashSessionId], references: [id])
   
   createdAt     DateTime   @default(now())
 }

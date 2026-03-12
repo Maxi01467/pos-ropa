@@ -1,6 +1,6 @@
 export type SessionRole = "ADMIN" | "STAFF";
 
-export const STAFF_ALLOWED_PATHS = ["/nueva-venta", "/caja"] as const;
+export const STAFF_ALLOWED_PATHS = ["/nueva-venta", "/caja", "/asistencia"] as const;
 
 export function getStoredRole(rawRole: string | null, rawUser: string | null): SessionRole {
     if (rawRole === "ADMIN" || rawRole === "STAFF") {

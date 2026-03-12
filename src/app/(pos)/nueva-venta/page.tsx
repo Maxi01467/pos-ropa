@@ -43,6 +43,8 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { barcodeFromSku, barcodeFromTicketNumber } from "@/lib/barcodes";
+import { renderReceiptHtml, type ReceiptPrintData } from "@/lib/receipt-printing";
+import { printHtmlWithQzTray } from "@/lib/qz-tray";
 
 export interface POSProduct {
     id: string;
@@ -64,22 +66,6 @@ interface CartItem {
 interface Seller {
     id: string;
     name: string;
-}
-
-interface ReceiptData {
-    ticketNumber: number;
-    date: Date;
-    sellerName: string;
-    items: {
-        name: string;
-        quantity: number;
-        price: number;
-        subtotal: number;
-    }[];
-    total: number;
-    paymentMethod: string;
-    exchangeCredit?: number;
-    exchangedTicketNumber?: number;
 }
 
 interface ExchangeSaleItem {
@@ -144,7 +130,8 @@ export default function NuevaVentaPage() {
     const [giftDialogOpen, setGiftDialogOpen] = useState(false);
     const [exchangeDialogOpen, setExchangeDialogOpen] = useState(false);
     const [printGiftCopy, setPrintGiftCopy] = useState(false);
-    const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
+    const [activePrintIsGift, setActivePrintIsGift] = useState(false);
+    const [receiptData, setReceiptData] = useState<ReceiptPrintData | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
     const [cart, setCart] = useState<CartItem[]>([]);
     const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -160,13 +147,68 @@ export default function NuevaVentaPage() {
     const [productsError, setProductsError] = useState<string | null>(null);
     const [sellers, setSellers] = useState<Seller[]>([]);
     const [selectedSellerId, setSelectedSellerId] = useState("");
-    const triggerPrint = (gift: boolean) => {
-        setPrintGiftCopy(gift);
-        setGiftDialogOpen(false);
+    const startBrowserPrint = ({
+        gift,
+        initialGiftCopy = false,
+    }: {
+        gift: boolean;
+        initialGiftCopy?: boolean;
+    }) => {
+        setPrintGiftCopy(gift && !initialGiftCopy);
+        setActivePrintIsGift(initialGiftCopy);
 
         setTimeout(() => {
             window.print();
         }, 350);
+    };
+
+    const triggerPrint = async (gift: boolean) => {
+        const currentReceipt = receiptData;
+
+        setGiftDialogOpen(false);
+
+        if (!currentReceipt) {
+            return;
+        }
+
+        let regularReceiptPrinted = false;
+
+        try {
+            const ticketLabel = currentReceipt.ticketNumber.toString().padStart(5, "0");
+            const printerName = await printHtmlWithQzTray(
+                renderReceiptHtml(currentReceipt, false),
+                `Boleta ${ticketLabel}`
+            );
+            regularReceiptPrinted = true;
+
+            if (gift) {
+                await printHtmlWithQzTray(
+                    renderReceiptHtml(currentReceipt, true),
+                    `Ticket cambio ${ticketLabel}`
+                );
+            }
+
+            setPrintGiftCopy(false);
+            setActivePrintIsGift(false);
+            setReceiptData(null);
+
+            toast.success("Boleta enviada a QZ Tray", {
+                description: gift
+                    ? `${printerName} · cliente + regalo`
+                    : printerName,
+            });
+        } catch (error) {
+            console.error("QZ Tray printing failed:", error);
+
+            if (regularReceiptPrinted && gift) {
+                toast.error("Falló la copia de regalo en QZ Tray. Se abrirá esa copia en el navegador.");
+                startBrowserPrint({ gift: false, initialGiftCopy: true });
+                return;
+            }
+
+            toast.error("No se pudo imprimir con QZ Tray. Se abrirá la impresión del navegador.");
+            startBrowserPrint({ gift });
+        }
     };
 
     useEffect(() => {
@@ -210,7 +252,16 @@ export default function NuevaVentaPage() {
 
     useEffect(() => {
         const handleAfterPrint = () => {
+            if (printGiftCopy && !activePrintIsGift) {
+                setActivePrintIsGift(true);
+                setTimeout(() => {
+                    window.print();
+                }, 250);
+                return;
+            }
+
             setPrintGiftCopy(false);
+            setActivePrintIsGift(false);
             setReceiptData(null);
         };
 
@@ -218,7 +269,7 @@ export default function NuevaVentaPage() {
         return () => {
             window.removeEventListener("afterprint", handleAfterPrint);
         };
-    }, []);
+    }, [activePrintIsGift, printGiftCopy]);
 
     useEffect(() => {
         const handleGlobalScannerInput = (event: KeyboardEvent) => {
@@ -419,7 +470,7 @@ export default function NuevaVentaPage() {
                   paymentMethod: paymentMethodMap[payment!.paymentMethod],
               });
 
-        const nextReceiptData: ReceiptData = {
+        const nextReceiptData: ReceiptPrintData = {
             ticketNumber: sale.ticketNumber,
             date: new Date(),
             sellerName:
@@ -943,6 +994,7 @@ export default function NuevaVentaPage() {
                 onClose={() => {
                     setGiftDialogOpen(false);
                     setPrintGiftCopy(false);
+                    setActivePrintIsGift(false);
                     setReceiptData(null);
                 }}
                 onSelect={triggerPrint}
@@ -967,17 +1019,7 @@ export default function NuevaVentaPage() {
                     `}</style>
 
                     <div className="fixed inset-0 z-[9999] bg-white text-black">
-                        <div className="flex flex-col">
-                            <div
-                                style={{
-                                    breakAfter: printGiftCopy ? "page" : "auto",
-                                    pageBreakAfter: printGiftCopy ? "always" : "auto",
-                                }}
-                            >
-                                <TicketReceipt data={receiptData} />
-                            </div>
-                            {printGiftCopy && <TicketReceipt data={receiptData} isGift />}
-                        </div>
+                        <TicketReceipt data={receiptData} isGift={activePrintIsGift} />
                     </div>
                 </div>
             )}

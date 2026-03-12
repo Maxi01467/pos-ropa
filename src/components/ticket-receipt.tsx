@@ -5,27 +5,14 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import Barcode from "react-barcode";
 import { barcodeFromTicketNumber } from "@/lib/barcodes";
+import type { ReceiptPrintData } from "@/lib/receipt-printing";
 
 const PAPER_WIDTH_MM = 72;
 const HORIZONTAL_PADDING_MM = 3;
 
 interface TicketReceiptProps {
-    data: {
-        ticketNumber: number;
-        date: Date;
-        sellerName: string;
-        items: {
-            name: string;
-            quantity: number;
-            price: number;
-            subtotal: number;
-        }[];
-        total: number;
-        paymentMethod: string;
-        exchangeCredit?: number;
-        exchangedTicketNumber?: number;
-    } | null;
-    isGift?: boolean; // NUEVA PROP
+    data: ReceiptPrintData | null;
+    isGift?: boolean;
 }
 
 function formatCurrency(amount: number): string {

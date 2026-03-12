@@ -16,6 +16,7 @@ import {
     BarChart3,
     ReceiptText,
     LogOut,
+    Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +42,7 @@ const navItems = [
     { href: "/proveedores", label: "Proveedores", icon: Truck },
     { href: "/caja", label: "Caja", icon: Wallet },
     { href: "/boletas", label: "Boletas", icon: ReceiptText },
+    { href: "/empleados", label: "Empleados", icon: Users },
 ] as const;
 
 type NavItem = (typeof navItems)[number];

@@ -76,6 +76,12 @@ export async function createSale(input: CreateSaleInput) {
         throw new Error("No hay usuarios configurados para registrar ventas");
     }
 
+    // NUEVO: Buscamos si hay una sesión de caja abierta actualmente
+    const currentSession = await prisma.cashSession.findFirst({
+        where: { status: "OPEN" },
+        select: { id: true }
+    });
+
     return prisma.$transaction(async (tx) => {
         for (const item of input.items) {
             const variant = await tx.productVariant.findUnique({
@@ -99,6 +105,8 @@ export async function createSale(input: CreateSaleInput) {
                 cashAmount,
                 transferAmount,
                 userId: user.id,
+                // NUEVO: Vinculamos la venta a la caja si es que hay una abierta
+                cashSessionId: currentSession?.id || null, 
                 items: {
                     create: input.items.map((item) => ({
                         variantId: item.variantId,

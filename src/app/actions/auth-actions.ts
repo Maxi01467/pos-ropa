@@ -19,6 +19,7 @@ export async function authenticateUser(name: string, pin: string) {
                 mode: "insensitive",
             },
             pin: normalizedPin,
+            active: true,
         },
         select: {
             id: true,

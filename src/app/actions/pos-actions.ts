@@ -7,6 +7,9 @@ const prisma = new PrismaClient();
 
 export async function getSellers() {
     const users = await prisma.user.findMany({
+        where: {
+            active: true,
+        },
         select: {
             id: true,
             name: true,

@@ -17,6 +17,7 @@ import {
     ReceiptText,
     LogOut,
     Users,
+    Clock3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +42,7 @@ const navItems = [
     { href: "/stock", label: "Stock", icon: BarChart3 },
     { href: "/proveedores", label: "Proveedores", icon: Truck },
     { href: "/caja", label: "Caja", icon: Wallet },
+    { href: "/asistencia", label: "Asistencia", icon: Clock3 },
     { href: "/boletas", label: "Boletas", icon: ReceiptText },
     { href: "/empleados", label: "Empleados", icon: Users },
 ] as const;
@@ -112,6 +114,7 @@ function SidebarContent({
         localStorage.removeItem("pos_session");
         localStorage.removeItem("pos_user");
         localStorage.removeItem("pos_role");
+        localStorage.removeItem("pos_user_id");
         
         // Redirigimos al Login
         router.push("/login");

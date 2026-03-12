@@ -1,11 +1,16 @@
 "use client";
 
 const QZ_PRINTER_STORAGE_KEY = "pos_qz_printer_name";
+const QZ_OPERATION_TIMEOUT_MS = 20000;
 
 type QzTrayModule = {
     websocket: {
         isActive: () => boolean;
-        connect: () => Promise<void>;
+        connect: (options?: {
+            host?: string | string[];
+            usingSecure?: boolean;
+            retries?: number;
+        }) => Promise<void>;
     };
     printers: {
         find: (query?: string) => Promise<string[]>;
@@ -15,14 +20,34 @@ type QzTrayModule = {
         create: (printer: string, options?: Record<string, unknown>) => unknown;
     };
     security: {
-        setCertificatePromise: (promiseHandler: () => Promise<string> | string) => void;
-        setSignaturePromise: (promiseFactory: (dataToSign: string) => Promise<string> | string) => void;
+        // QZ Tray's resolve/reject accept string or Promise<string>
+        setCertificatePromise: (handler: (resolve: (v: string | Promise<string>) => void, reject: (e: unknown) => void) => void) => void;
+        setSignaturePromise: (factory: (dataToSign: string) => (resolve: (v: string | Promise<string>) => void, reject: (e: unknown) => void) => void) => void;
         setSignatureAlgorithm: (algorithm: string) => void;
     };
     print: (config: unknown, data: Array<Record<string, unknown>>) => Promise<void>;
 };
 
 let qzPromise: Promise<QzTrayModule> | null = null;
+
+function withTimeout<T>(promise: Promise<T>, message: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        const timeoutId = window.setTimeout(() => {
+            reject(new Error(message));
+        }, QZ_OPERATION_TIMEOUT_MS);
+
+        promise.then(
+            (value) => {
+                window.clearTimeout(timeoutId);
+                resolve(value);
+            },
+            (error) => {
+                window.clearTimeout(timeoutId);
+                reject(error);
+            }
+        );
+    });
+}
 
 function getStoredPrinterName(): string | null {
     if (typeof window === "undefined") return null;
@@ -38,10 +63,34 @@ async function loadQzTray(): Promise<QzTrayModule> {
     if (!qzPromise) {
         qzPromise = import("qz-tray").then((module) => {
             const qz = (module.default ?? module) as QzTrayModule;
-            qz.security.setCertificatePromise(() => Promise.resolve(""));
-            qz.security.setSignaturePromise(() => Promise.resolve(""));
-            qz.security.setSignatureAlgorithm("SHA256");
+
+            // Load the digital certificate (public file served from /public/qz/)
+            qz.security.setCertificatePromise((resolve, reject) => {
+                fetch("/qz/digital-certificate.txt", {
+                    cache: "no-store",
+                    headers: { "Content-Type": "text/plain" },
+                }).then((res) =>
+                    res.ok ? resolve(res.text()) : reject(res.text())
+                );
+            });
+
+            // Sign each request via the server-side API route (keeps private key secure)
+            qz.security.setSignatureAlgorithm("SHA512");
+            qz.security.setSignaturePromise((toSign) => {
+                return (resolve, reject) => {
+                    fetch(`/api/qz-sign?request=${encodeURIComponent(toSign)}`, {
+                        cache: "no-store",
+                        headers: { "Content-Type": "text/plain" },
+                    }).then((res) =>
+                        res.ok ? resolve(res.text()) : reject(res.text())
+                    );
+                };
+            });
+
             return qz;
+        }).catch((error) => {
+            qzPromise = null;
+            throw error;
         });
     }
 
@@ -50,9 +99,49 @@ async function loadQzTray(): Promise<QzTrayModule> {
 
 async function getConnectedQzTray(): Promise<QzTrayModule> {
     const qz = await loadQzTray();
-    if (!qz.websocket.isActive()) {
-        await qz.websocket.connect();
+    if (qz.websocket.isActive()) {
+        return qz;
     }
+
+    // QZ Tray's connect() Promise may stall even when the WebSocket is
+    // established (blocked on certificate handshake with empty certs).
+    // We fire connect() and poll isActive() in parallel — whichever resolves
+    // first wins. This avoids both the race-condition timeout and infinite hang.
+    await new Promise<void>((resolve, reject) => {
+        let settled = false;
+
+        const settle = (fn: () => void) => {
+            if (settled) return;
+            settled = true;
+            clearInterval(pollId);
+            clearTimeout(timeoutId);
+            fn();
+        };
+
+        // Poll every 100 ms — resolves as soon as socket is active
+        const pollId = setInterval(() => {
+            if (qz.websocket.isActive()) {
+                settle(resolve);
+            }
+        }, 100);
+
+        // Also resolve if the connect Promise itself resolves
+        qz.websocket.connect().then(
+            () => settle(resolve),
+            (err: unknown) => settle(() => reject(err as Error))
+        );
+
+        // Give up after 15 s
+        const timeoutId = setTimeout(() => {
+            settle(() =>
+                reject(
+                    new Error(
+                        "QZ Tray no respondió en 15 s. Verificá que esté corriendo."
+                    )
+                )
+            );
+        }, 15_000);
+    });
 
     return qz;
 }
@@ -88,14 +177,17 @@ export async function printHtmlWithQzTray(html: string, jobName: string): Promis
         jobName,
     });
 
-    await qz.print(config, [
-        {
-            type: "pixel",
-            format: "html",
-            flavor: "plain",
-            data: html,
-        },
-    ]);
+    await withTimeout(
+        qz.print(config, [
+            {
+                type: "pixel",
+                format: "html",
+                flavor: "plain",
+                data: html,
+            },
+        ]),
+        "QZ Tray no confirmó la impresión"
+    );
 
     return printerName;
 }

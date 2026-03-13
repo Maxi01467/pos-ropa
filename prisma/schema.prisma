@@ -21,8 +21,9 @@ model User {
   active    Boolean  @default(true)
   deviceId  String?  @unique // Si en el futuro usan QR con celular
 
-  openedSessions     CashSession[] @relation("OpenedSessions") // Nuevo
-  closedSessions     CashSession[] @relation("ClosedSessions") // Nuevo
+  openedSessions     CashSession[] @relation("OpenedSessions")
+  closedSessions     CashSession[] @relation("ClosedSessions")
+  countedSessions    CashSession[] @relation("CountedSessions")
   
   shifts    Shift[]
   sales     Sale[]
@@ -53,11 +54,16 @@ model CashSession {
   closedById     String?
   closedBy       User?     @relation("ClosedSessions", fields: [closedById], references: [id])
   
-  status         String    @default("OPEN") // OPEN, CLOSED
-  
+  status         String    @default("OPEN") // OPEN, PENDING_COUNT, CLOSED
+
   openingDate    DateTime  @default(now())
   closingDate    DateTime?
-  
+
+  // Quién y cuándo hizo el arqueo (puede ser diferido)
+  countedById    String?
+  countedBy      User?     @relation("CountedSessions", fields: [countedById], references: [id])
+  countingDate   DateTime?
+
   // Valores monetarios
   initialAmount  Decimal   // El "cambio" con el que se empieza
   expectedAmount Decimal?  // Lo que el sistema calcula que debería haber

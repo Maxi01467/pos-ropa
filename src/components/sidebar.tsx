@@ -18,6 +18,7 @@ import {
     LogOut,
     Users,
     Clock3,
+    ClipboardList,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,6 +43,7 @@ const navItems = [
     { href: "/stock", label: "Stock", icon: BarChart3 },
     { href: "/proveedores", label: "Proveedores", icon: Truck },
     { href: "/caja", label: "Caja", icon: Wallet },
+    { href: "/arqueos", label: "Arqueos", icon: ClipboardList },
     { href: "/asistencia", label: "Asistencia", icon: Clock3 },
     { href: "/boletas", label: "Boletas", icon: ReceiptText },
     { href: "/empleados", label: "Empleados", icon: Users },

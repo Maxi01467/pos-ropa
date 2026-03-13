@@ -60,7 +60,7 @@ export function BarcodeLabels({ items }: BarcodeLabelsProps) {
                     style={{
                         width: `${LABEL_WIDTH_MM}mm`,
                         height: `${LABEL_HEIGHT_MM}mm`,
-                        padding: "0.8mm 1.1mm",
+                        padding: "0.7mm 1mm",
                         display: "flex",
                         flexDirection: "column",
                         justifyContent: "space-between",
@@ -83,23 +83,54 @@ export function BarcodeLabels({ items }: BarcodeLabelsProps) {
 
                     <p
                         className="text-center font-medium"
-                        style={{ fontSize: "5px", lineHeight: 1 }}
+                        style={{ fontSize: "4.6px", lineHeight: 1 }}
                     >
                         T: {item.size} | {item.color}
                     </p>
 
                     <div
-                        className="flex w-full items-center justify-between font-bold"
+                        className="grid w-full grid-cols-2 gap-[0.7mm]"
                         style={{
-                            fontSize: "5px",
-                            lineHeight: 1,
                             borderTop: "0.2mm solid rgba(0,0,0,0.15)",
                             borderBottom: "0.2mm solid rgba(0,0,0,0.15)",
-                            padding: "0.35mm 0",
+                            padding: "0.55mm 0",
                         }}
                     >
-                        <span>V: {formatCurrency(item.retailPrice)}</span>
-                        <span>M: {formatCurrency(item.wholesalePrice)}</span>
+                        <div
+                            className="flex flex-col items-center justify-center rounded-[1.1mm] bg-black text-white"
+                            style={{ padding: "0.45mm 0.3mm" }}
+                        >
+                            <span
+                                className="font-bold uppercase"
+                                style={{ fontSize: "4px", lineHeight: 1, letterSpacing: "0.08em" }}
+                            >
+                                Venta
+                            </span>
+                            <span
+                                className="font-black"
+                                style={{ fontSize: "7.8px", lineHeight: 1.02 }}
+                            >
+                                {formatCurrency(item.retailPrice)}
+                            </span>
+                        </div>
+
+                        <div
+                            className="flex flex-col items-center justify-center rounded-[1.1mm] border border-black/20 bg-neutral-100"
+                            style={{ padding: "0.45mm 0.3mm" }}
+                        >
+                            <span
+                                className="font-bold uppercase"
+                                style={{ fontSize: "4px", lineHeight: 1, letterSpacing: "0.08em" }}
+                            >
+                                Mayor
+                            </span>
+                            <span
+                                className="font-black"
+                                style={{ fontSize: "7px", lineHeight: 1.02 }}
+                            >
+                                {formatCurrency(item.wholesalePrice)}
+                            </span>
+                        </div>
                     </div>
 
                     <div className="flex w-full flex-1 flex-col items-center justify-end">
@@ -107,8 +138,8 @@ export function BarcodeLabels({ items }: BarcodeLabelsProps) {
                             value={barcodeValue}
                             format="EAN13"
                             renderer="svg"
-                            width={1.35}
-                            height={30}
+                            width={1.22}
+                            height={22}
                             fontSize={7}
                             margin={0} 
                             textMargin={0}
@@ -119,8 +150,9 @@ export function BarcodeLabels({ items }: BarcodeLabelsProps) {
                         <p
                             className="mt-[0.4mm] w-full text-center font-semibold"
                             style={{
-                                fontSize: "5px",
+                                fontSize: "4.6px",
                                 lineHeight: 1,
+                                letterSpacing: "0.02em",
                                 whiteSpace: "nowrap",
                                 textOverflow: "ellipsis",
                                 overflow: "hidden",

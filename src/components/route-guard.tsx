@@ -6,12 +6,15 @@ import { useRouter, usePathname } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { canAccessPath } from "@/lib/permissions";
 import { useSessionSnapshot } from "@/lib/session-client";
+import { useCashSessionStatus } from "@/lib/cash-session-client";
 
 export function RouteGuard({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const pathname = usePathname();
     const { hasSession, role } = useSessionSnapshot();
+    const { hasOpenCashSession } = useCashSessionStatus();
     const isLoginRoute = pathname === "/login";
+    const isSalesRoute = pathname === "/nueva-venta";
 
     useEffect(() => {
         if (!hasSession && !isLoginRoute) {
@@ -33,7 +36,11 @@ export function RouteGuard({ children }: { children: React.ReactNode }) {
             router.push("/nueva-venta");
             return;
         }
-    }, [hasSession, isLoginRoute, pathname, role, router]);
+
+        if (hasSession && !isLoginRoute && isSalesRoute && hasOpenCashSession === false) {
+            router.push("/caja");
+        }
+    }, [hasOpenCashSession, hasSession, isLoginRoute, isSalesRoute, pathname, role, router]);
 
     if (!isLoginRoute && !hasSession) {
         return (
@@ -60,6 +67,22 @@ export function RouteGuard({ children }: { children: React.ReactNode }) {
     }
 
     if (hasSession && role === "STAFF" && pathname === "/") {
+        return (
+            <div className="flex h-screen w-full items-center justify-center bg-background">
+                <Loader2 className="size-10 animate-spin text-emerald-600" />
+            </div>
+        );
+    }
+
+    if (isSalesRoute && hasOpenCashSession === null) {
+        return (
+            <div className="flex h-screen w-full items-center justify-center bg-background">
+                <Loader2 className="size-10 animate-spin text-emerald-600" />
+            </div>
+        );
+    }
+
+    if (isSalesRoute && hasOpenCashSession === false) {
         return (
             <div className="flex h-screen w-full items-center justify-center bg-background">
                 <Loader2 className="size-10 animate-spin text-emerald-600" />

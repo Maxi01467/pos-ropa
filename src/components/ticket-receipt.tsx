@@ -26,6 +26,8 @@ function formatCurrency(amount: number): string {
 export function TicketReceipt({ data, isGift = false }: TicketReceiptProps) {
     if (!data) return null;
 
+    const printableItems =
+        isGift && data.giftItems && data.giftItems.length > 0 ? data.giftItems : data.items;
     const ticketBarcode = barcodeFromTicketNumber(data.ticketNumber);
 
     return (
@@ -81,7 +83,7 @@ export function TicketReceipt({ data, isGift = false }: TicketReceiptProps) {
                         </tr>
                     </thead>
                     <tbody>
-                        {data.items.map((item, index) => (
+                        {printableItems.map((item, index) => (
                             <tr key={index} className="align-top">
                                 <td className="py-1">{item.quantity}x</td>
                                 <td className="py-1">

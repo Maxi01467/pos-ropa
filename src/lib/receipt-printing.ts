@@ -14,6 +14,12 @@ export interface ReceiptPrintData {
         price: number;
         subtotal: number;
     }[];
+    giftItems?: {
+        name: string;
+        quantity: number;
+        price: number;
+        subtotal: number;
+    }[];
     total: number;
     paymentMethod: string;
     exchangeCredit?: number;
@@ -139,11 +145,13 @@ function buildEan13Svg(value: string): string {
 }
 
 export function renderReceiptHtml(data: ReceiptPrintData, isGift = false): string {
+    const printableItems =
+        isGift && data.giftItems && data.giftItems.length > 0 ? data.giftItems : data.items;
     const ticketBarcode = barcodeFromTicketNumber(data.ticketNumber);
     const barcodeSvg = buildEan13Svg(ticketBarcode);
     const formattedDate = format(data.date, "dd/MM/yyyy HH:mm", { locale: es });
 
-    const itemRows = data.items
+    const itemRows = printableItems
         .map((item) => {
             const priceColumn = isGift
                 ? ""

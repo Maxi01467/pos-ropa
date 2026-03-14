@@ -35,6 +35,7 @@ import {
 import { cn } from "@/lib/utils";
 import { canAccessPath } from "@/lib/permissions";
 import { useSessionSnapshot } from "@/lib/session-client";
+import { useCashSessionStatus } from "@/lib/cash-session-client";
 
 const navItems = [
     { href: "/", label: "Inicio", icon: Home },
@@ -45,7 +46,7 @@ const navItems = [
     { href: "/caja", label: "Caja", icon: Wallet },
     { href: "/arqueos", label: "Arqueos", icon: ClipboardList },
     { href: "/asistencia", label: "Asistencia", icon: Clock3 },
-    { href: "/boletas", label: "Boletas", icon: ReceiptText },
+    { href: "/boletas", label: "Historial Caja", icon: ReceiptText },
     { href: "/empleados", label: "Empleados", icon: Users },
 ] as const;
 
@@ -55,30 +56,39 @@ function NavLink({
     item,
     isActive,
     collapsed,
+    disabled = false,
     onClick,
 }: {
     item: NavItem;
     isActive: boolean;
     collapsed: boolean;
+    disabled?: boolean;
     onClick?: () => void;
 }) {
     const Icon = item.icon;
 
-    const link = (
-        <Link
-            href={item.href}
-            onClick={onClick}
+    const content = (
+        <div
             className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-3 text-base font-medium transition-all duration-200",
-                "hover:bg-accent hover:text-accent-foreground",
+                !disabled && "hover:bg-accent hover:text-accent-foreground",
                 isActive
                     ? "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:text-primary-foreground"
                     : "text-muted-foreground",
-                collapsed && "justify-center px-3"
+                collapsed && "justify-center px-3",
+                disabled && "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-muted-foreground"
             )}
         >
             <Icon className="size-5 shrink-0" />
             {!collapsed && <span>{item.label}</span>}
+        </div>
+    );
+
+    const link = disabled ? (
+        content
+    ) : (
+        <Link href={item.href} onClick={onClick}>
+            {content}
         </Link>
     );
 
@@ -87,7 +97,18 @@ function NavLink({
             <Tooltip>
                 <TooltipTrigger asChild>{link}</TooltipTrigger>
                 <TooltipContent side="right" sideOffset={10}>
-                    {item.label}
+                    {disabled ? "Abrí la caja para habilitar ventas" : item.label}
+                </TooltipContent>
+            </Tooltip>
+        );
+    }
+
+    if (disabled) {
+        return (
+            <Tooltip>
+                <TooltipTrigger asChild>{link}</TooltipTrigger>
+                <TooltipContent side="right" sideOffset={10}>
+                    Abrí la caja para habilitar ventas
                 </TooltipContent>
             </Tooltip>
         );
@@ -108,6 +129,7 @@ function SidebarContent({
     const pathname = usePathname();
     const router = useRouter();
     const { role } = useSessionSnapshot();
+    const { hasOpenCashSession } = useCashSessionStatus();
 
     const visibleItems = navItems.filter((item) => canAccessPath(role ?? "ADMIN", item.href));
 
@@ -166,6 +188,7 @@ function SidebarContent({
                         item={item}
                         isActive={pathname === item.href}
                         collapsed={collapsed}
+                        disabled={item.href === "/nueva-venta" && hasOpenCashSession === false}
                         onClick={onNavClick}
                     />
                 ))}

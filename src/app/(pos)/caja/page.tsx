@@ -39,6 +39,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useSessionSnapshot } from "@/lib/session-client";
+import { notifyCashSessionUpdated } from "@/lib/cash-session-client";
 
 type Seller = { id: string; name: string; role: string };
 
@@ -784,9 +785,12 @@ export default function CajaPage() {
             ]);
             setSession(currentSession as CashSession | null);
             setSellers(sellersData as Seller[]);
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Caja Load Error:", error);
-            toast.error("Error al cargar la caja: " + (error?.message || String(error)));
+            toast.error(
+                "Error al cargar la caja: " +
+                    (error instanceof Error ? error.message : String(error))
+            );
         } finally {
             setIsLoading(false);
         }
@@ -819,6 +823,7 @@ export default function CajaPage() {
         if (!selectedSellerId) return toast.error("Seleccioná un usuario");
         try {
             await openCashSession(Number(initialAmount), selectedSellerId);
+            notifyCashSessionUpdated();
             toast.success("Caja abierta correctamente");
             setInitialAmount("");
             loadData();
@@ -831,6 +836,7 @@ export default function CajaPage() {
         if (!session) return;
         try {
             await closeCashSession(session.id, actualAmount, userId);
+            notifyCashSessionUpdated();
             if (isAdmin) {
                 toast.success("Caja cerrada exitosamente");
             } else {
@@ -847,6 +853,7 @@ export default function CajaPage() {
         if (!session) return;
         try {
             await closeCashSessionWithoutCount(session.id, userId);
+            notifyCashSessionUpdated();
             toast.success("Caja cerrada. El arqueo quedó pendiente en la sección Arqueos.");
             loadData();
         } catch {

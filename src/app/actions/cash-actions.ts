@@ -15,8 +15,6 @@ const SESSION_INCLUDE = {
     sales: true,
 } satisfies Prisma.CashSessionInclude;
 
-type SerializedSession = ReturnType<typeof serializeCashSession>;
-
 type CashSessionWithIncludes = Prisma.CashSessionGetPayload<{
     include: typeof SESSION_INCLUDE;
 }>;
@@ -241,4 +239,60 @@ export async function getClosedSessions(limit = 30) {
     });
 
     return sessions.map(serializeCashSession);
+}
+
+export async function getCashSessionsHistory() {
+    const sessions = await prisma.cashSession.findMany({
+        orderBy: { openingDate: "desc" },
+        include: {
+            openedBy: {
+                select: { id: true, name: true, role: true },
+            },
+            closedBy: {
+                select: { id: true, name: true, role: true },
+            },
+            countedBy: {
+                select: { id: true, name: true, role: true },
+            },
+            sales: {
+                orderBy: { createdAt: "desc" },
+                include: {
+                    user: {
+                        select: { name: true },
+                    },
+                },
+            },
+        },
+    });
+
+    return sessions.map((session) => ({
+        id: session.id,
+        status: session.status,
+        openingDate: session.openingDate.toISOString(),
+        closingDate: session.closingDate?.toISOString() ?? null,
+        countingDate: session.countingDate?.toISOString() ?? null,
+        initialAmount: Number(session.initialAmount),
+        expectedAmount: session.expectedAmount == null ? null : Number(session.expectedAmount),
+        actualAmount: session.actualAmount == null ? null : Number(session.actualAmount),
+        difference: session.difference == null ? null : Number(session.difference),
+        openedBy: session.openedBy
+            ? { id: session.openedBy.id, name: session.openedBy.name, role: session.openedBy.role }
+            : null,
+        closedBy: session.closedBy
+            ? { id: session.closedBy.id, name: session.closedBy.name, role: session.closedBy.role }
+            : null,
+        countedBy: session.countedBy
+            ? { id: session.countedBy.id, name: session.countedBy.name, role: session.countedBy.role }
+            : null,
+        sales: session.sales.map((sale) => ({
+            id: sale.id,
+            ticketNumber: sale.ticketNumber,
+            total: Number(sale.total),
+            paymentMethod: sale.paymentMethod,
+            cashAmount: sale.cashAmount == null ? null : Number(sale.cashAmount),
+            transferAmount: sale.transferAmount == null ? null : Number(sale.transferAmount),
+            createdAt: sale.createdAt.toISOString(),
+            sellerName: sale.user.name,
+        })),
+    }));
 }

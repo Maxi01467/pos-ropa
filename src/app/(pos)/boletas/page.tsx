@@ -1,22 +1,20 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { getSalesHistory } from "@/app/actions/sales-actions";
+import { useEffect, useMemo, useState } from "react";
+import { getCashSessionsHistory } from "@/app/actions/cash-actions";
 import {
     ReceiptText,
-    Search,
+    Wallet,
+    LockOpen,
+    Lock,
+    Loader2,
     Eye,
     Calendar,
-    CreditCard,
     Banknote,
-    Loader2,
-    Filter,
-    X,
-    Layers // Nuevo icono para pago mixto
+    CreditCard,
+    Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -30,124 +28,99 @@ import {
 import {
     Dialog,
     DialogContent,
+    DialogDescription,
     DialogHeader,
     DialogTitle,
-    DialogDescription,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { barcodeFromTicketNumber } from "@/lib/barcodes";
 
-interface SaleItem {
+type CashSessionHistory = {
     id: string;
-    productName: string;
-    size: string;
-    color: string;
-    sku: string;
-    quantity: number;
-    priceAtTime: number;
-    priceType: string;
-    returnedQuantity: number;
-}
+    status: string;
+    openingDate: string;
+    closingDate: string | null;
+    countingDate: string | null;
+    initialAmount: number;
+    expectedAmount: number | null;
+    actualAmount: number | null;
+    difference: number | null;
+    openedBy: { id: string; name: string; role: string } | null;
+    closedBy: { id: string; name: string; role: string } | null;
+    countedBy: { id: string; name: string; role: string } | null;
+    sales: Array<{
+        id: string;
+        ticketNumber: number;
+        total: number;
+        paymentMethod: string;
+        cashAmount: number | null;
+        transferAmount: number | null;
+        createdAt: string;
+        sellerName: string;
+    }>;
+};
 
-interface SaleTicket {
-    id: string;
-    ticketNumber: number;
-    total: number;
-    paymentMethod: string;
-    cashAmount?: number;     // NUEVO: Para el desglose
-    transferAmount?: number; // NUEVO: Para el desglose
-    date: string;
-    sellerName: string;
-    items: SaleItem[];
-}
-
-function formatCurrency(amount: number): string {
+function formatCurrency(amount: number | null | undefined): string {
     return new Intl.NumberFormat("es-AR", {
         style: "currency",
         currency: "ARS",
         minimumFractionDigits: 0,
-    }).format(amount);
+    }).format(Number(amount) || 0);
 }
 
-function formatDate(dateStr: string): string {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("es-AR", {
-        day: "2-digit", month: "2-digit", year: "numeric",
-        hour: "2-digit", minute: "2-digit"
+function formatDate(dateStr: string | null): string {
+    if (!dateStr) return "—";
+
+    return new Date(dateStr).toLocaleDateString("es-AR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
     });
 }
 
-export default function BoletasPage() {
-    const [sales, setSales] = useState<SaleTicket[]>([]);
+export default function HistorialCajaPage() {
+    const [sessions, setSessions] = useState<CashSessionHistory[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    
-    // Estados de filtrado
-    const [searchQuery, setSearchQuery] = useState("");
-    const [filterDateFrom, setFilterDateFrom] = useState("");
-    const [filterDateTo, setFilterDateTo] = useState("");
-    const [showFilters, setShowFilters] = useState(false);
-    
-    const [selectedTicket, setSelectedTicket] = useState<SaleTicket | null>(null);
+    const [selectedSession, setSelectedSession] = useState<CashSessionHistory | null>(null);
 
     useEffect(() => {
-        const loadSales = async () => {
+        const loadHistory = async () => {
             try {
-                const data = await getSalesHistory();
-                setSales(data);
+                const data = await getCashSessionsHistory();
+                setSessions(data);
             } catch (error) {
-                toast.error("Error al cargar el historial de boletas");
+                toast.error("No se pudo cargar el historial de caja");
                 console.error(error);
             } finally {
                 setIsLoading(false);
             }
         };
-        loadSales();
+
+        loadHistory();
     }, []);
 
-    // Lógica de filtrado
-    const filteredSales = useMemo(() => {
-        return sales.filter((sale) => {
-            const normalizedQuery = searchQuery.trim();
-            const matchesTicketNumber = sale.ticketNumber.toString().includes(normalizedQuery);
-            const matchesBarcode = barcodeFromTicketNumber(sale.ticketNumber).includes(normalizedQuery);
+    const summary = useMemo(() => {
+        const openSessions = sessions.filter((session) => session.status === "OPEN").length;
+        const closedSessions = sessions.filter((session) => session.status === "CLOSED").length;
+        const pendingCountSessions = sessions.filter((session) => session.status === "PENDING_COUNT").length;
+        const totalTickets = sessions.reduce((sum, session) => sum + session.sales.length, 0);
 
-            if (normalizedQuery && !matchesTicketNumber && !matchesBarcode) {
-                return false;
-            }
-            if (filterDateFrom) {
-                const fromDate = new Date(filterDateFrom);
-                if (new Date(sale.date) < fromDate) {
-                    return false;
-                }
-            }
-            if (filterDateTo) {
-                const toDate = new Date(`${filterDateTo}T23:59:59`);
-                if (new Date(sale.date) > toDate) {
-                    return false;
-                }
-            }
-            return true;
-        });
-    }, [sales, searchQuery, filterDateFrom, filterDateTo]);
-
-    // Estadísticas
-    const totalRevenue = filteredSales.reduce((sum, sale) => sum + sale.total, 0);
-    const totalTickets = filteredSales.length;
-
-    const hasActiveDateFilters = filterDateFrom !== "" || filterDateTo !== "";
-
-    const clearDateFilters = () => {
-        setFilterDateFrom("");
-        setFilterDateTo("");
-    };
+        return {
+            openSessions,
+            closedSessions,
+            pendingCountSessions,
+            totalTickets,
+        };
+    }, [sessions]);
 
     if (isLoading) {
         return (
             <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
                 <div className="flex flex-col items-center gap-4 text-muted-foreground">
                     <Loader2 className="size-10 animate-spin text-primary" />
-                    <p className="text-lg font-medium">Cargando historial de ventas...</p>
+                    <p className="text-lg font-medium">Cargando historial de caja...</p>
                 </div>
             </div>
         );
@@ -155,181 +128,130 @@ export default function BoletasPage() {
 
     return (
         <div className="p-4 lg:p-8">
-            {/* Cabecera */}
-            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">
-                        Boletas y Ventas
-                    </h1>
-                    <p className="mt-1 text-muted-foreground">
-                        Historial completo de tickets emitidos
-                    </p>
-                </div>
+            <div className="mb-6">
+                <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">
+                    Historial de Caja
+                </h1>
+                <p className="mt-1 text-muted-foreground">
+                    Revisá todas las cajas abiertas, cerradas o pendientes y consultá las boletas de cada sesión.
+                </p>
             </div>
 
-            {/* Tarjetas de Resumen */}
-            <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <Card>
                     <CardContent className="flex items-center gap-4 p-4">
                         <div className="flex size-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-                            <Banknote className="size-5" />
+                            <LockOpen className="size-5" />
                         </div>
                         <div>
-                            <p className="text-sm text-muted-foreground">Recaudación Total</p>
-                            <p className="text-2xl font-bold">{formatCurrency(totalRevenue)}</p>
+                            <p className="text-sm text-muted-foreground">Cajas abiertas</p>
+                            <p className="text-2xl font-bold">{summary.openSessions}</p>
                         </div>
                     </CardContent>
                 </Card>
                 <Card>
                     <CardContent className="flex items-center gap-4 p-4">
-                        <div className="flex size-10 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                        <div className="flex size-10 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+                            <Lock className="size-5" />
+                        </div>
+                        <div>
+                            <p className="text-sm text-muted-foreground">Cajas cerradas</p>
+                            <p className="text-2xl font-bold">{summary.closedSessions}</p>
+                        </div>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardContent className="flex items-center gap-4 p-4">
+                        <div className="flex size-10 items-center justify-center rounded-lg bg-amber-50 text-amber-700">
+                            <Wallet className="size-5" />
+                        </div>
+                        <div>
+                            <p className="text-sm text-muted-foreground">Pendientes de arqueo</p>
+                            <p className="text-2xl font-bold">{summary.pendingCountSessions}</p>
+                        </div>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardContent className="flex items-center gap-4 p-4">
+                        <div className="flex size-10 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
                             <ReceiptText className="size-5" />
                         </div>
                         <div>
-                            <p className="text-sm text-muted-foreground">Tickets Emitidos</p>
-                            <p className="text-2xl font-bold">{totalTickets}</p>
+                            <p className="text-sm text-muted-foreground">Boletas registradas</p>
+                            <p className="text-2xl font-bold">{summary.totalTickets}</p>
                         </div>
                     </CardContent>
                 </Card>
             </div>
 
-            {/* Buscador y Filtros */}
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="relative flex-1 max-w-md">
-                    <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                        placeholder="Buscar por N° de Boleta..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="h-11 pl-10"
-                        type="number"
-                    />
-                </div>
-                
-                <div className="flex items-center gap-2">
-                    <Button
-                        variant={showFilters ? "secondary" : "outline"}
-                        className="h-11 gap-2"
-                        onClick={() => setShowFilters(!showFilters)}
-                    >
-                        <Filter className="size-4" />
-                        Fechas
-                        {hasActiveDateFilters && (
-                            <Badge variant="default" className="ml-1 flex size-5 items-center justify-center rounded-full p-0 text-xs">
-                                !
-                            </Badge>
-                        )}
-                    </Button>
-                    {hasActiveDateFilters && (
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-11 gap-1 text-muted-foreground"
-                            onClick={clearDateFilters}
-                        >
-                            <X className="size-3.5" />
-                            Limpiar fechas
-                        </Button>
-                    )}
-                </div>
-            </div>
-
-            {/* Panel de Fechas */}
-            {showFilters && (
-                <div className="mb-6 rounded-lg border bg-muted/30 p-4 max-w-2xl">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-1.5">
-                            <Label className="text-sm font-medium">Desde</Label>
-                            <Input
-                                type="date"
-                                value={filterDateFrom}
-                                onChange={(event) => setFilterDateFrom(event.target.value)}
-                                className="h-10 bg-background"
-                            />
-                        </div>
-                        <div className="space-y-1.5">
-                            <Label className="text-sm font-medium">Hasta</Label>
-                            <Input
-                                type="date"
-                                value={filterDateTo}
-                                onChange={(event) => setFilterDateTo(event.target.value)}
-                                className="h-10 bg-background"
-                            />
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Tabla Principal */}
             <div className="rounded-xl border bg-card">
                 <Table>
                     <TableHeader>
                         <TableRow className="hover:bg-transparent">
-                            <TableHead className="font-semibold">N° Boleta</TableHead>
-                            <TableHead className="font-semibold">Fecha</TableHead>
-                            <TableHead className="font-semibold">Vendedor</TableHead>
-                            <TableHead className="font-semibold">Método Pago</TableHead>
-                            <TableHead className="text-right font-semibold">Total</TableHead>
+                            <TableHead className="font-semibold">Caja</TableHead>
+                            <TableHead className="font-semibold">Estado</TableHead>
+                            <TableHead className="font-semibold">Apertura</TableHead>
+                            <TableHead className="font-semibold">Cierre</TableHead>
+                            <TableHead className="font-semibold">Abierta por</TableHead>
+                            <TableHead className="text-right font-semibold">Boletas</TableHead>
                             <TableHead className="text-right font-semibold">Acciones</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {filteredSales.length === 0 ? (
+                        {sessions.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={6} className="py-16 text-center">
-                                    <ReceiptText className="mx-auto mb-3 size-12 text-muted-foreground/30" />
+                                <TableCell colSpan={7} className="py-16 text-center">
+                                    <Wallet className="mx-auto mb-3 size-12 text-muted-foreground/30" />
                                     <p className="text-lg font-medium text-muted-foreground">
-                                        No se encontraron boletas
+                                        Todavía no hay sesiones de caja registradas
                                     </p>
-                                    {(searchQuery || hasActiveDateFilters) && (
-                                        <p className="mt-1 text-sm text-muted-foreground/70">
-                                            Probá ajustando los filtros de búsqueda
-                                        </p>
-                                    )}
                                 </TableCell>
                             </TableRow>
                         ) : (
-                            filteredSales.map((sale) => (
-                                <TableRow key={sale.id}>
+                            sessions.map((session, index) => (
+                                <TableRow key={session.id}>
                                     <TableCell>
                                         <Badge variant="outline" className="font-mono text-sm bg-background">
-                                            #{sale.ticketNumber.toString().padStart(4, '0')}
+                                            Caja #{sessions.length - index}
+                                        </Badge>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Badge
+                                            className={cn(
+                                                "gap-1",
+                                                session.status === "OPEN" && "bg-emerald-100 text-emerald-700 hover:bg-emerald-200",
+                                                session.status === "CLOSED" && "bg-slate-100 text-slate-700 hover:bg-slate-200",
+                                                session.status === "PENDING_COUNT" && "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                                            )}
+                                        >
+                                            {session.status === "OPEN" ? <LockOpen className="size-3" /> : <Lock className="size-3" />}
+                                            {session.status === "PENDING_COUNT" ? "PENDIENTE" : session.status}
                                         </Badge>
                                     </TableCell>
                                     <TableCell className="text-sm text-muted-foreground">
                                         <div className="flex items-center gap-1.5">
                                             <Calendar className="size-3.5" />
-                                            {formatDate(sale.date)}
+                                            {formatDate(session.openingDate)}
                                         </div>
                                     </TableCell>
-                                    <TableCell className="text-sm font-medium">
-                                        {sale.sellerName}
+                                    <TableCell className="text-sm text-muted-foreground">
+                                        {formatDate(session.closingDate)}
                                     </TableCell>
-                                    <TableCell>
-                                        <Badge className={cn(
-                                            "gap-1",
-                                            sale.paymentMethod === 'EFECTIVO' && 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200',
-                                            sale.paymentMethod === 'TRANSFERENCIA' && 'bg-blue-100 text-blue-700 hover:bg-blue-200',
-                                            sale.paymentMethod === 'MIXTO' && 'bg-purple-100 text-purple-700 hover:bg-purple-200'
-                                        )}>
-                                            {sale.paymentMethod === 'EFECTIVO' && <Banknote className="size-3" />}
-                                            {sale.paymentMethod === 'TRANSFERENCIA' && <CreditCard className="size-3" />}
-                                            {sale.paymentMethod === 'MIXTO' && <Layers className="size-3" />}
-                                            {sale.paymentMethod}
-                                        </Badge>
+                                    <TableCell className="text-sm font-medium">
+                                        {session.openedBy?.name ?? "—"}
                                     </TableCell>
                                     <TableCell className="text-right font-bold">
-                                        {formatCurrency(sale.total)}
+                                        {session.sales.length}
                                     </TableCell>
                                     <TableCell className="text-right">
                                         <Button
                                             variant="ghost"
                                             size="sm"
                                             className="gap-2"
-                                            onClick={() => setSelectedTicket(sale)}
+                                            onClick={() => setSelectedSession(session)}
                                         >
                                             <Eye className="size-4" />
-                                            Ver detalle
+                                            Ver boletas
                                         </Button>
                                     </TableCell>
                                 </TableRow>
@@ -339,105 +261,92 @@ export default function BoletasPage() {
                 </Table>
             </div>
 
-            {/* Modal de Detalle de Boleta */}
-            <Dialog 
-                open={Boolean(selectedTicket)} 
-                onOpenChange={(open) => !open && setSelectedTicket(null)}
+            <Dialog
+                open={Boolean(selectedSession)}
+                onOpenChange={(open) => !open && setSelectedSession(null)}
             >
-                <DialogContent className="sm:max-w-2xl">
-                    {selectedTicket && (
+                <DialogContent className="sm:max-w-4xl">
+                    {selectedSession && (
                         <>
                             <DialogHeader>
                                 <DialogTitle className="flex items-center gap-2 text-xl">
-                                    <ReceiptText className="size-5 text-muted-foreground" />
-                                    Boleta #{selectedTicket.ticketNumber.toString().padStart(4, '0')}
+                                    <Wallet className="size-5 text-muted-foreground" />
+                                    Detalle de caja
                                 </DialogTitle>
                                 <DialogDescription>
-                                    Emitida el {formatDate(selectedTicket.date)} por {selectedTicket.sellerName}
+                                    Apertura: {formatDate(selectedSession.openingDate)} · Cierre: {formatDate(selectedSession.closingDate)}
                                 </DialogDescription>
                             </DialogHeader>
 
-                            <div className="mt-4 max-h-[40vh] overflow-auto rounded-lg border">
+                            <div className="grid gap-3 sm:grid-cols-3">
+                                <div className="rounded-lg border bg-muted/30 p-4">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Estado</p>
+                                    <p className="mt-2 text-lg font-bold">{selectedSession.status === "PENDING_COUNT" ? "PENDIENTE" : selectedSession.status}</p>
+                                </div>
+                                <div className="rounded-lg border bg-muted/30 p-4">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Fondo inicial</p>
+                                    <p className="mt-2 text-lg font-bold">{formatCurrency(selectedSession.initialAmount)}</p>
+                                </div>
+                                <div className="rounded-lg border bg-muted/30 p-4">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Boletas</p>
+                                    <p className="mt-2 text-lg font-bold">{selectedSession.sales.length}</p>
+                                </div>
+                            </div>
+
+                            <div className="max-h-[50vh] overflow-auto rounded-lg border">
                                 <Table>
                                     <TableHeader>
-                                        <TableRow className="bg-muted/50 hover:bg-muted/50">
-                                            <TableHead>Producto</TableHead>
-                                            <TableHead className="text-center">Cant.</TableHead>
-                                            <TableHead className="text-right">Precio Unit.</TableHead>
-                                            <TableHead className="text-right">Subtotal</TableHead>
+                                        <TableRow className="hover:bg-transparent">
+                                            <TableHead>N° Boleta</TableHead>
+                                            <TableHead>Fecha</TableHead>
+                                            <TableHead>Vendedor</TableHead>
+                                            <TableHead>Método</TableHead>
+                                            <TableHead className="text-right">Total</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {selectedTicket.items.map((item) => (
-                                            <TableRow key={item.id}>
-                                                <TableCell>
-                                                    <p className="font-semibold">{item.productName}</p>
-                                                    <p className="text-xs text-muted-foreground">
-                                                        Talle: {item.size} | Color: {item.color}
-                                                    </p>
-                                                    <code className="mt-1 block w-max rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                                                        {item.sku}
-                                                    </code>
-                                                </TableCell>
-                                                <TableCell className="text-center">
-                                                    <Badge variant="secondary">{item.quantity}</Badge>
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    {formatCurrency(item.priceAtTime)}
-                                                    <p className="text-[10px] text-muted-foreground uppercase font-medium">
-                                                        {item.priceType === "WHOLESALE" ? "Mayorista" : "Normal"}
-                                                    </p>
-                                                </TableCell>
-                                                <TableCell className="text-right font-medium">
-                                                    {formatCurrency(item.priceAtTime * item.quantity)}
+                                        {selectedSession.sales.length === 0 ? (
+                                            <TableRow>
+                                                <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
+                                                    Esta caja todavía no tiene boletas registradas.
                                                 </TableCell>
                                             </TableRow>
-                                        ))}
+                                        ) : (
+                                            selectedSession.sales.map((sale) => (
+                                                <TableRow key={sale.id}>
+                                                    <TableCell>
+                                                        <Badge variant="outline" className="font-mono text-sm bg-background">
+                                                            #{sale.ticketNumber.toString().padStart(4, "0")}
+                                                        </Badge>
+                                                    </TableCell>
+                                                    <TableCell className="text-sm text-muted-foreground">
+                                                        {formatDate(sale.createdAt)}
+                                                    </TableCell>
+                                                    <TableCell className="text-sm font-medium">
+                                                        {sale.sellerName}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Badge className={cn(
+                                                            "gap-1",
+                                                            sale.paymentMethod === "EFECTIVO" && "bg-emerald-100 text-emerald-700 hover:bg-emerald-200",
+                                                            sale.paymentMethod === "TRANSFERENCIA" && "bg-blue-100 text-blue-700 hover:bg-blue-200",
+                                                            sale.paymentMethod === "MIXTO" && "bg-purple-100 text-purple-700 hover:bg-purple-200",
+                                                            sale.paymentMethod === "CAMBIO" && "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                                                        )}>
+                                                            {sale.paymentMethod === "EFECTIVO" && <Banknote className="size-3" />}
+                                                            {sale.paymentMethod === "TRANSFERENCIA" && <CreditCard className="size-3" />}
+                                                            {sale.paymentMethod === "MIXTO" && <Layers className="size-3" />}
+                                                            {sale.paymentMethod}
+                                                        </Badge>
+                                                    </TableCell>
+                                                    <TableCell className="text-right font-bold">
+                                                        {formatCurrency(sale.total)}
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))
+                                        )}
                                     </TableBody>
                                 </Table>
-                            </div>
-                            
-                            {/* BLOQUE DE DESGLOSE DE PAGO */}
-                            <div className="mt-4 flex flex-col gap-3 rounded-lg bg-muted/30 p-4 border border-border/50">
-                                <div className="flex items-center justify-between">
-                                    <div className="space-y-1">
-                                        <p className="text-sm font-medium text-muted-foreground">Método de pago</p>
-                                        <Badge className={cn(
-                                            "gap-1 uppercase tracking-wider text-xs",
-                                            selectedTicket.paymentMethod === 'EFECTIVO' && 'bg-emerald-100 text-emerald-700',
-                                            selectedTicket.paymentMethod === 'TRANSFERENCIA' && 'bg-blue-100 text-blue-700',
-                                            selectedTicket.paymentMethod === 'MIXTO' && 'bg-purple-100 text-purple-700'
-                                        )}>
-                                            {selectedTicket.paymentMethod}
-                                        </Badge>
-                                    </div>
-                                    <div className="text-right space-y-1">
-                                        <p className="text-sm font-medium text-muted-foreground">Total cobrado</p>
-                                        <p className="text-3xl font-bold tracking-tight">{formatCurrency(selectedTicket.total)}</p>
-                                    </div>
-                                </div>
-                                
-                                {/* Desglose exclusivo para MIXTO */}
-                                {selectedTicket.paymentMethod === 'MIXTO' && (
-                                    <div className="mt-2 grid grid-cols-2 gap-4 rounded-md bg-background p-3 border shadow-sm">
-                                        <div>
-                                            <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-bold mb-1">
-                                                En Efectivo
-                                            </p>
-                                            <p className="text-xl font-bold text-emerald-600">
-                                                {formatCurrency(selectedTicket.cashAmount || 0)}
-                                            </p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-bold mb-1">
-                                                Transferencia
-                                            </p>
-                                            <p className="text-xl font-bold text-blue-600">
-                                                {formatCurrency(selectedTicket.transferAmount || 0)}
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                         </>
                     )}

@@ -18,6 +18,7 @@ import {
     LogOut,
     Users,
     Clock3,
+    ClipboardList,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,8 +33,9 @@ import {
     SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { canAccessPath } from "@/lib/permissions";
-import { useSessionSnapshot } from "@/lib/session-client";
+import { canAccessPath, type SessionRole } from "@/lib/permissions";
+import { useCashSessionStatus } from "@/lib/cash-session-client";
+import { logoutUser } from "@/app/actions/auth-actions";
 
 const navItems = [
     { href: "/", label: "Inicio", icon: Home },
@@ -42,8 +44,9 @@ const navItems = [
     { href: "/stock", label: "Stock", icon: BarChart3 },
     { href: "/proveedores", label: "Proveedores", icon: Truck },
     { href: "/caja", label: "Caja", icon: Wallet },
+    { href: "/arqueos", label: "Arqueos", icon: ClipboardList },
     { href: "/asistencia", label: "Asistencia", icon: Clock3 },
-    { href: "/boletas", label: "Boletas", icon: ReceiptText },
+    { href: "/boletas", label: "Historial Caja", icon: ReceiptText },
     { href: "/empleados", label: "Empleados", icon: Users },
 ] as const;
 
@@ -53,30 +56,39 @@ function NavLink({
     item,
     isActive,
     collapsed,
+    disabled = false,
     onClick,
 }: {
     item: NavItem;
     isActive: boolean;
     collapsed: boolean;
+    disabled?: boolean;
     onClick?: () => void;
 }) {
     const Icon = item.icon;
 
-    const link = (
-        <Link
-            href={item.href}
-            onClick={onClick}
+    const content = (
+        <div
             className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-3 text-base font-medium transition-all duration-200",
-                "hover:bg-accent hover:text-accent-foreground",
+                !disabled && "hover:bg-accent hover:text-accent-foreground",
                 isActive
                     ? "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:text-primary-foreground"
                     : "text-muted-foreground",
-                collapsed && "justify-center px-3"
+                collapsed && "justify-center px-3",
+                disabled && "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-muted-foreground"
             )}
         >
             <Icon className="size-5 shrink-0" />
             {!collapsed && <span>{item.label}</span>}
+        </div>
+    );
+
+    const link = disabled ? (
+        content
+    ) : (
+        <Link href={item.href} onClick={onClick}>
+            {content}
         </Link>
     );
 
@@ -85,7 +97,18 @@ function NavLink({
             <Tooltip>
                 <TooltipTrigger asChild>{link}</TooltipTrigger>
                 <TooltipContent side="right" sideOffset={10}>
-                    {item.label}
+                    {disabled ? "Abrí la caja para habilitar ventas" : item.label}
+                </TooltipContent>
+            </Tooltip>
+        );
+    }
+
+    if (disabled) {
+        return (
+            <Tooltip>
+                <TooltipTrigger asChild>{link}</TooltipTrigger>
+                <TooltipContent side="right" sideOffset={10}>
+                    Abrí la caja para habilitar ventas
                 </TooltipContent>
             </Tooltip>
         );
@@ -95,29 +118,30 @@ function NavLink({
 }
 
 function SidebarContent({
+    role,
     collapsed,
     onToggle,
     onNavClick,
 }: {
+    role: SessionRole;
     collapsed: boolean;
     onToggle?: () => void;
     onNavClick?: () => void;
 }) {
     const pathname = usePathname();
     const router = useRouter();
-    const { role } = useSessionSnapshot();
+    const { hasOpenCashSession } = useCashSessionStatus();
 
-    const visibleItems = navItems.filter((item) => canAccessPath(role ?? "ADMIN", item.href));
+    const visibleItems = navItems.filter((item) => canAccessPath(role, item.href));
 
-    const handleLogout = () => {
-        // Borramos las credenciales de la sesión
+    const handleLogout = async () => {
+        await logoutUser();
         localStorage.removeItem("pos_session");
         localStorage.removeItem("pos_user");
         localStorage.removeItem("pos_role");
         localStorage.removeItem("pos_user_id");
-        
-        // Redirigimos al Login
-        router.push("/login");
+        router.replace("/login");
+        router.refresh();
     };
 
     const logoutButton = (
@@ -164,6 +188,7 @@ function SidebarContent({
                         item={item}
                         isActive={pathname === item.href}
                         collapsed={collapsed}
+                        disabled={item.href === "/nueva-venta" && hasOpenCashSession === false}
                         onClick={onNavClick}
                     />
                 ))}
@@ -209,7 +234,7 @@ function SidebarContent({
     );
 }
 
-export function Sidebar() {
+export function Sidebar({ role }: { role: SessionRole }) {
     const [collapsed, setCollapsed] = useState(false);
 
     return (
@@ -224,7 +249,7 @@ export function Sidebar() {
                     </SheetTrigger>
                     <SheetContent side="left" className="w-72 p-0">
                         <SheetTitle className="sr-only">Menú de navegación</SheetTitle>
-                        <SidebarContent collapsed={false} />
+                        <SidebarContent role={role} collapsed={false} />
                     </SheetContent>
                 </Sheet>
             </div>
@@ -237,6 +262,7 @@ export function Sidebar() {
                 )}
             >
                 <SidebarContent
+                    role={role}
                     collapsed={collapsed}
                     onToggle={() => setCollapsed(!collapsed)}
                 />

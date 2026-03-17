@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import { getProductsForPOS, getSellers } from "@/app/actions/pos-actions";
+import { createQuickProductWithStock } from "@/app/actions/inventory-actions";
 import { createExchangeSale, createSale, getSalesHistory } from "@/app/actions/sales-actions";
 import { TicketReceipt } from "@/components/ticket-receipt";
 import {
@@ -14,6 +15,7 @@ import {
     Plus,
     Minus,
     Trash2,
+    Gift,
     ShoppingBag,
     Loader2,
     UserCircle,
@@ -32,6 +34,7 @@ import {
     DialogDescription,
     DialogHeader,
     DialogTitle,
+    DialogFooter,
 } from "@/components/ui/dialog";
 import {
     Select,
@@ -61,6 +64,7 @@ export interface POSProduct {
 interface CartItem {
     product: POSProduct;
     quantity: number;
+    isGift: boolean;
 }
 
 interface Seller {
@@ -127,7 +131,6 @@ function formatCurrency(amount: number): string {
 export default function NuevaVentaPage() {
     const searchInputRef = useRef<HTMLInputElement>(null); // NUEVO
     const exchangeSearchInputRef = useRef<HTMLInputElement>(null);
-    const [giftDialogOpen, setGiftDialogOpen] = useState(false);
     const [exchangeDialogOpen, setExchangeDialogOpen] = useState(false);
     const [printGiftCopy, setPrintGiftCopy] = useState(false);
     const [activePrintIsGift, setActivePrintIsGift] = useState(false);
@@ -147,14 +150,20 @@ export default function NuevaVentaPage() {
     const [productsError, setProductsError] = useState<string | null>(null);
     const [sellers, setSellers] = useState<Seller[]>([]);
     const [selectedSellerId, setSelectedSellerId] = useState("");
+    const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+    const [quickCreateName, setQuickCreateName] = useState("");
+    const [quickCreatePrice, setQuickCreatePrice] = useState("");
+    const [quickCreateWholesalePrice, setQuickCreateWholesalePrice] = useState("");
+    const [quickCreateInitialStock, setQuickCreateInitialStock] = useState("1");
+    const [isQuickCreating, setIsQuickCreating] = useState(false);
     const startBrowserPrint = ({
-        gift,
+        hasGiftCopy,
         initialGiftCopy = false,
     }: {
-        gift: boolean;
+        hasGiftCopy: boolean;
         initialGiftCopy?: boolean;
     }) => {
-        setPrintGiftCopy(gift && !initialGiftCopy);
+        setPrintGiftCopy(hasGiftCopy && !initialGiftCopy);
         setActivePrintIsGift(initialGiftCopy);
 
         setTimeout(() => {
@@ -162,15 +171,10 @@ export default function NuevaVentaPage() {
         }, 350);
     };
 
-    const triggerPrint = async (gift: boolean) => {
-        const currentReceipt = receiptData;
-
-        setGiftDialogOpen(false);
-
-        if (!currentReceipt) {
-            return;
-        }
-
+    const triggerPrint = async (currentReceipt: ReceiptPrintData) => {
+        const hasGiftCopy = Boolean(
+            currentReceipt.giftItems && currentReceipt.giftItems.length > 0
+        );
         let regularReceiptPrinted = false;
 
         try {
@@ -181,7 +185,7 @@ export default function NuevaVentaPage() {
             );
             regularReceiptPrinted = true;
 
-            if (gift) {
+            if (hasGiftCopy) {
                 await printHtmlWithQzTray(
                     renderReceiptHtml(currentReceipt, true),
                     `Ticket cambio ${ticketLabel}`
@@ -193,21 +197,21 @@ export default function NuevaVentaPage() {
             setReceiptData(null);
 
             toast.success("Boleta enviada a QZ Tray", {
-                description: gift
+                description: hasGiftCopy
                     ? `${printerName} · cliente + regalo`
                     : printerName,
             });
         } catch (error) {
             console.error("QZ Tray printing failed:", error);
 
-            if (regularReceiptPrinted && gift) {
+            if (regularReceiptPrinted && hasGiftCopy) {
                 toast.error("Falló la copia de regalo en QZ Tray. Se abrirá esa copia en el navegador.");
-                startBrowserPrint({ gift: false, initialGiftCopy: true });
+                startBrowserPrint({ hasGiftCopy: false, initialGiftCopy: true });
                 return;
             }
 
             toast.error("No se pudo imprimir con QZ Tray. Se abrirá la impresión del navegador.");
-            startBrowserPrint({ gift });
+            startBrowserPrint({ hasGiftCopy });
         }
     };
 
@@ -250,6 +254,11 @@ export default function NuevaVentaPage() {
         };
     }, []);
 
+    const reloadProducts = async () => {
+        const products = await getProductsForPOS();
+        setAllProducts(products);
+    };
+
     useEffect(() => {
         const handleAfterPrint = () => {
             if (printGiftCopy && !activePrintIsGift) {
@@ -274,7 +283,7 @@ export default function NuevaVentaPage() {
     useEffect(() => {
         const handleGlobalScannerInput = (event: KeyboardEvent) => {
             if (event.ctrlKey || event.metaKey || event.altKey) return;
-            if (checkoutOpen || giftDialogOpen || exchangeDialogOpen) return;
+        if (checkoutOpen || exchangeDialogOpen) return;
 
             const searchInput = searchInputRef.current;
             if (!searchInput) return;
@@ -297,7 +306,7 @@ export default function NuevaVentaPage() {
         return () => {
             window.removeEventListener("keydown", handleGlobalScannerInput, true);
         };
-    }, [checkoutOpen, exchangeDialogOpen, giftDialogOpen]);
+    }, [checkoutOpen, exchangeDialogOpen]);
 
     useEffect(() => {
         if (!exchangeDialogOpen) return;
@@ -376,7 +385,7 @@ export default function NuevaVentaPage() {
                 description: product.name,
                 duration: 1500,
             });
-            return [...prev, { product, quantity: 1 }];
+            return [...prev, { product, quantity: 1, isGift: false }];
         });
     };
 
@@ -396,6 +405,16 @@ export default function NuevaVentaPage() {
                     return { ...item, quantity: newQty };
                 })
                 .filter(Boolean) as CartItem[]
+        );
+    };
+
+    const toggleGiftItem = (productId: string) => {
+        setCart((prev) =>
+            prev.map((item) =>
+                item.product.id === productId
+                    ? { ...item, isGift: !item.isGift }
+                    : item
+            )
         );
     };
 
@@ -481,6 +500,14 @@ export default function NuevaVentaPage() {
                 price: getUnitPrice(item.product),
                 subtotal: getUnitPrice(item.product) * item.quantity,
             })),
+            giftItems: cart
+                .filter((item) => item.isGift)
+                .map((item) => ({
+                    name: item.product.name,
+                    quantity: item.quantity,
+                    price: getUnitPrice(item.product),
+                    subtotal: getUnitPrice(item.product) * item.quantity,
+                })),
             total: payableAmount,
             paymentMethod,
             exchangeCredit: appliedExchange?.credit,
@@ -492,7 +519,9 @@ export default function NuevaVentaPage() {
         setAllProducts(updatedProducts);
         setAppliedExchange(null);
         setReceiptData(nextReceiptData);
-        setGiftDialogOpen(true);
+        setTimeout(() => {
+            void triggerPrint(nextReceiptData);
+        }, 150);
 
         return sale;
     };
@@ -590,6 +619,59 @@ export default function NuevaVentaPage() {
         setExchangeDialogOpen(false);
     };
 
+    const openQuickCreateDialog = () => {
+        const normalizedQuery = searchQuery.trim();
+        setQuickCreateName(normalizedQuery);
+        setQuickCreatePrice("");
+        setQuickCreateWholesalePrice("");
+        setQuickCreateInitialStock("1");
+        setQuickCreateOpen(true);
+    };
+
+    const handleQuickCreateProduct = async () => {
+        const normalizedName = quickCreateName.trim();
+        const price = Number.parseFloat(quickCreatePrice);
+        const wholesalePrice = Number.parseFloat(quickCreateWholesalePrice);
+        const initialStock = Number.parseInt(quickCreateInitialStock, 10);
+
+        if (!normalizedName) {
+            return toast.error("Ingresá el nombre del producto");
+        }
+
+        if (Number.isNaN(price) || price <= 0) {
+            return toast.error("Ingresá un precio de venta válido");
+        }
+
+        if (Number.isNaN(wholesalePrice) || wholesalePrice <= 0) {
+            return toast.error("Ingresá un precio mayorista válido");
+        }
+
+        if (Number.isNaN(initialStock) || initialStock < 0) {
+            return toast.error("Ingresá un stock inicial válido");
+        }
+
+        setIsQuickCreating(true);
+        try {
+            await createQuickProductWithStock({
+                name: normalizedName,
+                price,
+                wholesalePrice,
+                initialStock,
+            });
+
+            await reloadProducts();
+            setSearchQuery(normalizedName);
+            setQuickCreateOpen(false);
+            toast.success("Producto creado con éxito");
+            setTimeout(() => searchInputRef.current?.focus(), 10);
+        } catch (error) {
+            console.error("Quick create product failed:", error);
+            toast.error("No se pudo crear el producto");
+        } finally {
+            setIsQuickCreating(false);
+        }
+    };
+
     return (
         <>
             <div className="flex h-[calc(100vh-4rem)] print:hidden lg:h-screen flex-col lg:flex-row">
@@ -651,6 +733,15 @@ export default function NuevaVentaPage() {
                                 <p className="text-sm text-muted-foreground/70">
                                     Probá con otro nombre o código
                                 </p>
+                                {searchQuery.trim() && (
+                                    <Button
+                                        className="mt-6 gap-2 bg-emerald-600 hover:bg-emerald-700"
+                                        onClick={openQuickCreateDialog}
+                                    >
+                                        <Plus className="size-4" />
+                                        Crear producto rápido
+                                    </Button>
+                                )}
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -764,7 +855,7 @@ export default function NuevaVentaPage() {
                     </div>
 
                     <ScrollArea className="flex-1 px-4 lg:px-6">
-                        {cart.length === 0 ? (
+                        {cart.length === 0 && !appliedExchange ? (
                             <div className="flex flex-col items-center justify-center py-16 text-center">
                                 <ShoppingBag className="mb-3 size-16 text-muted-foreground/20" />
                                 <p className="text-base font-medium text-muted-foreground">
@@ -776,10 +867,35 @@ export default function NuevaVentaPage() {
                             </div>
                         ) : (
                             <div className="space-y-1 py-3">
+                                {appliedExchange?.items.map((item) => (
+                                    <div
+                                        key={item.saleItemId}
+                                        className="flex items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 px-2 py-3 text-rose-900"
+                                    >
+                                        <div className="min-w-0 flex-1">
+                                            <p className="truncate text-sm font-semibold">
+                                                {item.label}
+                                            </p>
+                                            <p className="mt-0.5 text-xs font-medium uppercase tracking-wide text-rose-700">
+                                                Producto entregado en cambio
+                                            </p>
+                                        </div>
+
+                                        <span className="w-20 text-right text-sm font-bold text-rose-700">
+                                            -{formatCurrency(item.amount)}
+                                        </span>
+                                    </div>
+                                ))}
+
                                 {cart.map((item) => (
                                     <div
                                         key={item.product.id}
-                                        className="group flex items-center gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-muted/50"
+                                        className={cn(
+                                            "group flex items-center gap-3 rounded-lg px-2 py-3 transition-colors",
+                                            item.isGift
+                                                ? "bg-amber-100/80 ring-1 ring-amber-200 hover:bg-amber-100/80"
+                                                : "hover:bg-muted/50"
+                                        )}
                                     >
                                         <div className="min-w-0 flex-1">
                                             <p className="truncate text-sm font-semibold">
@@ -826,14 +942,30 @@ export default function NuevaVentaPage() {
                                             )}
                                         </span>
 
-                                        <Button
-                                            variant="ghost"
-                                            size="icon-sm"
-                                            className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
-                                            onClick={() => removeFromCart(item.product.id)}
-                                        >
-                                            <Trash2 className="size-3.5" />
-                                        </Button>
+                                        <div className="flex items-center gap-1">
+                                            <Button
+                                                variant="ghost"
+                                                size="icon-sm"
+                                                className={cn(
+                                                    "shrink-0 opacity-0 transition-opacity group-hover:opacity-100",
+                                                    item.isGift
+                                                        ? "text-amber-600 hover:text-amber-700"
+                                                        : "text-muted-foreground hover:text-amber-600"
+                                                )}
+                                                onClick={() => toggleGiftItem(item.product.id)}
+                                                title="Marcar como regalo"
+                                            >
+                                                <Gift className="size-3.5" />
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon-sm"
+                                                className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
+                                                onClick={() => removeFromCart(item.product.id)}
+                                            >
+                                                <Trash2 className="size-3.5" />
+                                            </Button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -841,29 +973,6 @@ export default function NuevaVentaPage() {
                     </ScrollArea>
 
                     <div className="border-t bg-card px-4 py-4 lg:px-6">
-                        {appliedExchange && (
-                            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
-                                <div className="flex items-center justify-between gap-3">
-                                    <div>
-                                        <p className="font-semibold text-amber-900">
-                                            Cambio aplicado · Boleta #{appliedExchange.ticketNumber.toString().padStart(5, "0")}
-                                        </p>
-                                        <p className="text-xs text-amber-800">
-                                            {appliedExchange.items.length} producto(s) seleccionado(s)
-                                        </p>
-                                    </div>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="text-amber-900 hover:bg-amber-100"
-                                        onClick={() => setAppliedExchange(null)}
-                                    >
-                                        Quitar
-                                    </Button>
-                                </div>
-                            </div>
-                        )}
-
                         <div className="mb-4 space-y-2">
                             <Label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                                 <UserCircle className="size-3.5" />
@@ -915,9 +1024,20 @@ export default function NuevaVentaPage() {
                             </div>
                         </div>
                         {appliedExchange && (
-                            <div className="mb-3 flex items-center justify-between text-sm text-amber-700">
-                                <span>Crédito por cambio</span>
-                                <span className="font-semibold">-{formatCurrency(exchangeCredit)}</span>
+                            <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                        <p className="text-sm font-semibold uppercase tracking-wide text-rose-700">
+                                            Crédito por cambio
+                                        </p>
+                                        <p className="text-xs text-rose-600">
+                                            Boleta #{appliedExchange.ticketNumber.toString().padStart(5, "0")} · {appliedExchange.items.length} producto(s)
+                                        </p>
+                                    </div>
+                                    <span className="text-2xl font-black tracking-tight text-rose-700">
+                                        -{formatCurrency(exchangeCredit)}
+                                    </span>
+                                </div>
                             </div>
                         )}
                         <div className="mb-4 flex items-center justify-between">
@@ -989,16 +1109,86 @@ export default function NuevaVentaPage() {
                 searchInputRef={exchangeSearchInputRef}
             />
 
-            <GiftOptionDialog
-                open={giftDialogOpen}
-                onClose={() => {
-                    setGiftDialogOpen(false);
-                    setPrintGiftCopy(false);
-                    setActivePrintIsGift(false);
-                    setReceiptData(null);
-                }}
-                onSelect={triggerPrint}
-            />
+            <Dialog open={quickCreateOpen} onOpenChange={setQuickCreateOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Creación rápida de producto</DialogTitle>
+                        <DialogDescription>
+                            Alta mínima para seguir trabajando desde venta. Después podés completar stock o variantes desde inventario.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-2">
+                        <div className="space-y-2">
+                            <Label htmlFor="quick-create-name">Nombre del producto</Label>
+                            <Input
+                                id="quick-create-name"
+                                value={quickCreateName}
+                                onChange={(event) => setQuickCreateName(event.target.value)}
+                                placeholder="Ej: Remera básica"
+                                autoFocus
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="quick-create-price">Precio de venta</Label>
+                            <Input
+                                id="quick-create-price"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={quickCreatePrice}
+                                onChange={(event) => setQuickCreatePrice(event.target.value)}
+                                placeholder="Ej: 24990"
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="quick-create-wholesale-price">Precio mayorista</Label>
+                            <Input
+                                id="quick-create-wholesale-price"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={quickCreateWholesalePrice}
+                                onChange={(event) => setQuickCreateWholesalePrice(event.target.value)}
+                                placeholder="Ej: 19990"
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="quick-create-initial-stock">Stock inicial</Label>
+                            <Input
+                                id="quick-create-initial-stock"
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={quickCreateInitialStock}
+                                onChange={(event) => setQuickCreateInitialStock(event.target.value)}
+                                placeholder="Ej: 1"
+                            />
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setQuickCreateOpen(false)}
+                            disabled={isQuickCreating}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            className="bg-emerald-600 hover:bg-emerald-700"
+                            onClick={handleQuickCreateProduct}
+                            disabled={isQuickCreating}
+                        >
+                            {isQuickCreating && <Loader2 className="mr-2 size-4 animate-spin" />}
+                            Crear producto
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {receiptData && (
                 <div className="hidden print:block">
@@ -1024,44 +1214,6 @@ export default function NuevaVentaPage() {
                 </div>
             )}
         </>
-    );
-}
-
-function GiftOptionDialog({
-    open,
-    onClose,
-    onSelect,
-}: {
-    open: boolean;
-    onClose: () => void;
-    onSelect: (isGift: boolean) => void;
-}) {
-    return (
-        <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-            <DialogContent className="sm:max-w-sm text-center">
-                <DialogHeader>
-                    <DialogTitle className="text-xl">Venta Exitosa</DialogTitle>
-                    <DialogDescription>
-                        ¿Desea imprimir un ticket de regalo (sin precios)?
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-3 pt-4">
-                    <Button
-                        variant="outline"
-                        className="h-12 text-base"
-                        onClick={() => onSelect(false)}
-                    >
-                        Solo Boleta Normal
-                    </Button>
-                    <Button
-                        className="h-12 bg-emerald-600 text-base hover:bg-emerald-700"
-                        onClick={() => onSelect(true)}
-                    >
-                        Imprimir Ambos (Regalo)
-                    </Button>
-                </div>
-            </DialogContent>
-        </Dialog>
     );
 }
 

@@ -1,6 +1,8 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { PrismaClient } from "@prisma/client";
+import { AUTH_COOKIE_NAME, createSessionToken } from "@/lib/auth";
 
 const prisma = new PrismaClient();
 
@@ -32,5 +34,27 @@ export async function authenticateUser(name: string, pin: string) {
         throw new Error("Usuario o contraseña incorrectos");
     }
 
+    const role = user.role === "ADMIN" ? "ADMIN" : "STAFF";
+
+    const cookieStore = await cookies();
+    const token = await createSessionToken({
+        userId: user.id,
+        userName: user.name,
+        role,
+    });
+
+    cookieStore.set(AUTH_COOKIE_NAME, token, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 7,
+    });
+
     return user;
+}
+
+export async function logoutUser() {
+    const cookieStore = await cookies();
+    cookieStore.delete(AUTH_COOKIE_NAME);
 }

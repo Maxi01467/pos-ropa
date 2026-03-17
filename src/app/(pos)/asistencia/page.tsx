@@ -249,7 +249,7 @@ export default function AsistenciaPage() {
                     <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
                         Personal
                     </p>
-                    <h1 className="mt-2 flex items-center gap-3 text-3xl font-bold tracking-tight">
+                    <h1 className="mt-2 flex items-center gap-3 text-4xl font-bold tracking-tight">
                         <Clock3 className="size-8 text-emerald-700" />
                         Asistencia
                     </h1>
@@ -286,18 +286,7 @@ export default function AsistenciaPage() {
                         </Select>
                     </div>
 
-                    <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50/60 p-4">
-                        <p className="text-sm font-medium text-emerald-900">
-                            {dashboard?.user.name ?? "Empleado"}
-                        </p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            {isEmployeeLoading
-                                ? "Actualizando estado del empleado..."
-                                : dashboard?.activeShift
-                                ? `En turno desde las ${formatDateTime(dashboard.activeShift.checkIn)}. Lleva ${formatHours(dashboard.todayWorkedHours)} hoy.`
-                                : `Sin turno abierto. Registros de hoy: ${dashboard?.todayShifts.length ?? 0}.`}
-                        </p>
-                    </div>
+
 
                     <div className="flex flex-col gap-4 sm:flex-row">
                         <Button
@@ -324,19 +313,9 @@ export default function AsistenciaPage() {
             <Card>
                 <CardHeader>
                     <CardTitle>Tablero general de turnos</CardTitle>
-                    <CardDescription>
-                        Esta tabla no cambia con el selector. Muestra todos los fichajes registrados desde la apertura de caja actual.
-                    </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    {board?.cashSession ? (
-                        <div className="mb-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-muted-foreground">
-                            Caja abierta desde {formatDateTime(board.cashSession.openingDate)}.
-                            {board.cashSession.closingDate
-                                ? ` Cerrada a las ${formatDateTime(board.cashSession.closingDate)}.`
-                                : " Se actualizará hasta que la caja se cierre."}
-                        </div>
-                    ) : null}
+
 
                     {board && board.shifts.length > 0 ? (
                         <Table>

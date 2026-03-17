@@ -33,9 +33,9 @@ import {
     SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { canAccessPath } from "@/lib/permissions";
-import { useSessionSnapshot } from "@/lib/session-client";
+import { canAccessPath, type SessionRole } from "@/lib/permissions";
 import { useCashSessionStatus } from "@/lib/cash-session-client";
+import { logoutUser } from "@/app/actions/auth-actions";
 
 const navItems = [
     { href: "/", label: "Inicio", icon: Home },
@@ -118,30 +118,30 @@ function NavLink({
 }
 
 function SidebarContent({
+    role,
     collapsed,
     onToggle,
     onNavClick,
 }: {
+    role: SessionRole;
     collapsed: boolean;
     onToggle?: () => void;
     onNavClick?: () => void;
 }) {
     const pathname = usePathname();
     const router = useRouter();
-    const { role } = useSessionSnapshot();
     const { hasOpenCashSession } = useCashSessionStatus();
 
-    const visibleItems = navItems.filter((item) => canAccessPath(role ?? "ADMIN", item.href));
+    const visibleItems = navItems.filter((item) => canAccessPath(role, item.href));
 
-    const handleLogout = () => {
-        // Borramos las credenciales de la sesión
+    const handleLogout = async () => {
+        await logoutUser();
         localStorage.removeItem("pos_session");
         localStorage.removeItem("pos_user");
         localStorage.removeItem("pos_role");
         localStorage.removeItem("pos_user_id");
-        
-        // Redirigimos al Login
-        router.push("/login");
+        router.replace("/login");
+        router.refresh();
     };
 
     const logoutButton = (
@@ -234,7 +234,7 @@ function SidebarContent({
     );
 }
 
-export function Sidebar() {
+export function Sidebar({ role }: { role: SessionRole }) {
     const [collapsed, setCollapsed] = useState(false);
 
     return (
@@ -249,7 +249,7 @@ export function Sidebar() {
                     </SheetTrigger>
                     <SheetContent side="left" className="w-72 p-0">
                         <SheetTitle className="sr-only">Menú de navegación</SheetTitle>
-                        <SidebarContent collapsed={false} />
+                        <SidebarContent role={role} collapsed={false} />
                     </SheetContent>
                 </Sheet>
             </div>
@@ -262,6 +262,7 @@ export function Sidebar() {
                 )}
             >
                 <SidebarContent
+                    role={role}
                     collapsed={collapsed}
                     onToggle={() => setCollapsed(!collapsed)}
                 />

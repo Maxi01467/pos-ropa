@@ -1,8 +1,8 @@
 "use server";
 
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { revalidateTag, unstable_cache } from "next/cache";
+import { CACHE_TAGS } from "@/lib/cache-tags";
+import { prisma } from "@/lib/prisma";
 
 type AttendanceShift = {
     id: string;
@@ -105,22 +105,7 @@ async function getActiveUser(userId: string) {
 }
 
 export async function getAttendanceEmployees(): Promise<AttendanceEmployee[]> {
-    const employees = await prisma.user.findMany({
-        where: {
-            active: true,
-            role: "STAFF",
-        },
-        select: {
-            id: true,
-            name: true,
-            role: true,
-        },
-        orderBy: {
-            name: "asc",
-        },
-    });
-
-    return employees;
+    return getAttendanceEmployeesCached();
 }
 
 export async function getAttendanceDashboard(userId: string): Promise<AttendanceDashboard> {
@@ -172,71 +157,7 @@ export async function getAttendanceDashboard(userId: string): Promise<Attendance
 }
 
 export async function getAttendanceBoard(): Promise<AttendanceBoard> {
-    const cashSession = await prisma.cashSession.findFirst({
-        where: {
-            status: "OPEN",
-        },
-        select: {
-            id: true,
-            status: true,
-            openingDate: true,
-            closingDate: true,
-        },
-        orderBy: {
-            openingDate: "desc",
-        },
-    });
-
-    if (!cashSession) {
-        return {
-            cashSession: null,
-            shifts: [],
-        };
-    }
-
-    const rangeEnd = cashSession.closingDate ?? new Date();
-    const shifts = await prisma.shift.findMany({
-        where: {
-            checkIn: {
-                gte: cashSession.openingDate,
-                lte: rangeEnd,
-            },
-        },
-        select: {
-            id: true,
-            userId: true,
-            checkIn: true,
-            checkOut: true,
-            totalHours: true,
-            user: {
-                select: {
-                    name: true,
-                },
-            },
-        },
-        orderBy: [
-            { checkOut: "asc" },
-            { checkIn: "desc" },
-        ],
-    });
-
-    return {
-        cashSession: {
-            id: cashSession.id,
-            status: cashSession.status,
-            openingDate: cashSession.openingDate.toISOString(),
-            closingDate: cashSession.closingDate?.toISOString() ?? null,
-        },
-        shifts: shifts.map((shift) => ({
-            id: shift.id,
-            userId: shift.userId,
-            userName: shift.user.name,
-            checkIn: shift.checkIn.toISOString(),
-            checkOut: shift.checkOut?.toISOString() ?? null,
-            totalHours: shift.totalHours == null ? null : Number(shift.totalHours),
-            status: shift.checkOut ? "FINISHED" : "ACTIVE",
-        })),
-    };
+    return getAttendanceBoardCached();
 }
 
 export async function checkInUser(userId: string) {
@@ -265,6 +186,8 @@ export async function checkInUser(userId: string) {
             userId,
         },
     });
+
+    revalidateTag(CACHE_TAGS.attendance, "max");
 
     return serializeShift(shift);
 }
@@ -305,5 +228,98 @@ export async function checkOutUser(userId: string) {
         },
     });
 
+    revalidateTag(CACHE_TAGS.attendance, "max");
+
     return serializeShift(updatedShift);
 }
+const getAttendanceEmployeesCached = unstable_cache(
+    async (): Promise<AttendanceEmployee[]> =>
+        prisma.user.findMany({
+            where: {
+                active: true,
+                role: "STAFF",
+            },
+            select: {
+                id: true,
+                name: true,
+                role: true,
+            },
+            orderBy: {
+                name: "asc",
+            },
+        }),
+    ["attendance-employees"],
+    { revalidate: 300, tags: [CACHE_TAGS.attendance, CACHE_TAGS.employees] }
+);
+
+const getAttendanceBoardCached = unstable_cache(
+    async (): Promise<AttendanceBoard> => {
+        const cashSession = await prisma.cashSession.findFirst({
+            where: {
+                status: "OPEN",
+            },
+            select: {
+                id: true,
+                status: true,
+                openingDate: true,
+                closingDate: true,
+            },
+            orderBy: {
+                openingDate: "desc",
+            },
+        });
+
+        if (!cashSession) {
+            return {
+                cashSession: null,
+                shifts: [],
+            };
+        }
+
+        const rangeEnd = cashSession.closingDate ?? new Date();
+        const shifts = await prisma.shift.findMany({
+            where: {
+                checkIn: {
+                    gte: cashSession.openingDate,
+                    lte: rangeEnd,
+                },
+            },
+            select: {
+                id: true,
+                userId: true,
+                checkIn: true,
+                checkOut: true,
+                totalHours: true,
+                user: {
+                    select: {
+                        name: true,
+                    },
+                },
+            },
+            orderBy: [
+                { checkOut: "asc" },
+                { checkIn: "desc" },
+            ],
+        });
+
+        return {
+            cashSession: {
+                id: cashSession.id,
+                status: cashSession.status,
+                openingDate: cashSession.openingDate.toISOString(),
+                closingDate: cashSession.closingDate?.toISOString() ?? null,
+            },
+            shifts: shifts.map((shift) => ({
+                id: shift.id,
+                userId: shift.userId,
+                userName: shift.user.name,
+                checkIn: shift.checkIn.toISOString(),
+                checkOut: shift.checkOut?.toISOString() ?? null,
+                totalHours: shift.totalHours == null ? null : Number(shift.totalHours),
+                status: shift.checkOut ? "FINISHED" : "ACTIVE",
+            })),
+        };
+    },
+    ["attendance-board"],
+    { revalidate: 60, tags: [CACHE_TAGS.attendance, CACHE_TAGS.cash] }
+);

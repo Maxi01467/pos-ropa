@@ -1,8 +1,8 @@
 "use server";
 
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { revalidateTag, unstable_cache } from "next/cache";
+import { CACHE_TAGS } from "@/lib/cache-tags";
+import { prisma } from "@/lib/prisma";
 
 type CreateSaleItemInput = {
     variantId: string;
@@ -35,6 +35,54 @@ type CreateExchangeSaleInput = {
     returnedItems: ExchangeReturnItemInput[];
     items: CreateSaleItemInput[];
 };
+
+const getSalesHistoryCached = unstable_cache(
+    async () => {
+        const sales = await prisma.sale.findMany({
+            orderBy: { createdAt: "desc" },
+            include: {
+                user: {
+                    select: { name: true }
+                },
+                items: {
+                    include: {
+                        variant: {
+                            include: {
+                                product: {
+                                    select: { name: true }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        return sales.map((sale) => ({
+            id: sale.id,
+            ticketNumber: sale.ticketNumber,
+            total: Number(sale.total),
+            paymentMethod: sale.paymentMethod,
+            cashAmount: sale.cashAmount ? Number(sale.cashAmount) : undefined,
+            transferAmount: sale.transferAmount ? Number(sale.transferAmount) : undefined,
+            date: sale.createdAt.toISOString(),
+            sellerName: sale.user.name,
+            items: sale.items.map((item) => ({
+                id: item.id,
+                productName: item.variant.product.name,
+                size: item.variant.size,
+                color: item.variant.color,
+                sku: item.variant.sku,
+                quantity: item.quantity,
+                priceAtTime: Number(item.priceAtTime),
+                priceType: item.priceType,
+                returnedQuantity: item.returnedQuantity
+            }))
+        }));
+    },
+    ["sales-history"],
+    { revalidate: 120, tags: [CACHE_TAGS.sales, CACHE_TAGS.cash, CACHE_TAGS.posProducts] }
+);
 
 export async function createSale(input: CreateSaleInput) {
     if (input.items.length === 0) {
@@ -82,7 +130,7 @@ export async function createSale(input: CreateSaleInput) {
         select: { id: true }
     });
 
-    return prisma.$transaction(async (tx) => {
+    const sale = await prisma.$transaction(async (tx) => {
         for (const item of input.items) {
             const variant = await tx.productVariant.findUnique({
                 where: { id: item.variantId },
@@ -131,6 +179,14 @@ export async function createSale(input: CreateSaleInput) {
 
         return sale;
     });
+
+    revalidateTag(CACHE_TAGS.sales, "max");
+    revalidateTag(CACHE_TAGS.cash, "max");
+    revalidateTag(CACHE_TAGS.posProducts, "max");
+    revalidateTag(CACHE_TAGS.inventory, "max");
+    revalidateTag(CACHE_TAGS.stock, "max");
+
+    return sale;
 }
 
 export async function createExchangeSale(input: CreateExchangeSaleInput) {
@@ -184,7 +240,7 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
         throw new Error("No hay usuarios configurados para registrar ventas");
     }
 
-    return prisma.$transaction(async (tx) => {
+    const sale = await prisma.$transaction(async (tx) => {
         const originalSale = await tx.sale.findUnique({
             where: { id: input.originalSaleId },
             include: {
@@ -277,49 +333,16 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
 
         return sale;
     });
+
+    revalidateTag(CACHE_TAGS.sales, "max");
+    revalidateTag(CACHE_TAGS.cash, "max");
+    revalidateTag(CACHE_TAGS.posProducts, "max");
+    revalidateTag(CACHE_TAGS.inventory, "max");
+    revalidateTag(CACHE_TAGS.stock, "max");
+
+    return sale;
 }
 
 export async function getSalesHistory() {
-    const sales = await prisma.sale.findMany({
-        orderBy: { createdAt: 'desc' }, // Las más nuevas primero
-        include: {
-            user: {
-                select: { name: true } // Traemos el nombre del vendedor
-            },
-            items: {
-                include: {
-                    variant: {
-                        include: {
-                            product: {
-                                select: { name: true }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    });
-
-    // Formateamos los datos para que el frontend los consuma fácil
-    return sales.map(sale => ({
-        id: sale.id,
-        ticketNumber: sale.ticketNumber,
-        total: Number(sale.total),
-        paymentMethod: sale.paymentMethod,
-        cashAmount: sale.cashAmount ? Number(sale.cashAmount) : undefined,
-        transferAmount: sale.transferAmount ? Number(sale.transferAmount) : undefined,
-        date: sale.createdAt.toISOString(),
-        sellerName: sale.user.name,
-        items: sale.items.map(item => ({
-            id: item.id,
-            productName: item.variant.product.name,
-            size: item.variant.size,
-            color: item.variant.color,
-            sku: item.variant.sku,
-            quantity: item.quantity,
-            priceAtTime: Number(item.priceAtTime),
-            priceType: item.priceType,
-            returnedQuantity: item.returnedQuantity
-        }))
-    }));
+    return getSalesHistoryCached();
 }

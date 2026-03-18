@@ -1,10 +1,8 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { PrismaClient } from "@prisma/client";
 import { AUTH_COOKIE_NAME, createSessionToken } from "@/lib/auth";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma";
 
 export async function authenticateUser(name: string, pin: string) {
     const normalizedName = name.trim();

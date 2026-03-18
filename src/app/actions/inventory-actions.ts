@@ -1,9 +1,9 @@
 // src/app/actions/inventory-actions.ts
 "use server";
 
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { revalidateTag, unstable_cache } from "next/cache";
+import { CACHE_TAGS } from "@/lib/cache-tags";
+import { prisma } from "@/lib/prisma";
 
 type QuickProductInput = {
     name: string;
@@ -20,28 +20,47 @@ type InventoryProductInput = {
 };
 
 // 1. Traer todos los productos (sin proveedores ni categorías)
-export async function getInventoryData() {
-    const products = await prisma.product.findMany({
-        include: { variants: true },
-        orderBy: { createdAt: 'desc' }
-    });
+const getInventoryDataCached = unstable_cache(
+    async () => {
+        const products = await prisma.product.findMany({
+            select: {
+                id: true,
+                name: true,
+                priceNormal: true,
+                priceWholesale: true,
+                costPrice: true,
+                variants: {
+                    select: {
+                        stock: true,
+                    },
+                },
+            },
+            orderBy: { createdAt: "desc" },
+        });
 
-    return {
-        products: products.map(p => ({
-            id: p.id,
-            code: p.id.slice(-6).toUpperCase(), 
-            name: p.name,
-            price: Number(p.priceNormal),
-            wholesalePrice: Number(p.priceWholesale),
-            costPrice: p.costPrice ? Number(p.costPrice) : undefined,
-            stock: p.variants.reduce((acc, v) => acc + v.stock, 0), 
-        }))
-    };
+        return {
+            products: products.map((p) => ({
+                id: p.id,
+                code: p.id.slice(-6).toUpperCase(),
+                name: p.name,
+                price: Number(p.priceNormal),
+                wholesalePrice: Number(p.priceWholesale),
+                costPrice: p.costPrice ? Number(p.costPrice) : undefined,
+                stock: p.variants.reduce((acc, v) => acc + v.stock, 0),
+            })),
+        };
+    },
+    ["inventory-data"],
+    { revalidate: 300, tags: [CACHE_TAGS.inventory, CACHE_TAGS.posProducts, CACHE_TAGS.stock] }
+);
+
+export async function getInventoryData() {
+    return getInventoryDataCached();
 }
 
 // 2. Crear un producto nuevo
 export async function createProduct(data: InventoryProductInput) {
-    return await prisma.product.create({
+    const product = await prisma.product.create({
         data: {
             name: data.name,
             priceNormal: data.price,
@@ -49,6 +68,12 @@ export async function createProduct(data: InventoryProductInput) {
             costPrice: data.costPrice,
         }
     });
+
+    revalidateTag(CACHE_TAGS.inventory, "max");
+    revalidateTag(CACHE_TAGS.posProducts, "max");
+    revalidateTag(CACHE_TAGS.stock, "max");
+
+    return product;
 }
 
 export async function createQuickProductWithStock(data: QuickProductInput) {
@@ -73,7 +98,7 @@ export async function createQuickProductWithStock(data: QuickProductInput) {
         throw new Error("Ingresá un stock inicial válido");
     }
 
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
         const product = await tx.product.create({
             data: {
                 name,
@@ -112,11 +137,17 @@ export async function createQuickProductWithStock(data: QuickProductInput) {
             sku,
         };
     });
+
+    revalidateTag(CACHE_TAGS.inventory, "max");
+    revalidateTag(CACHE_TAGS.posProducts, "max");
+    revalidateTag(CACHE_TAGS.stock, "max");
+
+    return result;
 }
 
 // 3. Actualizar un producto existente
 export async function updateProduct(id: string, data: InventoryProductInput) {
-    return await prisma.product.update({
+    const product = await prisma.product.update({
         where: { id },
         data: {
             name: data.name,
@@ -125,11 +156,23 @@ export async function updateProduct(id: string, data: InventoryProductInput) {
             costPrice: data.costPrice,
         }
     });
+
+    revalidateTag(CACHE_TAGS.inventory, "max");
+    revalidateTag(CACHE_TAGS.posProducts, "max");
+    revalidateTag(CACHE_TAGS.stock, "max");
+
+    return product;
 }
 
 // 4. Eliminar un producto
 export async function deleteProduct(id: string) {
-    return await prisma.product.delete({
+    const deleted = await prisma.product.delete({
         where: { id }
     });
+
+    revalidateTag(CACHE_TAGS.inventory, "max");
+    revalidateTag(CACHE_TAGS.posProducts, "max");
+    revalidateTag(CACHE_TAGS.stock, "max");
+
+    return deleted;
 }

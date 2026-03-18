@@ -1,9 +1,9 @@
 // src/app/actions/stock-actions.ts
 "use server";
 
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { revalidateTag, unstable_cache } from "next/cache";
+import { CACHE_TAGS } from "@/lib/cache-tags";
+import { prisma } from "@/lib/prisma";
 
 type RegisterStockEntry = {
     productId: string;
@@ -40,54 +40,74 @@ type StockPageEntry = {
 };
 
 // 1. Traer los datos iniciales para la pantalla
+const getStockPageDataCached = unstable_cache(
+    async () => {
+        const [products, suppliers, movements] = await Promise.all([
+            prisma.product.findMany({
+                select: { id: true, name: true, priceNormal: true, priceWholesale: true },
+            }),
+            prisma.supplier.findMany({
+                select: { id: true, name: true },
+            }),
+            prisma.stockMovement.findMany({
+                select: {
+                    id: true,
+                    supplierId: true,
+                    quantity: true,
+                    createdAt: true,
+                    variant: {
+                        select: {
+                            productId: true,
+                            color: true,
+                            size: true,
+                            sku: true,
+                        },
+                    },
+                },
+                orderBy: { createdAt: "desc" },
+            }),
+        ]);
+
+        const formattedEntries: StockPageEntry[] = movements.map((m) => ({
+            id: m.id,
+            productId: m.variant.productId,
+            providerId: m.supplierId || undefined,
+            quantity: m.quantity,
+            color: m.variant.color,
+            size: m.variant.size,
+            sku: m.variant.sku,
+            date: m.createdAt.toISOString(),
+            mode: "simple",
+        }));
+
+        return {
+            products: products.map(
+                (p): StockPageProduct => ({
+                    id: p.id,
+                    name: p.name,
+                    code: p.id.slice(-6).toUpperCase(),
+                    price: Number(p.priceNormal),
+                    wholesalePrice: Number(p.priceWholesale),
+                })
+            ),
+            suppliers: suppliers as StockPageSupplier[],
+            entries: formattedEntries,
+        };
+    },
+    ["stock-page-data"],
+    {
+        revalidate: 300,
+        tags: [CACHE_TAGS.stock, CACHE_TAGS.inventory, CACHE_TAGS.suppliers, CACHE_TAGS.posProducts],
+    }
+);
+
 export async function getStockPageData() {
-    const products = await prisma.product.findMany({
-        select: { id: true, name: true, priceNormal: true, priceWholesale: true }
-    });
-
-    const suppliers = await prisma.supplier.findMany({
-        select: { id: true, name: true }
-    });
-
-    const movements = await prisma.stockMovement.findMany({
-        include: {
-            variant: {
-                include: { product: true }
-            },
-        },
-        orderBy: { createdAt: 'desc' }
-    });
-
-    const formattedEntries: StockPageEntry[] = movements.map((m) => ({
-        id: m.id,
-        productId: m.variant.productId,
-        providerId: m.supplierId || undefined,
-        quantity: m.quantity,
-        color: m.variant.color,
-        size: m.variant.size,
-        sku: m.variant.sku,
-        date: m.createdAt.toISOString(),
-        mode: "simple",
-    }));
-
-    return {
-        products: products.map(
-            (p): StockPageProduct => ({
-                id: p.id,
-                name: p.name,
-                code: p.id.slice(-6).toUpperCase(),
-                price: Number(p.priceNormal),
-                wholesalePrice: Number(p.priceWholesale),
-            })
-        ),
-        suppliers: suppliers as StockPageSupplier[],
-        entries: formattedEntries,
-    };
+    return getStockPageDataCached();
 }
 
 // 2. Registrar nuevos ingresos (Usa Transacciones para máxima seguridad)
 export async function registerStockEntries(entries: RegisterStockEntry[]) {
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
         for (const entry of entries) {
             let variant = await tx.productVariant.findUnique({
                 where: { sku: entry.sku }
@@ -121,10 +141,16 @@ export async function registerStockEntries(entries: RegisterStockEntry[]) {
             });
         }
     });
+
+    revalidateTag(CACHE_TAGS.stock, "max");
+    revalidateTag(CACHE_TAGS.inventory, "max");
+    revalidateTag(CACHE_TAGS.posProducts, "max");
+
+    return result;
 }
 
 export async function reduceStockEntries(entries: RegisterStockEntry[]) {
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
         for (const entry of entries) {
             const variant = await tx.productVariant.findUnique({
                 where: { sku: entry.sku },
@@ -153,4 +179,10 @@ export async function reduceStockEntries(entries: RegisterStockEntry[]) {
             });
         }
     });
+
+    revalidateTag(CACHE_TAGS.stock, "max");
+    revalidateTag(CACHE_TAGS.inventory, "max");
+    revalidateTag(CACHE_TAGS.posProducts, "max");
+
+    return result;
 }

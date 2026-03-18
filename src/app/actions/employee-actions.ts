@@ -1,9 +1,9 @@
 "use server";
 
-import { PrismaClient } from "@prisma/client";
+import { revalidateTag, unstable_cache } from "next/cache";
+import { CACHE_TAGS } from "@/lib/cache-tags";
 import type { SessionRole } from "@/lib/permissions";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma";
 
 type EmployeeInput = {
     name: string;
@@ -71,22 +71,7 @@ function serializeEmployee(user: {
 }
 
 export async function getEmployees() {
-    const employees = await prisma.user.findMany({
-        select: {
-            id: true,
-            name: true,
-            pin: true,
-            role: true,
-            active: true,
-            createdAt: true,
-        },
-        orderBy: [
-            { active: "desc" },
-            { name: "asc" },
-        ],
-    });
-
-    return employees.map(serializeEmployee);
+    return getEmployeesCached();
 }
 
 export async function createEmployee(input: EmployeeInput) {
@@ -109,6 +94,10 @@ export async function createEmployee(input: EmployeeInput) {
             createdAt: true,
         },
     });
+
+    revalidateTag(CACHE_TAGS.employees, "max");
+    revalidateTag(CACHE_TAGS.posSellers, "max");
+    revalidateTag(CACHE_TAGS.attendance, "max");
 
     return serializeEmployee(employee);
 }
@@ -145,6 +134,10 @@ export async function updateEmployee(employeeId: string, input: EmployeeInput) {
         },
     });
 
+    revalidateTag(CACHE_TAGS.employees, "max");
+    revalidateTag(CACHE_TAGS.posSellers, "max");
+    revalidateTag(CACHE_TAGS.attendance, "max");
+
     return serializeEmployee(updated);
 }
 
@@ -173,6 +166,10 @@ export async function setEmployeeStatus(employeeId: string, active: boolean) {
         },
     });
 
+    revalidateTag(CACHE_TAGS.employees, "max");
+    revalidateTag(CACHE_TAGS.posSellers, "max");
+    revalidateTag(CACHE_TAGS.attendance, "max");
+
     return serializeEmployee(updated);
 }
 
@@ -192,5 +189,31 @@ export async function deleteEmployee(employeeId: string) {
         where: { id: employeeId },
     });
 
+    revalidateTag(CACHE_TAGS.employees, "max");
+    revalidateTag(CACHE_TAGS.posSellers, "max");
+    revalidateTag(CACHE_TAGS.attendance, "max");
+
     return { success: true };
 }
+const getEmployeesCached = unstable_cache(
+    async () => {
+        const employees = await prisma.user.findMany({
+            select: {
+                id: true,
+                name: true,
+                pin: true,
+                role: true,
+                active: true,
+                createdAt: true,
+            },
+            orderBy: [
+                { active: "desc" },
+                { name: "asc" },
+            ],
+        });
+
+        return employees.map(serializeEmployee);
+    },
+    ["employees"],
+    { revalidate: 300, tags: [CACHE_TAGS.employees, CACHE_TAGS.posSellers, CACHE_TAGS.attendance] }
+);

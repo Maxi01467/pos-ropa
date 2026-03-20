@@ -149,40 +149,49 @@ export default function ProveedoresPage() {
 
     if (isLoading) {
         return (
-            <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-                <div className="flex flex-col items-center gap-4 text-muted-foreground">
-                    <Loader2 className="size-10 animate-spin text-primary" />
-                    <p className="text-lg font-medium">Cargando proveedores...</p>
+            <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-6">
+                <div className="rounded-[1.75rem] border border-border/70 bg-card/90 px-10 py-8 shadow-sm">
+                    <div className="flex items-center gap-4">
+                        <div className="rounded-2xl bg-[linear-gradient(135deg,#2563eb_0%,#1d4ed8_100%)] p-3 text-blue-50">
+                            <Loader2 className="size-6 animate-spin" />
+                        </div>
+                        <div>
+                            <p className="text-base font-semibold text-foreground">Cargando proveedores</p>
+                            <p className="text-sm text-muted-foreground">Estamos preparando la agenda de compras.</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="p-4 lg:p-8">
-            {/* Header */}
-            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">
-                        Proveedores
-                    </h1>
-                    <p className="mt-1 text-muted-foreground">
-                        Gestioná tus proveedores y contactos
-                    </p>
+        <div className="p-4 sm:p-5 lg:p-6">
+            <div className="flex flex-col gap-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <div className="inline-flex items-center gap-2 rounded-full border border-blue-800/30 bg-[linear-gradient(135deg,rgba(37,99,235,0.18),rgba(30,64,175,0.08))] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-800 dark:text-blue-100">
+                            <Truck className="size-3.5" />
+                            Abastecimiento
+                        </div>
+                        <h1 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-foreground sm:text-3xl">
+                            Proveedores
+                        </h1>
+                    </div>
+                    <Button
+                        size="lg"
+                        className="gap-2 h-12 text-base font-semibold"
+                        onClick={handleOpenNew}
+                    >
+                        <Plus className="size-5" />
+                        Nuevo Proveedor
+                    </Button>
                 </div>
-                <Button
-                    size="lg"
-                    className="gap-2 h-12 text-base font-semibold"
-                    onClick={handleOpenNew}
-                >
-                    <Plus className="size-5" />
-                    Nuevo Proveedor
-                </Button>
             </div>
 
             {/* Search */}
             {providers.length > 0 && (
-                <div className="relative mb-6 max-w-md">
+                <div className="relative mb-6 mt-5 max-w-md">
                     <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                         placeholder="Buscar proveedor..."
@@ -223,12 +232,12 @@ export default function ProveedoresPage() {
                     {filteredProviders.map((provider) => (
                         <Card
                             key={provider.id}
-                            className="group transition-all duration-200 hover:shadow-md"
+                            className="group rounded-[1.5rem] border-border/70 bg-card/92 transition-all duration-200 hover:shadow-md"
                         >
                             <CardContent className="p-5">
                                 <div className="flex items-start justify-between gap-2">
                                     <div className="flex items-center gap-3">
-                                        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                                        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-900 text-blue-100">
                                             <Truck className="size-5" />
                                         </div>
                                         <div>

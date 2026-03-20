@@ -43,7 +43,10 @@ export function TicketReceipt({ data, isGift = false }: TicketReceiptProps) {
             }}
         >
             <header className="border-b border-dashed border-black pb-2 text-center">
-                <h1 className="text-[18px] font-bold uppercase tracking-wide">
+                <div className="mb-1 inline-block rounded-full border border-black px-2 py-0.5 text-[10px] font-bold tracking-[0.18em]">
+                    GANGAFITS
+                </div>
+                <h1 className="text-[17px] font-bold uppercase tracking-[0.18em]">
                     GANGAFITS
                 </h1>
                 {isGift && (
@@ -111,6 +114,10 @@ export function TicketReceipt({ data, isGift = false }: TicketReceiptProps) {
                             <span>-{formatCurrency(data.exchangeCredit)}</span>
                         </div>
                     ) : null}
+                    <div className="flex justify-between">
+                        <span>Items</span>
+                        <span>{printableItems.reduce((sum, item) => sum + item.quantity, 0)}</span>
+                    </div>
                     <div className="flex justify-between text-[16px] font-bold">
                         <span>TOTAL</span>
                         <span>{formatCurrency(data.total)}</span>
@@ -146,8 +153,8 @@ export function TicketReceipt({ data, isGift = false }: TicketReceiptProps) {
                         {ticketBarcode}
                     </p>
                 </div>
-                <p>Gracias por su compra</p>
-                <p>Cambios: 15 dias con este ticket</p>
+                <p className="font-semibold">Gracias por su compra</p>
+                <p>Cambios dentro de 15 días con este ticket</p>
             </footer>
             <div style={{ height: "10mm" }} />
         </article>

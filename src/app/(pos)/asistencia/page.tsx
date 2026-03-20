@@ -43,7 +43,6 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-
 type AttendanceEmployee = {
     id: string;
     name: string;
@@ -216,18 +215,28 @@ export default function AsistenciaPage() {
 
     if (isBootstrapping) {
         return (
-            <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-                <Loader2 className="size-10 animate-spin text-emerald-600" />
+            <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-6">
+                <div className="rounded-[1.75rem] border border-border/70 bg-card/90 px-10 py-8 shadow-sm">
+                    <div className="flex items-center gap-4">
+                        <div className="rounded-2xl bg-[linear-gradient(135deg,#059669_0%,#065f46_100%)] p-3 text-emerald-50">
+                            <Loader2 className="size-6 animate-spin" />
+                        </div>
+                        <div>
+                            <p className="text-base font-semibold text-foreground">Cargando asistencia</p>
+                            <p className="text-sm text-muted-foreground">Estamos preparando el tablero del turno.</p>
+                        </div>
+                    </div>
+                </div>
             </div>
         );
     }
 
     if (employees.length === 0) {
         return (
-            <div className="p-6 lg:p-10">
-                <Card className="mx-auto mt-12 max-w-xl border-amber-200 bg-amber-50">
+            <div className="p-4 sm:p-5 lg:p-6">
+                <Card className="mx-auto mt-12 max-w-xl border-orange-800/30 bg-[linear-gradient(135deg,rgba(234,88,12,0.12),rgba(194,65,12,0.05))]">
                     <CardContent className="flex flex-col items-center gap-4 p-8 text-center">
-                        <div className="flex size-14 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                        <div className="flex size-14 items-center justify-center rounded-full bg-[linear-gradient(135deg,#ea580c_0%,#c2410c_100%)] text-orange-50">
                             <Users className="size-7" />
                         </div>
                         <div>
@@ -243,26 +252,37 @@ export default function AsistenciaPage() {
     }
 
     return (
-        <div className="p-6 lg:p-10">
-            <div className="mb-8">
-                <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                        Personal
-                    </p>
-                    <h1 className="mt-2 flex items-center gap-3 text-4xl font-bold tracking-tight">
-                        <Clock3 className="size-8 text-emerald-700" />
-                        Asistencia
-                    </h1>
-                    <p className="mt-1 text-muted-foreground">
-                        Registrá entrada y salida del equipo desde un único punto de fichaje.
-                    </p>
+        <div className="p-4 sm:p-5 lg:p-6">
+            <div className="flex flex-col gap-5">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                    <div>
+                        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-800/30 bg-[linear-gradient(135deg,rgba(5,150,105,0.18),rgba(6,95,70,0.08))] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-800 dark:text-emerald-100">
+                            <Clock3 className="size-3.5" />
+                            Asistencia
+                        </div>
+                        <h1 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-foreground sm:text-3xl">
+                            Fichaje del equipo
+                        </h1>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <div className="rounded-[1.1rem] border border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.14),rgba(6,95,70,0.04))] px-4 py-3 shadow-sm">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-800/80 dark:text-emerald-100/80">Activos</p>
+                            <p className="mt-1 text-xl font-semibold text-emerald-950 dark:text-emerald-100">{board?.shifts.filter((shift) => shift.status === "ACTIVE").length ?? 0}</p>
+                        </div>
+                        <div className="rounded-[1.1rem] border border-blue-800/20 bg-[linear-gradient(135deg,rgba(37,99,235,0.14),rgba(30,64,175,0.04))] px-4 py-3 shadow-sm">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-800/80 dark:text-blue-100/80">Fichajes</p>
+                            <p className="mt-1 text-xl font-semibold text-blue-950 dark:text-blue-100">{board?.shifts.length ?? 0}</p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <Card className="mb-8 border-border/60">
+            <Card className="mb-8 mt-5 rounded-[1.75rem] border-border/60 bg-card/92 shadow-sm">
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-xl">
-                        <CalendarClock className="size-5 text-emerald-700" />
+                    <CardTitle className="flex items-center gap-2.5 text-xl">
+                        <div className="flex size-8 items-center justify-center rounded-xl text-white" style={{ background: "linear-gradient(135deg, #10b981 0%, #6ee7b7 100%)" }}>
+                            <CalendarClock className="size-4" />
+                        </div>
                         Marcación rápida
                     </CardTitle>
                     <CardDescription>
@@ -299,7 +319,7 @@ export default function AsistenciaPage() {
                         </Button>
                         <Button
                             variant="outline"
-                            className="h-12 flex-1 gap-2 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                            className="h-12 flex-1 gap-2 border-rose-900/20 text-rose-600 hover:bg-rose-950/6 hover:text-rose-700"
                             disabled={isSubmitting || isEmployeeLoading || !dashboard?.activeShift}
                             onClick={handleCheckOut}
                         >
@@ -310,7 +330,7 @@ export default function AsistenciaPage() {
                 </CardContent>
             </Card>
 
-            <Card>
+            <Card className="rounded-[1.75rem] border-border/70 bg-card/92 shadow-sm">
                 <CardHeader>
                     <CardTitle>Tablero general de turnos</CardTitle>
                 </CardHeader>
@@ -334,7 +354,7 @@ export default function AsistenciaPage() {
                                         key={shift.id}
                                         className={
                                             shift.status === "ACTIVE"
-                                                ? "bg-emerald-50/80 hover:bg-emerald-100/70"
+                                                ? "bg-emerald-950/6 hover:bg-emerald-950/10"
                                                 : "bg-slate-50/60 hover:bg-slate-100/80"
                                         }
                                     >

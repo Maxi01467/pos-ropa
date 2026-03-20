@@ -136,37 +136,67 @@ export default function ArqueosPage() {
 
     if (isLoading) {
         return (
-            <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-                <Loader2 className="size-10 animate-spin text-emerald-600" />
+            <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-6">
+                <div className="rounded-[1.75rem] border border-border/70 bg-card/90 px-10 py-8 shadow-sm">
+                    <div className="flex items-center gap-4">
+                        <div className="rounded-2xl bg-[linear-gradient(135deg,#ea580c_0%,#c2410c_100%)] p-3 text-orange-50">
+                            <Loader2 className="size-6 animate-spin" />
+                        </div>
+                        <div>
+                            <p className="text-base font-semibold text-foreground">Cargando arqueos</p>
+                            <p className="text-sm text-muted-foreground">
+                                Estamos trayendo pendientes e historial.
+                            </p>
+                        </div>
+                    </div>
+                </div>
             </div>
         );
     }
 
     return (
-        <div className="p-6 lg:p-10 animate-in fade-in duration-300">
-            <div className="mb-8">
-                <h1 className="flex items-center gap-3 text-3xl font-bold tracking-tight">
-                    <ClipboardList className="size-8 text-amber-500" />
-                    Arqueos de Caja
-                </h1>
-                <p className="mt-1 text-muted-foreground">
-                    Controlá y registrá el conteo físico del efectivo de cada turno.
-                </p>
+        <div className="animate-in fade-in p-4 duration-300 sm:p-5 lg:p-6">
+            <div className="flex flex-col gap-5">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                    <div>
+                        <div className="inline-flex items-center gap-2 rounded-full border border-orange-900/25 bg-[linear-gradient(135deg,rgba(234,88,12,0.18),rgba(194,65,12,0.08))] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-orange-800 dark:text-orange-100">
+                            <ClipboardList className="size-3.5" />
+                            Arqueos
+                        </div>
+                        <h1 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-foreground sm:text-3xl">
+                            Cierre y conteo
+                        </h1>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <div className="rounded-[1.1rem] border border-orange-900/20 bg-[linear-gradient(135deg,rgba(234,88,12,0.14),rgba(194,65,12,0.04))] px-4 py-3 shadow-sm">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-orange-800/80 dark:text-orange-100/80">
+                                Pendientes
+                            </p>
+                            <p className="mt-1 text-xl font-semibold text-foreground">{pending.length}</p>
+                        </div>
+                        <div className="rounded-[1.1rem] border border-border/70 bg-card/90 px-4 py-3 shadow-sm">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                                Cerrados
+                            </p>
+                            <p className="mt-1 text-xl font-semibold text-foreground">{closed.length}</p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {/* ─── Pendientes ─── */}
-            <section className="mb-10">
+            <section className="mb-10 mt-5">
                 <div className="mb-4 flex items-center gap-3">
                     <h2 className="text-xl font-semibold">Pendientes de arqueo</h2>
                     {pending.length > 0 && (
-                        <Badge className="bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-100">
+                        <Badge className="border-orange-900/25 bg-orange-900 text-orange-100 hover:bg-orange-900">
                             {pending.length} pendiente{pending.length !== 1 ? "s" : ""}
                         </Badge>
                     )}
                 </div>
 
                 {pending.length === 0 ? (
-                    <Card className="border-dashed">
+                    <Card className="rounded-[1.5rem] border-dashed border-border/80 bg-card/92 shadow-sm">
                         <CardContent className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
                             <CheckCircle2 className="mb-3 size-10 text-emerald-400" />
                             <p className="font-medium">Todo al día</p>
@@ -180,7 +210,7 @@ export default function ArqueosPage() {
                             return (
                                 <Card
                                     key={s.id}
-                                    className="border-amber-200 bg-amber-50/50 shadow-sm hover:shadow-md transition-shadow"
+                                    className="rounded-[1.5rem] border-orange-900/20 bg-[linear-gradient(135deg,rgba(234,88,12,0.12),rgba(194,65,12,0.04))] shadow-sm transition-shadow hover:shadow-md"
                                 >
                                     <CardHeader className="pb-3">
                                         <div className="flex items-start justify-between">
@@ -196,7 +226,7 @@ export default function ArqueosPage() {
                                                         : "?"}
                                                 </CardDescription>
                                             </div>
-                                            <Badge className="bg-amber-100 text-amber-700 border-amber-300 hover:bg-amber-100 text-xs">
+                                            <Badge className="border-orange-900/25 bg-orange-900 text-orange-100 hover:bg-orange-900 text-xs">
                                                 Sin arquear
                                             </Badge>
                                         </div>
@@ -225,7 +255,7 @@ export default function ArqueosPage() {
                                             Cerrada por {s.closedBy?.name ?? "—"}
                                         </div>
                                         <Button
-                                            className="w-full bg-amber-500 hover:bg-amber-600 text-white"
+                                            className="w-full bg-orange-700 hover:bg-orange-800 text-white"
                                             onClick={() => handleOpenArqueoDialog(s)}
                                         >
                                             Hacer Arqueo
@@ -250,17 +280,17 @@ export default function ArqueosPage() {
                             const isExact = diff === 0;
                             const isSurplus = diff > 0;
                             return (
-                                <Card key={s.id} className="shadow-sm">
+                                <Card key={s.id} className="rounded-[1.5rem] border-border/70 bg-card/92 shadow-sm">
                                     <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                                         <div className="flex items-center gap-4">
                                             <div
                                                 className={cn(
                                                     "flex size-10 shrink-0 items-center justify-center rounded-full",
                                                     isExact
-                                                        ? "bg-emerald-100 text-emerald-700"
+                                                        ? "bg-emerald-900 text-emerald-100"
                                                         : isSurplus
-                                                          ? "bg-amber-100 text-amber-700"
-                                                          : "bg-rose-100 text-rose-700"
+                                                          ? "bg-orange-900 text-orange-100"
+                                                          : "bg-rose-900 text-rose-100"
                                                 )}
                                             >
                                                 {isExact ? (
@@ -300,10 +330,10 @@ export default function ArqueosPage() {
                                                     className={cn(
                                                         "font-bold text-sm",
                                                         isExact
-                                                            ? "text-emerald-700"
+                                                            ? "text-emerald-800 dark:text-emerald-100"
                                                             : isSurplus
-                                                              ? "text-amber-700"
-                                                              : "text-rose-700"
+                                                              ? "text-orange-800 dark:text-orange-100"
+                                                              : "text-rose-800 dark:text-rose-100"
                                                     )}
                                                 >
                                                     {isExact
@@ -345,9 +375,9 @@ export default function ArqueosPage() {
 
                     {arqueoDialogSession && (
                         <div className="space-y-5 py-2">
-                            <div className="rounded-lg bg-emerald-50 p-4 flex justify-between items-center border border-emerald-100">
-                                <span className="text-emerald-800 font-medium text-sm">El sistema espera:</span>
-                                <span className="text-2xl font-bold text-emerald-700">
+                            <div className="rounded-lg border border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.14),rgba(6,95,70,0.04))] p-4 flex justify-between items-center">
+                                <span className="text-emerald-900 dark:text-emerald-100 font-medium text-sm">El sistema espera:</span>
+                                <span className="text-2xl font-bold text-emerald-900 dark:text-emerald-100">
                                     {formatCurrency(arqueoDialogSession.expectedAmount)}
                                 </span>
                             </div>
@@ -390,7 +420,7 @@ export default function ArqueosPage() {
                             Cancelar
                         </Button>
                         <Button
-                            className="bg-amber-500 hover:bg-amber-600 text-white"
+                            className="bg-orange-700 hover:bg-orange-800 text-white"
                             onClick={handleSubmitArqueo}
                             disabled={isSaving}
                         >

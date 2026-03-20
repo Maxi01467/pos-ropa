@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PwaRegister } from "@/components/pwa-register";
+import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -16,15 +17,15 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "POS Indumentaria — Punto de Venta",
+  title: "GangaFits — Punto de Venta",
   description:
-    "Sistema de punto de venta y gestión de inventario para tu tienda de indumentaria.",
+    "Punto de venta, caja e inventario para la operación diaria de GangaFits.",
   manifest: "/manifest.webmanifest",
-  applicationName: "POS Indumentaria",
+  applicationName: "GangaFits",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "POS Indumentaria",
+    title: "GangaFits",
   },
   formatDetection: {
     telephone: false,
@@ -44,15 +45,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es">
+    <html lang="es" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
       >
-        <PwaRegister />
-        <TooltipProvider delayDuration={300}>
-          {children}
-        </TooltipProvider>
-        <Toaster position="top-right" richColors closeButton />
+        <ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange>
+          <PwaRegister />
+          <TooltipProvider delayDuration={300}>
+            {children}
+          </TooltipProvider>
+          <Toaster position="top-right" richColors closeButton />
+        </ThemeProvider>
       </body>
     </html>
   );

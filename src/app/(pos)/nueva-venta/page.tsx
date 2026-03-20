@@ -674,405 +674,462 @@ export default function NuevaVentaPage() {
 
     return (
         <>
-            <div className="flex h-[calc(100vh-4rem)] print:hidden lg:h-screen flex-col lg:flex-row">
-                <div className="flex flex-1 flex-col lg:w-[60%] lg:flex-none">
-                    {/* Search Header */}
-                    <div className="border-b bg-card px-4 py-4 lg:px-6">
-                        <h1 className="mb-3 text-xl font-bold tracking-tight lg:text-2xl">
-                            Nueva Venta
-                        </h1>
-                        <div className="flex gap-2">
-                            <div className="relative flex-1">
-                                <Search className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-                                <Input
-                                    ref={searchInputRef}
-                                    type="text"
-                                    placeholder="Escanear código o buscar por nombre..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    onKeyDown={handleSearchKeyDown} // Acá atajamos el Enter
-                                    className="h-12 pl-11 text-lg font-medium"
-                                    autoFocus // Pone el cursor automáticamente al entrar a la pantalla
-                                />
+            <div className="print:hidden p-4 sm:p-5 lg:p-6">
+                <div className="flex w-full flex-col gap-5">
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                        <div className="space-y-2">
+                            <div className="inline-flex items-center gap-2 rounded-full bg-[linear-gradient(135deg,#059669_0%,#065f46_100%)] px-3 py-1 text-xs font-medium text-emerald-50 shadow-[0_12px_24px_-18px_rgba(6,95,70,0.8)]">
+                                <span className="size-2 rounded-full bg-emerald-100" />
+                                Terminal activa
                             </div>
-                            <Button
-                                variant="outline"
-                                className="h-12 shrink-0 gap-2 px-4"
-                                onClick={handleOpenExchangeDialog}
-                            >
-                                <RotateCcw className="size-4" />
-                                Cambio
-                            </Button>
+                            <h1 className="text-2xl font-semibold tracking-[-0.05em] sm:text-3xl">
+                                Nueva venta
+                            </h1>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                            <div className="rounded-2xl bg-[linear-gradient(135deg,#6d28d9_0%,#4338ca_100%)] px-4 py-2 text-xs font-medium text-white">
+                                {allProducts.length} productos
+                            </div>
+                            <div className="rounded-2xl bg-[linear-gradient(135deg,#059669_0%,#065f46_100%)] px-4 py-2 text-xs font-medium text-emerald-50">
+                                {totalItems} en carrito
+                            </div>
+                            <div className="rounded-2xl bg-[linear-gradient(135deg,#ea580c_0%,#c2410c_100%)] px-4 py-2 text-xs font-medium text-orange-50">
+                                {priceMode === "wholesale" ? "Modo mayorista" : "Modo venta"}
+                            </div>
                         </div>
                     </div>
 
-                    <ScrollArea className="flex-1 p-4 lg:p-6">
-                        {isLoadingProducts ? (
-                            <div className="flex flex-col items-center justify-center py-20 text-center">
-                                <Loader2 className="mb-3 size-10 animate-spin text-muted-foreground" />
-                                <p className="text-lg font-medium text-muted-foreground">
-                                    Cargando productos
-                                </p>
-                            </div>
-                        ) : productsError ? (
-                            <div className="flex flex-col items-center justify-center py-20 text-center">
-                                <Search className="mb-3 size-12 text-muted-foreground/40" />
-                                <p className="text-lg font-medium text-muted-foreground">
-                                    {productsError}
-                                </p>
-                                <p className="text-sm text-muted-foreground/70">
-                                    Verificá la conexión con la base de datos
-                                </p>
-                            </div>
-                        ) : filteredProducts.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-20 text-center">
-                                <Search className="mb-3 size-12 text-muted-foreground/40" />
-                                <p className="text-lg font-medium text-muted-foreground">
-                                    No se encontraron productos
-                                </p>
-                                <p className="text-sm text-muted-foreground/70">
-                                    Probá con otro nombre o código
-                                </p>
-                                {searchQuery.trim() && (
-                                    <Button
-                                        className="mt-6 gap-2 bg-emerald-600 hover:bg-emerald-700"
-                                        onClick={openQuickCreateDialog}
-                                    >
-                                        <Plus className="size-4" />
-                                        Crear producto rápido
-                                    </Button>
-                                )}
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                                {filteredProducts.map((product) => {
-                                    const inCart = cart.find(
-                                        (item) => item.product.id === product.id
-                                    );
-
-                                    return (
-                                        <Card
-                                            key={product.id}
-                                            className={cn(
-                                                "cursor-pointer transition-all duration-200 hover:shadow-md hover:border-primary/30",
-                                                inCart && "border-primary/40 bg-primary/[0.03]"
-                                            )}
-                                            onClick={() => addToCart(product)}
-                                        >
-                                            <CardContent className="p-4">
-                                                <div className="flex items-start justify-between gap-2">
-                                                    <div className="min-w-0 flex-1">
-                                                        <p className="truncate text-base font-semibold">
-                                                            {product.name}
-                                                        </p>
-                                                        <p className="mt-0.5 text-xs text-muted-foreground">
-                                                            {product.code}
-                                                            {product.color && ` · ${product.color}`}
-                                                        </p>
-                                                    </div>
-                                                    {inCart && (
-                                                        <Badge
-                                                            variant="default"
-                                                            className="shrink-0 bg-primary"
-                                                        >
-                                                            ×{inCart.quantity}
-                                                        </Badge>
-                                                    )}
-                                                </div>
-                                                <div className="mt-3 flex items-center justify-between">
-                                                    <div className="space-y-1">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                                                                Venta
-                                                            </span>
-                                                            <span className="text-lg font-bold">
-                                                                {formatCurrency(product.price)}
-                                                            </span>
-                                                        </div>
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-xs font-medium uppercase tracking-wide text-blue-600">
-                                                                Mayorista
-                                                            </span>
-                                                            <span className="text-base font-semibold text-blue-600">
-                                                                {formatCurrency(product.wholesalePrice)}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                    <span
-                                                        className={cn(
-                                                            "text-sm font-medium",
-                                                            product.stock <= 3
-                                                                ? "text-rose-500"
-                                                                : "text-muted-foreground"
-                                                        )}
-                                                    >
-                                                        Stock: {product.stock}
-                                                    </span>
-                                                </div>
-                                                {product.sizes.length > 0 && (
-                                                    <div className="mt-2 flex flex-wrap gap-1">
-                                                        {product.sizes.map((size) => (
-                                                            <Badge
-                                                                key={size}
-                                                                variant="outline"
-                                                                className="text-xs font-normal"
-                                                            >
-                                                                {size}
-                                                            </Badge>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </CardContent>
-                                        </Card>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </ScrollArea>
-                </div>
-
-                <div className="flex flex-col border-t bg-card lg:w-[40%] lg:border-t-0 lg:border-l">
-                    <div className="flex items-center justify-between border-b px-4 py-4 lg:px-6">
-                        <div className="flex items-center gap-2">
-                            <ShoppingBag className="size-5 text-muted-foreground" />
-                            <h2 className="text-lg font-bold">Ticket</h2>
-                            {totalItems > 0 && (
-                                <Badge variant="secondary" className="font-semibold">
-                                    {totalItems}
-                                </Badge>
-                            )}
-                        </div>
-                        {cart.length > 0 && (
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-muted-foreground hover:text-destructive"
-                                onClick={clearCart}
-                            >
-                                Vaciar
-                            </Button>
-                        )}
-                    </div>
-
-                    <ScrollArea className="flex-1 px-4 lg:px-6">
-                        {cart.length === 0 && !appliedExchange ? (
-                            <div className="flex flex-col items-center justify-center py-16 text-center">
-                                <ShoppingBag className="mb-3 size-16 text-muted-foreground/20" />
-                                <p className="text-base font-medium text-muted-foreground">
-                                    Carrito vacío
-                                </p>
-                                <p className="mt-1 text-sm text-muted-foreground/70">
-                                    Hacé clic en un producto para agregarlo
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="space-y-1 py-3">
-                                {appliedExchange?.items.map((item) => (
-                                    <div
-                                        key={item.saleItemId}
-                                        className="flex items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 px-2 py-3 text-rose-900"
-                                    >
-                                        <div className="min-w-0 flex-1">
-                                            <p className="truncate text-sm font-semibold">
-                                                {item.label}
-                                            </p>
-                                            <p className="mt-0.5 text-xs font-medium uppercase tracking-wide text-rose-700">
-                                                Producto entregado en cambio
-                                            </p>
+                    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+                        <div className="min-w-0">
+                            <Card className="h-full rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)]">
+                                <CardContent className="flex h-full flex-col p-5 sm:p-6">
+                                    <div className="mb-5 flex flex-col gap-3 xl:flex-row">
+                                        <div className="relative flex-1">
+                                            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4.5 -translate-y-1/2 text-muted-foreground" />
+                                            <Input
+                                                ref={searchInputRef}
+                                                type="text"
+                                                placeholder="Escanear codigo o buscar por nombre..."
+                                                value={searchQuery}
+                                                onChange={(e) => setSearchQuery(e.target.value)}
+                                                onKeyDown={handleSearchKeyDown}
+                                                className="h-12 rounded-2xl border-border/70 bg-background/85 pl-11 text-base"
+                                                autoFocus
+                                            />
                                         </div>
 
-                                        <span className="w-20 text-right text-sm font-bold text-rose-700">
-                                            -{formatCurrency(item.amount)}
-                                        </span>
+                                        <div className="flex gap-2">
+                                            <Button
+                                                variant="outline"
+                                                className="h-12 rounded-2xl border-border/70 bg-background/85 px-4"
+                                                onClick={handleOpenExchangeDialog}
+                                            >
+                                                <RotateCcw className="size-4" />
+                                                Cambio
+                                            </Button>
+                                            {searchQuery.trim() && filteredProducts.length === 0 && (
+                                                <Button
+                                                    className="h-12 rounded-2xl bg-neutral-950 px-4 text-white hover:bg-neutral-800"
+                                                    onClick={openQuickCreateDialog}
+                                                >
+                                                    <Plus className="size-4" />
+                                                    Crear rapido
+                                                </Button>
+                                            )}
+                                        </div>
                                     </div>
-                                ))}
 
-                                {cart.map((item) => (
-                                    <div
-                                        key={item.product.id}
-                                        className={cn(
-                                            "group flex items-center gap-3 rounded-lg px-2 py-3 transition-colors",
-                                            item.isGift
-                                                ? "bg-amber-100/80 ring-1 ring-amber-200 hover:bg-amber-100/80"
-                                                : "hover:bg-muted/50"
+                                    <ScrollArea className="flex-1">
+                                        {isLoadingProducts ? (
+                                            <div className="flex flex-col items-center justify-center py-24 text-center">
+                                                <Loader2 className="mb-3 size-10 animate-spin text-muted-foreground" />
+                                                <p className="text-lg font-medium text-muted-foreground">
+                                                    Cargando productos
+                                                </p>
+                                            </div>
+                                        ) : productsError ? (
+                                            <div className="flex flex-col items-center justify-center py-24 text-center">
+                                                <Search className="mb-3 size-12 text-muted-foreground/35" />
+                                                <p className="text-lg font-medium text-muted-foreground">
+                                                    {productsError}
+                                                </p>
+                                                <p className="text-sm text-muted-foreground/70">
+                                                    Verificá la conexión con la base de datos
+                                                </p>
+                                            </div>
+                                        ) : filteredProducts.length === 0 ? (
+                                            <div className="flex flex-col items-center justify-center py-24 text-center">
+                                                <Search className="mb-3 size-12 text-muted-foreground/35" />
+                                                <p className="text-lg font-medium text-muted-foreground">
+                                                    No se encontraron productos
+                                                </p>
+                                                <p className="text-sm text-muted-foreground/70">
+                                                    Probá con otro nombre o código
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            <div className="grid grid-cols-1 gap-3 pr-2 sm:grid-cols-2 2xl:grid-cols-3">
+                                                {filteredProducts.map((product) => {
+                                                    const inCart = cart.find(
+                                                        (item) => item.product.id === product.id
+                                                    );
+
+                                                    return (
+                                                        <button
+                                                            key={product.id}
+                                                            onClick={() => addToCart(product)}
+                                                            className={cn(
+                                                                "group relative rounded-[1.5rem] border border-border/70 bg-background/85 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-foreground/15 hover:shadow-[0_18px_30px_-24px_rgba(0,0,0,0.35)]",
+                                                                inCart && "border-violet-900/20 bg-violet-950/8 dark:border-violet-500/35 dark:bg-violet-500/12"
+                                                            )}
+                                                        >
+                                                            {inCart && (
+                                                                <span className="absolute right-3 top-3 flex size-6 items-center justify-center rounded-full bg-[linear-gradient(135deg,#6d28d9_0%,#4338ca_100%)] text-xs font-bold text-white">
+                                                                    {inCart.quantity}
+                                                                </span>
+                                                            )}
+
+                                                            <div className="mb-4 flex items-start justify-between gap-3">
+                                                                <div className="min-w-0 flex-1">
+                                                                    <p className="truncate text-base font-semibold">
+                                                                        {product.name}
+                                                                    </p>
+                                                                    <p className="mt-1 text-xs text-muted-foreground">
+                                                                        {product.code}
+                                                                        {product.color && ` · ${product.color}`}
+                                                                    </p>
+                                                                </div>
+                                                                <div className="flex size-10 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#f5f5f7_0%,#ebebf0_100%)] text-neutral-900 dark:bg-[linear-gradient(135deg,#232328_0%,#18181d_100%)] dark:text-white">
+                                                                    <Plus className="size-4" />
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="space-y-3">
+                                                                <div className="flex items-end justify-between gap-3">
+                                                                    <div>
+                                                                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                                                                            Venta
+                                                                        </p>
+                                                                        <p className="text-lg font-bold">
+                                                                            {formatCurrency(product.price)}
+                                                                        </p>
+                                                                    </div>
+                                                                    <span
+                                                                        className={cn(
+                                                                            "text-xs font-medium",
+                                                                            product.stock <= 3
+                                                                                ? "text-rose-500"
+                                                                                : "text-muted-foreground"
+                                                                        )}
+                                                                    >
+                                                                        Stock: {product.stock}
+                                                                    </span>
+                                                                </div>
+
+                                                                <div className="flex items-end justify-between gap-3">
+                                                                    <div>
+                                                                        <p className="text-xs uppercase tracking-[0.18em] text-blue-600">
+                                                                            Mayorista
+                                                                        </p>
+                                                                        <p className="text-base font-semibold text-blue-600">
+                                                                            {formatCurrency(product.wholesalePrice)}
+                                                                        </p>
+                                                                    </div>
+                                                                    {product.sizes.length > 0 && (
+                                                                        <div className="flex flex-wrap justify-end gap-1">
+                                                                            {product.sizes.map((size) => (
+                                                                                <Badge
+                                                                                    key={size}
+                                                                                    variant="outline"
+                                                                                    className="rounded-full text-[11px] font-normal"
+                                                                                >
+                                                                                    {size}
+                                                                                </Badge>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
                                         )}
-                                    >
-                                        <div className="min-w-0 flex-1">
-                                            <p className="truncate text-sm font-semibold">
-                                                {item.product.name}
-                                            </p>
-                                            <div className="flex flex-col gap-0.5 text-sm">
-                                                <p className="text-muted-foreground">
-                                                    Venta: {formatCurrency(item.product.price)} c/u
+                                    </ScrollArea>
+                                </CardContent>
+                            </Card>
+                        </div>
+
+                        <div className="min-w-0">
+                            <Card className="h-full rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)]">
+                                <CardContent className="flex h-full flex-col p-5 sm:p-6">
+                                    <div className="mb-4 flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <ShoppingBag className="size-5 text-muted-foreground" />
+                                            <h2 className="text-lg font-semibold">Orden actual</h2>
+                                            {totalItems > 0 && (
+                                                <Badge variant="secondary" className="font-semibold">
+                                                    {totalItems}
+                                                </Badge>
+                                            )}
+                                        </div>
+                                        {cart.length > 0 && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="rounded-xl text-muted-foreground hover:text-destructive"
+                                                onClick={clearCart}
+                                            >
+                                                Vaciar
+                                            </Button>
+                                        )}
+                                    </div>
+
+                                    <div className="mb-4 grid grid-cols-2 gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setPriceMode("retail")}
+                                            className={cn(
+                                                "rounded-2xl px-3 py-3 text-sm font-medium transition-all",
+                                                priceMode === "retail"
+                                                    ? "bg-[linear-gradient(135deg,#1c1c28_0%,#3f3f50_100%)] text-white"
+                                                    : "bg-muted text-muted-foreground"
+                                            )}
+                                        >
+                                            Precio venta
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setPriceMode("wholesale")}
+                                            className={cn(
+                                                "rounded-2xl px-3 py-3 text-sm font-medium transition-all",
+                                                priceMode === "wholesale"
+                                                    ? "bg-[linear-gradient(135deg,#2563eb_0%,#93c5fd_100%)] text-white"
+                                                    : "bg-muted text-muted-foreground"
+                                            )}
+                                        >
+                                            Mayorista
+                                        </button>
+                                    </div>
+
+                                    <ScrollArea className="flex-1">
+                                        {cart.length === 0 && !appliedExchange ? (
+                                            <div className="flex h-full min-h-56 flex-col items-center justify-center gap-3 text-center">
+                                                <div className="flex size-14 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#f5f5f7_0%,#ebebf0_100%)] text-2xl dark:bg-[linear-gradient(135deg,#232328_0%,#18181d_100%)]">
+                                                    🛒
+                                                </div>
+                                                <p className="text-base font-medium text-muted-foreground">
+                                                    El carrito está vacío
                                                 </p>
-                                                <p className="font-medium text-blue-600">
-                                                    Mayorista:{" "}
-                                                    {formatCurrency(item.product.wholesalePrice)} c/u
+                                                <p className="text-sm text-muted-foreground/70">
+                                                    Sumá productos desde el panel izquierdo
                                                 </p>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2 pr-2">
+                                                {appliedExchange?.items.map((item) => (
+                                                    <div
+                                                        key={item.saleItemId}
+                                                        className="rounded-2xl border border-rose-900/20 bg-rose-950/8 px-4 py-3 text-rose-900 dark:text-rose-100"
+                                                    >
+                                                        <div className="flex items-center justify-between gap-3">
+                                                            <div className="min-w-0 flex-1">
+                                                                <p className="truncate text-sm font-semibold">
+                                                                    {item.label}
+                                                                </p>
+                                                                <p className="mt-1 text-xs uppercase tracking-[0.14em] text-rose-700">
+                                                                    Crédito por cambio
+                                                                </p>
+                                                            </div>
+                                                            <span className="text-sm font-bold text-rose-700">
+                                                                -{formatCurrency(item.amount)}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+
+                                                {cart.map((item) => (
+                                                    <div
+                                                        key={item.product.id}
+                                                        className={cn(
+                                                            "group rounded-[1.4rem] border border-border/70 bg-background/85 p-4 transition-colors",
+                                                            item.isGift &&
+                                                                "border-orange-900/20 bg-orange-950/8 dark:border-orange-500/35 dark:bg-orange-500/10"
+                                                        )}
+                                                    >
+                                                        <div className="flex items-start gap-3">
+                                                            <div className="min-w-0 flex-1">
+                                                                <p className="truncate text-sm font-semibold">
+                                                                    {item.product.name}
+                                                                </p>
+                                                                <div className="mt-1 space-y-0.5 text-xs">
+                                                                    <p className="text-muted-foreground">
+                                                                        Venta: {formatCurrency(item.product.price)} c/u
+                                                                    </p>
+                                                                    <p className="font-medium text-blue-600">
+                                                                        Mayorista: {formatCurrency(item.product.wholesalePrice)} c/u
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon-sm"
+                                                                className={cn(
+                                                                    "shrink-0 rounded-xl",
+                                                                    item.isGift
+                                                                        ? "text-orange-700 hover:text-orange-800"
+                                                                        : "text-muted-foreground hover:text-orange-700"
+                                                                )}
+                                                                onClick={() => toggleGiftItem(item.product.id)}
+                                                                title="Marcar como regalo"
+                                                            >
+                                                                <Gift className="size-3.5" />
+                                                            </Button>
+                                                        </div>
+
+                                                        <div className="mt-4 flex items-center justify-between gap-3">
+                                                            <div className="flex items-center gap-1">
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="icon-sm"
+                                                                    className="rounded-xl"
+                                                                    onClick={() =>
+                                                                        updateQuantity(item.product.id, -1)
+                                                                    }
+                                                                >
+                                                                    <Minus className="size-3.5" />
+                                                                </Button>
+                                                                <span className="w-8 text-center text-sm font-semibold">
+                                                                    {item.quantity}
+                                                                </span>
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="icon-sm"
+                                                                    className="rounded-xl"
+                                                                    onClick={() =>
+                                                                        updateQuantity(item.product.id, +1)
+                                                                    }
+                                                                >
+                                                                    <Plus className="size-3.5" />
+                                                                </Button>
+                                                            </div>
+
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-sm font-bold">
+                                                                    {formatCurrency(
+                                                                        getUnitPrice(item.product) * item.quantity
+                                                                    )}
+                                                                </span>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon-sm"
+                                                                    className="rounded-xl text-muted-foreground hover:text-destructive"
+                                                                    onClick={() =>
+                                                                        removeFromCart(item.product.id)
+                                                                    }
+                                                                >
+                                                                    <Trash2 className="size-3.5" />
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </ScrollArea>
+
+                                    <div className="mt-5 space-y-4 border-t border-border/70 pt-5">
+                                        <div className="space-y-2">
+                                            <Label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                                <UserCircle className="size-3.5" />
+                                                Vendedor
+                                            </Label>
+                                            <Select
+                                                value={selectedSellerId}
+                                                onValueChange={setSelectedSellerId}
+                                            >
+                                                <SelectTrigger className="h-11 rounded-2xl bg-background/85">
+                                                    <SelectValue placeholder="Seleccionar vendedor" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {sellers.map((seller) => (
+                                                        <SelectItem key={seller.id} value={seller.id}>
+                                                            {seller.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        {appliedExchange && (
+                                            <div className="rounded-2xl border border-rose-900/20 bg-rose-950/8 px-4 py-3">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-rose-700">
+                                                            Crédito aplicado
+                                                        </p>
+                                                        <p className="text-xs text-rose-600">
+                                                            Boleta #{appliedExchange.ticketNumber.toString().padStart(5, "0")} · {appliedExchange.items.length} producto(s)
+                                                        </p>
+                                                    </div>
+                                                    <span className="text-2xl font-black tracking-tight text-rose-700">
+                                                        -{formatCurrency(exchangeCredit)}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="space-y-2 rounded-[1.5rem] bg-muted/55 p-4">
+                                            <div className="flex items-center justify-between text-sm text-muted-foreground">
+                                                <span>Items</span>
+                                                <span>{totalItems}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between text-sm text-muted-foreground">
+                                                <span>Crédito por cambio</span>
+                                                <span>-{formatCurrency(exchangeCredit)}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between border-t border-border/70 pt-3">
+                                                <div>
+                                                    <p className="text-sm font-medium text-muted-foreground">
+                                                        Total a cobrar
+                                                    </p>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        {priceMode === "wholesale"
+                                                            ? "Usando precio mayorista"
+                                                            : "Usando precio de venta"}
+                                                    </p>
+                                                    {hasExchangeOverage && (
+                                                        <p className="mt-1 text-xs text-rose-600">
+                                                            El cambio supera la nueva venta.
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                <span className="text-3xl font-bold tracking-tight">
+                                                    {formatCurrency(payableAmount)}
+                                                </span>
                                             </div>
                                         </div>
 
-                                        <div className="flex items-center gap-1">
-                                            <Button
-                                                variant="outline"
-                                                size="icon-sm"
-                                                onClick={() =>
-                                                    updateQuantity(item.product.id, -1)
-                                                }
-                                            >
-                                                <Minus className="size-3.5" />
-                                            </Button>
-                                            <span className="w-8 text-center text-base font-bold">
-                                                {item.quantity}
-                                            </span>
-                                            <Button
-                                                variant="outline"
-                                                size="icon-sm"
-                                                onClick={() =>
-                                                    updateQuantity(item.product.id, +1)
-                                                }
-                                            >
-                                                <Plus className="size-3.5" />
-                                            </Button>
-                                        </div>
-
-                                        <span className="w-20 text-right text-sm font-bold">
-                                            {formatCurrency(
-                                                getUnitPrice(item.product) * item.quantity
-                                            )}
-                                        </span>
-
-                                        <div className="flex items-center gap-1">
-                                            <Button
-                                                variant="ghost"
-                                                size="icon-sm"
-                                                className={cn(
-                                                    "shrink-0 opacity-0 transition-opacity group-hover:opacity-100",
-                                                    item.isGift
-                                                        ? "text-amber-600 hover:text-amber-700"
-                                                        : "text-muted-foreground hover:text-amber-600"
-                                                )}
-                                                onClick={() => toggleGiftItem(item.product.id)}
-                                                title="Marcar como regalo"
-                                            >
-                                                <Gift className="size-3.5" />
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon-sm"
-                                                className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
-                                                onClick={() => removeFromCart(item.product.id)}
-                                            >
-                                                <Trash2 className="size-3.5" />
-                                            </Button>
-                                        </div>
+                                        <Button
+                                            size="lg"
+                                            className="h-14 w-full rounded-2xl bg-[linear-gradient(135deg,#1c1c28_0%,#3f3f50_100%)] text-base font-semibold text-white shadow-[0_20px_36px_-22px_rgba(0,0,0,0.8)] hover:opacity-95"
+                                            disabled={cart.length === 0 || !selectedSellerId || hasExchangeOverage}
+                                            onClick={() =>
+                                                payableAmount === 0 && appliedExchange
+                                                    ? void handleDirectExchangeCheckout()
+                                                    : setCheckoutOpen(true)
+                                            }
+                                        >
+                                            {payableAmount === 0 && appliedExchange
+                                                ? "Finalizar cambio"
+                                                : `Cobrar ${formatCurrency(payableAmount)}`}
+                                        </Button>
                                     </div>
-                                ))}
-                            </div>
-                        )}
-                    </ScrollArea>
-
-                    <div className="border-t bg-card px-4 py-4 lg:px-6">
-                        <div className="mb-4 space-y-2">
-                            <Label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                <UserCircle className="size-3.5" />
-                                Vendedor Atendiendo
-                            </Label>
-                            <Select
-                                value={selectedSellerId}
-                                onValueChange={setSelectedSellerId}
-                            >
-                                <SelectTrigger className="h-10 bg-background">
-                                    <SelectValue placeholder="Seleccionar vendedor" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {sellers.map((seller) => (
-                                        <SelectItem key={seller.id} value={seller.id}>
-                                            {seller.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                                </CardContent>
+                            </Card>
                         </div>
-
-                        <div className="mb-4 flex items-center justify-between rounded-lg border bg-muted/40 p-2">
-                            <div>
-                                <p className="text-sm font-semibold">Modo de precio</p>
-                                <p className="text-xs text-muted-foreground">
-                                    Por defecto se cobra precio de venta.
-                                </p>
-                            </div>
-                            <div className="flex rounded-lg border bg-background p-1">
-                                <Button
-                                    variant={priceMode === "retail" ? "default" : "ghost"}
-                                    size="sm"
-                                    onClick={() => setPriceMode("retail")}
-                                >
-                                    Venta
-                                </Button>
-                                <Button
-                                    variant={priceMode === "wholesale" ? "default" : "ghost"}
-                                    size="sm"
-                                    className={cn(
-                                        priceMode === "wholesale" &&
-                                            "bg-blue-600 text-white hover:bg-blue-700"
-                                    )}
-                                    onClick={() => setPriceMode("wholesale")}
-                                >
-                                    Mayorista
-                                </Button>
-                            </div>
-                        </div>
-                        {appliedExchange && (
-                            <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
-                                <div className="flex items-center justify-between gap-3">
-                                    <div>
-                                        <p className="text-sm font-semibold uppercase tracking-wide text-rose-700">
-                                            Crédito por cambio
-                                        </p>
-                                        <p className="text-xs text-rose-600">
-                                            Boleta #{appliedExchange.ticketNumber.toString().padStart(5, "0")} · {appliedExchange.items.length} producto(s)
-                                        </p>
-                                    </div>
-                                    <span className="text-2xl font-black tracking-tight text-rose-700">
-                                        -{formatCurrency(exchangeCredit)}
-                                    </span>
-                                </div>
-                            </div>
-                        )}
-                        <div className="mb-4 flex items-center justify-between">
-                            <div>
-                                <span className="text-base font-medium text-muted-foreground">
-                                    Total a cobrar
-                                </span>
-                                <p className="text-xs text-muted-foreground">
-                                    Cobro actual:{" "}
-                                    {priceMode === "wholesale"
-                                        ? "precio mayorista"
-                                        : "precio de venta"}
-                                </p>
-                                {hasExchangeOverage && (
-                                    <p className="text-xs text-rose-600">
-                                        El cambio supera la nueva venta. Ajustá el carrito o quitá productos del cambio.
-                                    </p>
-                                )}
-                            </div>
-                            <span className="text-3xl font-bold tracking-tight">
-                                {formatCurrency(payableAmount)}
-                            </span>
-                        </div>
-                        <Button
-                            size="lg"
-                            className="h-14 w-full bg-emerald-600 text-lg font-bold shadow-lg transition-all duration-200 hover:bg-emerald-700 hover:shadow-xl"
-                            disabled={cart.length === 0 || !selectedSellerId || hasExchangeOverage}
-                            onClick={() =>
-                                payableAmount === 0 && appliedExchange
-                                    ? void handleDirectExchangeCheckout()
-                                    : setCheckoutOpen(true)
-                            }
-                        >
-                            {payableAmount === 0 && appliedExchange ? "FINALIZAR CAMBIO" : "COBRAR"}
-                        </Button>
                     </div>
                 </div>
 
@@ -1286,7 +1343,7 @@ function ExchangeDialog({
                                         className={cn(
                                             "w-full rounded-lg border px-3 py-2 text-left transition-colors",
                                             selectedSale?.id === sale.id
-                                                ? "border-emerald-600 bg-emerald-50"
+                                                ? "border-emerald-700 bg-emerald-950/8"
                                                 : "hover:border-muted-foreground/30 hover:bg-muted/40"
                                         )}
                                         onClick={() => onSelectSale(sale)}

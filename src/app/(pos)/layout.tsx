@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { RouteGuard } from "@/components/route-guard";
-import { Sidebar } from "@/components/sidebar";
+import { POSLayoutClient } from "@/components/pos-layout-client";
 import { getServerSession } from "@/lib/auth";
 
 export default async function POSLayout({
@@ -16,14 +16,11 @@ export default async function POSLayout({
 
     return (
         <RouteGuard>
-            <div className="flex min-h-screen bg-background">
-                <Sidebar role={session.role} />
-                <main className="flex-1 overflow-auto">
-                    {/* Mobile top spacing for hamburger button */}
-                    <div className="h-16 lg:hidden" />
-                    {children}
-                </main>
-            </div>
+            {/* Fondo fijo que el sidebar glass va a difuminar */}
+            <div className="pos-shell-background fixed inset-0 -z-10" />
+            <POSLayoutClient role={session.role} userName={session.userName}>
+                {children}
+            </POSLayoutClient>
         </RouteGuard>
     );
 }

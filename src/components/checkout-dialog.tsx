@@ -18,6 +18,7 @@ import {
     ArrowRightLeft,
     Layers,
     CheckCircle2,
+    WalletCards,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -159,29 +160,47 @@ export function CheckoutDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
-                    <DialogTitle className="text-xl font-bold">Cobrar Venta</DialogTitle>
+                    <DialogTitle className="flex items-center gap-2">
+                        <WalletCards className="size-5 text-emerald-700" />
+                        Cobrar venta
+                    </DialogTitle>
                     <DialogDescription>
-                        Seleccioná cómo paga el cliente.
+                        Confirmá el medio de pago antes de emitir la boleta.
                     </DialogDescription>
                 </DialogHeader>
 
-                {/* Resumen Total */}
-                <div className="rounded-xl bg-muted/50 px-6 py-4 text-center">
-                    <p className="text-sm font-medium text-muted-foreground">Total a cobrar</p>
-                    <p className="text-4xl font-black tracking-tight text-primary">
-                        {formatCurrency(total)}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground uppercase font-semibold">
-                        {itemCount} artículo{itemCount > 1 ? "s" : ""}
-                    </p>
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
+                    <div className="rounded-[1.35rem] border border-border/70 bg-muted/30 p-5">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                            Total a cobrar
+                        </p>
+                        <p className="mt-2 text-4xl font-semibold tracking-[-0.06em] text-foreground">
+                            {formatCurrency(total)}
+                        </p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                            {itemCount} artículo{itemCount > 1 ? "s" : ""} en esta venta
+                        </p>
+                    </div>
+                    <div className="rounded-[1.35rem] border border-border/70 bg-card/90 p-5">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                            Estado
+                        </p>
+                        <p className="mt-2 text-lg font-semibold text-foreground">
+                            {selectedMethod ? "Método elegido" : "Pendiente"}
+                        </p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                            {selectedMethod
+                                ? paymentMethods.find((method) => method.value === selectedMethod)?.label
+                                : "Elegí cómo paga el cliente"}
+                        </p>
+                    </div>
                 </div>
 
                 <Separator />
 
-                {/* Métodos de Pago */}
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     {paymentMethods.map((method) => {
                         const Icon = method.icon;
                         const isSelected = selectedMethod === method.value;
@@ -190,63 +209,75 @@ export function CheckoutDialog({
                                 key={method.value}
                                 onClick={() => setSelectedMethod(method.value)}
                                 className={cn(
-                                    "flex flex-col items-center gap-1.5 rounded-xl border-2 p-3 transition-all",
+                                    "flex flex-col items-start gap-2 rounded-[1.25rem] border p-4 text-left transition-all",
                                     isSelected
-                                        ? "border-emerald-600 bg-emerald-50/50 shadow-sm"
-                                        : "border-border bg-card hover:border-muted-foreground/30"
+                                        ? "border-emerald-700/60 bg-[linear-gradient(135deg,rgba(6,95,70,0.16),rgba(2,6,23,0.04))] shadow-sm"
+                                        : "border-border/70 bg-card/90 hover:border-foreground/15"
                                 )}
+                                type="button"
                             >
-                                <Icon className={cn("size-6", isSelected ? "text-emerald-600" : "text-muted-foreground")} />
-                                <span className={cn("text-xs font-bold", isSelected ? "text-emerald-700" : "text-foreground")}>
-                                    {method.label}
-                                </span>
+                                <div className={cn(
+                                    "flex size-11 items-center justify-center rounded-2xl",
+                                    isSelected ? "bg-emerald-900 text-emerald-100" : "bg-muted text-muted-foreground"
+                                )}>
+                                    <Icon className="size-5" />
+                                </div>
+                                <div>
+                                    <p className={cn("text-sm font-semibold", isSelected ? "text-emerald-900 dark:text-emerald-100" : "text-foreground")}>
+                                        {method.label}
+                                    </p>
+                                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                        {method.description}
+                                    </p>
+                                </div>
                             </button>
                         );
                     })}
                 </div>
 
-                {/* Sección de Pago Mixto */}
                 {selectedMethod === "mixto" && (
-                    <div className="space-y-4 rounded-xl border bg-muted/20 p-4 animate-in fade-in zoom-in duration-200">
-                        <p className="text-xs font-bold uppercase text-muted-foreground">Desglose de Pago</p>
+                    <div className="animate-in fade-in zoom-in duration-200 space-y-4 rounded-[1.35rem] border border-border/70 bg-muted/20 p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                            Desglose de pago
+                        </p>
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <Label htmlFor="cash" className="text-xs">En Efectivo</Label>
+                                <Label htmlFor="cash">En efectivo</Label>
                                 <div className="relative">
                                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
                                     <Input
                                         id="cash"
                                         type="number"
-                                        className="pl-6 h-11 font-bold"
+                                        className="h-11 pl-6 font-semibold"
                                         value={cashAmount || ""}
                                         onChange={(e) => handleCashChange(e.target.value)}
                                     />
                                 </div>
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="transfer" className="text-xs">Transferencia</Label>
+                                <Label htmlFor="transfer">Transferencia</Label>
                                 <div className="relative">
                                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
                                     <Input
                                         id="transfer"
                                         type="number"
-                                        className="pl-6 h-11 font-bold"
+                                        className="h-11 pl-6 font-semibold"
                                         value={transferAmount || ""}
                                         onChange={(e) => handleTransferChange(e.target.value)}
                                     />
                                 </div>
                             </div>
                         </div>
-                        <p className="text-[10px] text-center text-muted-foreground">
+                        <p className="text-center text-[11px] text-muted-foreground">
                             La suma debe dar exactamente {formatCurrency(total)}
                         </p>
                     </div>
                 )}
 
-                <DialogFooter className="mt-2">
+                <DialogFooter className="mt-1">
                     <Button
                         size="lg"
-                        className="w-full bg-emerald-600 text-lg font-bold hover:bg-emerald-700 h-14 gap-2"
+                        className="h-14 w-full gap-2 bg-emerald-600 text-base font-semibold hover:bg-emerald-700"
                         onClick={handleConfirm}
                         disabled={!selectedMethod || isSubmitting}
                     >

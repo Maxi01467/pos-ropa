@@ -28,8 +28,6 @@ export function POSLayoutClient({
                 <AppHeader
                     userName={userName}
                     role={role}
-                    sidebarCollapsed={collapsed}
-                    onToggleSidebar={() => setCollapsed((c) => !c)}
                 />
                 <div className="flex-1 overflow-auto bg-transparent">
                     {children}

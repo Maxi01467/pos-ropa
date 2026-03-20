@@ -14,12 +14,15 @@ import {
     ArrowUpCircle,
     ArrowDownCircle,
     LockKeyhole,
-    LockOpen,
     Loader2,
     DollarSign,
     History,
     CheckCircle2,
     BadgeCheck,
+    ChevronRight,
+    ReceiptText,
+    ShieldCheck,
+    Landmark,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,6 +91,119 @@ function formatCurrency(amount: number | string | null | undefined): string {
     }).format(Number(amount) || 0);
 }
 
+
+function ShellHeader({
+    eyebrow,
+    title,
+    description,
+    aside,
+    tone = "neutral",
+}: {
+    eyebrow: string;
+    title: string;
+    description: string;
+    aside?: ReactNode;
+    tone?: "neutral" | "success" | "warning";
+}) {
+    const shellClassName =
+        tone === "success"
+            ? "border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.16)_0%,rgba(255,255,255,0.98)_52%,rgba(6,95,70,0.08)_100%)]"
+            : tone === "warning"
+              ? "border-orange-900/20 bg-[linear-gradient(135deg,rgba(234,88,12,0.18)_0%,rgba(255,255,255,0.98)_52%,rgba(194,65,12,0.08)_100%)]"
+              : "border-border/70 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_48%,#f6f8fb_100%)]";
+
+    return (
+        <div className={cn("rounded-[1.5rem] border px-4 py-4 shadow-sm sm:px-5", shellClassName)}>
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                <div className="min-w-0">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-cyan-900/20 bg-[linear-gradient(135deg,rgba(8,145,178,0.18),rgba(14,116,144,0.08))] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-800 dark:text-cyan-100">
+                        <Landmark className="size-3.5" />
+                        {eyebrow}
+                    </div>
+                    <h1 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-foreground sm:text-3xl">
+                        {title}
+                    </h1>
+                    {description ? (
+                        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+                    ) : null}
+                </div>
+                {aside ? <div className="xl:min-w-[220px] xl:max-w-[280px]">{aside}</div> : null}
+            </div>
+        </div>
+    );
+}
+
+function MetricCard({
+    label,
+    value,
+    description,
+    icon,
+    tone = "default",
+}: {
+    label: string;
+    value: string;
+    description?: string;
+    icon: ReactNode;
+    tone?: "default" | "success" | "danger" | "dark";
+}) {
+    const toneClassName =
+        tone === "success"
+            ? "border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.14),rgba(6,95,70,0.04))]"
+            : tone === "danger"
+              ? "border-rose-900/20 bg-[linear-gradient(135deg,rgba(225,29,72,0.14),rgba(159,18,57,0.04))]"
+              : tone === "dark"
+                ? "border-slate-800/90 bg-slate-950 text-white"
+                : "border-border/70 bg-card/90";
+
+    const iconClassName =
+        tone === "success"
+            ? "bg-emerald-900 text-emerald-100"
+            : tone === "danger"
+              ? "bg-rose-900 text-rose-100"
+              : tone === "dark"
+                ? "bg-white/10 text-white"
+                : "bg-muted text-foreground";
+
+    const labelClassName = tone === "dark" ? "text-white/65" : "text-muted-foreground";
+    const valueClassName = tone === "dark" ? "text-white" : "text-foreground";
+    const descriptionClassName = tone === "dark" ? "text-white/65" : "text-muted-foreground";
+
+    return (
+        <Card className={cn("rounded-[1.5rem] border shadow-sm", toneClassName)}>
+            <CardContent className="p-5">
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        <p className={cn("text-[11px] font-semibold uppercase tracking-[0.22em]", labelClassName)}>
+                            {label}
+                        </p>
+                        <p className={cn("mt-3 text-3xl font-semibold tracking-[-0.05em]", valueClassName)}>
+                            {value}
+                        </p>
+                        {description ? (
+                            <p className={cn("mt-2 text-sm leading-6", descriptionClassName)}>
+                                {description}
+                            </p>
+                        ) : null}
+                    </div>
+                    <div className={cn("rounded-2xl p-3", iconClassName)}>{icon}</div>
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
+
+function EmptyState({ title, description }: { title: string; description: string }) {
+    return (
+        <div className="rounded-[1.5rem] border border-dashed border-border/80 bg-background/70 px-6 py-16 text-center">
+            <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-muted">
+                <ReceiptText className="size-5 text-muted-foreground" />
+            </div>
+            <p className="mt-4 text-base font-semibold text-foreground">{title}</p>
+            <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">{description}</p>
+        </div>
+    );
+}
+
 // ─────────────────────────────────────────────
 // SHARED: Apertura de Caja (igual para todos)
 // ─────────────────────────────────────────────
@@ -107,51 +223,102 @@ function AbrirCajaView({
     onOpen: () => void;
 }) {
     return (
-        <div className="p-6 lg:p-10 max-w-2xl mx-auto mt-10">
-            <Card className="shadow-lg border-border/50">
-                <CardHeader className="text-center pb-8">
-                    <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                        <LockKeyhole className="size-8" />
-                    </div>
-                    <CardTitle className="text-2xl">La caja está cerrada</CardTitle>
-                    <CardDescription className="text-base mt-2">
-                        Para empezar a facturar y registrar movimientos, abrí la caja ingresando el cambio inicial.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                    <div className="space-y-2">
-                        <Label>Usuario / Vendedor</Label>
-                        <Select value={selectedSellerId} onValueChange={setSelectedSellerId}>
-                            <SelectTrigger className="h-12 w-full text-base">
-                                <SelectValue placeholder="¿Quién abre la caja?" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {sellers.map((s) => (
-                                    <SelectItem key={s.id} value={s.id}>
-                                        {s.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Fondo de Caja (Cambio inicial)</Label>
-                        <div className="relative">
-                            <DollarSign className="absolute left-3 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-                            <Input
-                                type="number"
-                                placeholder="Ej: 5000"
-                                className="h-14 pl-10 text-xl font-medium"
-                                value={initialAmount}
-                                onChange={(e) => setInitialAmount(e.target.value)}
-                            />
+        <div className="p-4 sm:p-5 lg:p-6">
+            <div className="flex w-full flex-col gap-5">
+                <ShellHeader
+                    eyebrow="Apertura de caja"
+                    title="Abrir caja"
+                    description=""
+                    tone="warning"
+                    aside={
+                        <div className="rounded-[1.25rem] border border-orange-900/20 bg-[linear-gradient(135deg,rgba(234,88,12,0.12),rgba(255,255,255,0.92))] p-4 shadow-sm">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-orange-800/80 dark:text-orange-100/80">
+                                Estado actual
+                            </p>
+                            <div className="mt-3 flex items-center gap-3">
+                                <div className="rounded-2xl bg-orange-900 p-2.5">
+                                    <LockKeyhole className="size-5 text-orange-100" />
+                                </div>
+                                <div>
+                                    <p className="text-lg font-semibold text-foreground">Caja cerrada</p>
+                                    <p className="text-sm text-muted-foreground">Ventas bloqueadas</p>
+                                </div>
+                            </div>
                         </div>
+                    }
+                />
+
+                <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+                    <div className="grid gap-4 sm:grid-cols-3">
+                        {[
+                            ["1", "Elegí responsable", "Quién queda a cargo de la caja al inicio del turno."],
+                            ["2", "Definí el cambio", "Monto base en efectivo para operar durante el día."],
+                            ["3", "Habilitá ventas", "La caja queda lista para cobrar y registrar movimientos."],
+                        ].map(([step, title, description]) => (
+                            <Card
+                                key={step}
+                                className="rounded-[1.55rem] border-border/70 bg-card/90 shadow-sm"
+                            >
+                                <CardContent className="p-5">
+                                    <div className="text-3xl font-semibold tracking-[-0.08em] text-muted-foreground/40">
+                                        {step}
+                                    </div>
+                                    <p className="mt-4 text-base font-semibold text-foreground">{title}</p>
+                                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+                                </CardContent>
+                            </Card>
+                        ))}
                     </div>
-                    <Button className="w-full h-14 text-lg bg-emerald-600 hover:bg-emerald-700" onClick={onOpen}>
-                        Abrir Caja Ahora
-                    </Button>
-                </CardContent>
-            </Card>
+
+                    <Card className="rounded-[1.75rem] border-border/70 bg-card/92 shadow-sm">
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-2xl tracking-[-0.05em]">
+                                Abrir caja
+                            </CardTitle>
+                            <CardDescription className="text-sm">
+                                Definí responsable y monto inicial para comenzar.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-5">
+                            <div className="space-y-2">
+                                <Label>Usuario / Vendedor</Label>
+                                <Select value={selectedSellerId} onValueChange={setSelectedSellerId}>
+                                    <SelectTrigger className="h-12 w-full text-base">
+                                        <SelectValue placeholder="¿Quién abre la caja?" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {sellers.map((s) => (
+                                            <SelectItem key={s.id} value={s.id}>
+                                                {s.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Fondo de caja</Label>
+                                <div className="relative">
+                                    <DollarSign className="absolute left-3 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
+                                    <Input
+                                        type="number"
+                                        placeholder="Ej: 5000"
+                                        className="h-14 pl-10 text-xl font-medium"
+                                        value={initialAmount}
+                                        onChange={(e) => setInitialAmount(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                            <div className="rounded-2xl bg-muted/55 p-4 text-sm text-muted-foreground">
+                                Este monto se toma como base para calcular el efectivo esperado al
+                                cierre.
+                            </div>
+                            <Button className="h-14 w-full text-lg" onClick={onOpen}>
+                                Abrir caja ahora
+                            </Button>
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
         </div>
     );
 }
@@ -201,62 +368,130 @@ function StaffCajaView({
 
     return (
         <>
-            <div className="p-6 lg:p-10 max-w-2xl mx-auto animate-in fade-in duration-300">
-                <div className="mb-6">
-                    <h1 className="flex items-center gap-3 text-3xl font-bold tracking-tight">
-                        <LockOpen className="size-8 text-emerald-600" />
-                        Caja Abierta
-                    </h1>
-                    <p className="mt-1 text-muted-foreground">
-                        Abierta por{" "}
-                        <span className="font-medium text-foreground">{session.openedBy?.name}</span> el{" "}
-                        {format(new Date(session.openingDate), "dd/MM/yyyy 'a las' HH:mm", { locale: es })}
-                    </p>
+            <div className="animate-in fade-in p-4 duration-300 sm:p-5 lg:p-6">
+                <div className="flex w-full flex-col gap-5">
+                    <ShellHeader
+                        eyebrow="Turno activo"
+                        title="Caja activa"
+                        description=""
+                        tone="success"
+                        aside={
+                            <div className="rounded-[1.25rem] border border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.12),rgba(255,255,255,0.92))] p-4 shadow-sm">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-800/80 dark:text-emerald-100/80">
+                                    Apertura
+                                </p>
+                                <p className="mt-2 text-base font-semibold text-foreground">
+                                    {session.openedBy?.name}
+                                </p>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                    {format(new Date(session.openingDate), "dd/MM/yyyy · HH:mm", {
+                                        locale: es,
+                                    })}
+                                </p>
+                                <div className="mt-4 rounded-2xl bg-emerald-950/8 p-3">
+                                    <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/75 dark:text-emerald-100/75">
+                                        Efectivo esperado
+                                    </p>
+                                    <p className="mt-1 text-2xl font-semibold tracking-[-0.05em] text-foreground">
+                                        {formatCurrency(expectedCash)}
+                                    </p>
+                                </div>
+                            </div>
+                        }
+                    />
+
+                    <div className="grid gap-4 md:grid-cols-3">
+                        <MetricCard
+                            label="Efectivo esperado"
+                            value={formatCurrency(expectedCash)}
+                            description="Lo que debería haber en caja según ventas y movimientos."
+                            icon={<Wallet className="size-5" />}
+                            tone="dark"
+                        />
+                        <MetricCard
+                            label="Fondo inicial"
+                            value={formatCurrency(session.initialAmount)}
+                            description="Monto con el que arrancó la jornada."
+                            icon={<DollarSign className="size-5" />}
+                        />
+                        <MetricCard
+                            label="Estado"
+                            value="Activo"
+                            description="La terminal está disponible para operar."
+                            icon={<ShieldCheck className="size-5" />}
+                            tone="success"
+                        />
+                    </div>
+
+                    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+                        <Card className="rounded-[1.75rem] border-border/70 bg-card/92 shadow-sm">
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-2xl tracking-[-0.05em]">
+                                    Resumen del cierre
+                                </CardTitle>
+                                <CardDescription>
+                                    Al final del turno contá el efectivo real y comparalo con el monto esperado.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <div className="rounded-[1.4rem] border border-border/70 bg-muted/35 p-5">
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                                            Esperado por sistema
+                                        </p>
+                                        <p className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-foreground">
+                                            {formatCurrency(expectedCash)}
+                                        </p>
+                                    </div>
+                                    <div className="rounded-[1.4rem] border border-border/70 bg-muted/35 p-5">
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                                            Fondo inicial
+                                        </p>
+                                        <p className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-foreground">
+                                            {formatCurrency(session.initialAmount)}
+                                        </p>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                        <Card className="rounded-[1.75rem] border-border/70 bg-card/92">
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-2xl tracking-[-0.05em]">
+                                    Cierre de turno
+                                </CardTitle>
+                                <CardDescription>
+                                    Registrá el efectivo contado para cerrar la caja.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label>Responsable del cierre</Label>
+                                    <Select value={selectedSellerId} onValueChange={setSelectedSellerId}>
+                                        <SelectTrigger className="w-full">
+                                            <SelectValue placeholder="Seleccioná un usuario" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {sellers.map((s) => (
+                                                <SelectItem key={s.id} value={s.id}>
+                                                    {s.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="rounded-2xl bg-muted/55 p-4 text-sm text-muted-foreground">
+                                    El sistema espera {formatCurrency(expectedCash)} en efectivo.
+                                </div>
+                                <Button
+                                    className="h-14 w-full text-lg text-white bg-slate-900 hover:bg-slate-800"
+                                    onClick={() => setCloseDialogOpen(true)}
+                                >
+                                    Realizar arqueo y cerrar
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    </div>
                 </div>
-
-                <Card className="mb-6 border-emerald-200 bg-emerald-600 text-white shadow-md">
-                    <CardContent className="p-6 text-center">
-                        <p className="mb-2 text-sm font-medium uppercase tracking-wider text-emerald-100">
-                            Efectivo en Cajón (Aprox.)
-                        </p>
-                        <p className="text-5xl font-bold">{formatCurrency(expectedCash)}</p>
-                        <p className="mt-2 text-sm text-emerald-200">
-                            Fondo inicial: {formatCurrency(session.initialAmount)}
-                        </p>
-                    </CardContent>
-                </Card>
-
-                <Card className="border-slate-200 bg-slate-50">
-                    <CardHeader>
-                        <CardTitle>Cierre de Turno</CardTitle>
-                        <CardDescription>
-                            Contá el efectivo del cajón y registrá el arqueo para cerrar la caja.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="space-y-2">
-                            <Label>Responsable del cierre</Label>
-                            <Select value={selectedSellerId} onValueChange={setSelectedSellerId}>
-                                <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="Seleccioná un usuario" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {sellers.map((s) => (
-                                        <SelectItem key={s.id} value={s.id}>
-                                            {s.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <Button
-                            className="h-14 w-full text-lg text-white bg-slate-900 hover:bg-slate-800"
-                            onClick={() => setCloseDialogOpen(true)}
-                        >
-                            Realizar Arqueo y Cerrar
-                        </Button>
-                    </CardContent>
-                </Card>
             </div>
 
             {/* Dialog arqueo staff */}
@@ -269,9 +504,9 @@ function StaffCajaView({
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-5 py-2">
-                        <div className="rounded-lg bg-emerald-50 p-4 flex justify-between items-center border border-emerald-100">
-                            <span className="text-emerald-800 font-medium">El sistema espera:</span>
-                            <span className="text-2xl font-bold text-emerald-700">
+                        <div className="rounded-lg border border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.14),rgba(6,95,70,0.04))] p-4 flex justify-between items-center">
+                            <span className="text-emerald-900 dark:text-emerald-100 font-medium">El sistema espera:</span>
+                            <span className="text-2xl font-bold text-emerald-900 dark:text-emerald-100">
                                 {formatCurrency(expectedCash)}
                             </span>
                         </div>
@@ -388,244 +623,242 @@ function AdminCajaView({
 
     return (
         <>
-            <div className="p-6 lg:p-10 animate-in fade-in duration-300">
-                <div className="mb-5">
-                    <h1 className="flex items-center gap-3 text-3xl font-bold tracking-tight">
-                        <LockOpen className="size-8 text-emerald-600" />
-                        Caja Abierta
-                    </h1>
-                    <p className="mt-1 text-muted-foreground">
-                        Abierta por{" "}
-                        <span className="font-medium text-foreground">{session.openedBy?.name}</span> el{" "}
-                        {format(new Date(session.openingDate), "dd/MM/yyyy 'a las' HH:mm", { locale: es })}
-                    </p>
-                </div>
+            <div className="animate-in fade-in p-4 duration-300 sm:p-5 lg:p-6">
+                <div className="flex w-full flex-col gap-5">
+                    <ShellHeader
+                        eyebrow="Monitoreo operativo"
+                        title="Caja del turno"
+                        description=""
+                        tone="success"
+                        aside={
+                            <div className="rounded-[1.25rem] border border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.12),rgba(255,255,255,0.92))] p-4 shadow-sm">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-800/80 dark:text-emerald-100/80">
+                                    Apertura
+                                </p>
+                                <p className="mt-2 text-base font-semibold text-foreground">
+                                    {session.openedBy?.name ?? "Sin responsable"}
+                                </p>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                    {format(new Date(session.openingDate), "dd/MM · HH:mm", { locale: es })}
+                                </p>
+                                <div className="mt-4 rounded-2xl bg-emerald-950/8 p-3">
+                                    <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/75 dark:text-emerald-100/75">
+                                        Efectivo esperado
+                                    </p>
+                                    <p className="mt-1 text-2xl font-semibold tracking-[-0.05em] text-foreground">
+                                        {formatCurrency(expectedCash)}
+                                    </p>
+                                </div>
+                            </div>
+                        }
+                    />
 
-                {/* Acciones rápidas */}
-                <Card className="mb-8 border-emerald-200 bg-gradient-to-r from-emerald-50 via-white to-rose-50 shadow-sm">
-                    <CardContent className="p-4 sm:p-5">
-                        <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                                    Acciones Rápidas
-                                </p>
-                                <p className="text-sm text-muted-foreground">
-                                    Ingreso y retiro al alcance, sin perderlos de vista.
-                                </p>
+                    <Card className="rounded-[1.75rem] border-emerald-800/20 bg-[linear-gradient(90deg,rgba(5,150,105,0.16),rgba(255,255,255,0.95),rgba(225,29,72,0.08))] shadow-sm">
+                        <CardContent className="p-4 sm:p-5">
+                            <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                                        Acciones rápidas
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                        Ingreso y retiro al alcance, sin perderlos de vista.
+                                    </p>
+                                </div>
+                                <div className="rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow-sm">
+                                    Efectivo esperado:{" "}
+                                    <span className="font-bold text-emerald-800 dark:text-emerald-100">{formatCurrency(expectedCash)}</span>
+                                </div>
                             </div>
-                            <div className="rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow-sm">
-                                Efectivo esperado:{" "}
-                                <span className="font-bold text-emerald-700">{formatCurrency(expectedCash)}</span>
+                            <div className="grid gap-3 md:grid-cols-2">
+                                <Button
+                                    variant="outline"
+                                    className="h-20 justify-start gap-4 border-rose-900/20 bg-white text-left text-rose-700 shadow-sm hover:bg-rose-950/6"
+                                    onClick={() => {
+                                        setMovementType("EGRESO");
+                                        setMovementDialogOpen(true);
+                                    }}
+                                >
+                                    <div className="rounded-full bg-rose-900 p-2.5">
+                                        <ArrowDownCircle className="size-6 text-rose-100" />
+                                    </div>
+                                    <div className="flex flex-col items-start">
+                                        <span className="text-base font-bold">Retirar dinero</span>
+                                        <span className="text-xs text-rose-700/80">Pagos, gastos o retiros de caja</span>
+                                    </div>
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    className="h-20 justify-start gap-4 border-emerald-800/20 bg-white text-left text-emerald-700 shadow-sm hover:bg-emerald-950/6"
+                                    onClick={() => {
+                                        setMovementType("INGRESO");
+                                        setMovementDialogOpen(true);
+                                    }}
+                                >
+                                    <div className="rounded-full bg-emerald-900 p-2.5">
+                                        <ArrowUpCircle className="size-6 text-emerald-100" />
+                                    </div>
+                                    <div className="flex flex-col items-start">
+                                        <span className="text-base font-bold">Ingresar dinero</span>
+                                        <span className="text-xs text-emerald-700/80">
+                                            Cambio extra, reposiciones o ingresos
+                                        </span>
+                                    </div>
+                                </Button>
                             </div>
-                        </div>
-                        <div className="grid gap-3 md:grid-cols-2">
-                            <Button
-                                variant="outline"
-                                className="h-20 justify-start gap-4 border-rose-200 bg-white text-left text-rose-700 shadow-sm hover:bg-rose-50"
-                                onClick={() => {
-                                    setMovementType("EGRESO");
-                                    setMovementDialogOpen(true);
-                                }}
-                            >
-                                <div className="rounded-full bg-rose-100 p-2.5">
-                                    <ArrowDownCircle className="size-6 text-rose-600" />
-                                </div>
-                                <div className="flex flex-col items-start">
-                                    <span className="text-base font-bold">Retirar Dinero</span>
-                                    <span className="text-xs text-rose-700/80">Pagos, gastos, retiros de caja</span>
-                                </div>
-                            </Button>
-                            <Button
-                                variant="outline"
-                                className="h-20 justify-start gap-4 border-emerald-200 bg-white text-left text-emerald-700 shadow-sm hover:bg-emerald-50"
-                                onClick={() => {
-                                    setMovementType("INGRESO");
-                                    setMovementDialogOpen(true);
-                                }}
-                            >
-                                <div className="rounded-full bg-emerald-100 p-2.5">
-                                    <ArrowUpCircle className="size-6 text-emerald-600" />
-                                </div>
-                                <div className="flex flex-col items-start">
-                                    <span className="text-base font-bold">Ingresar Dinero</span>
-                                    <span className="text-xs text-emerald-700/80">
-                                        Cambio extra, reposiciones, ingresos
-                                    </span>
-                                </div>
-                            </Button>
-                        </div>
-                    </CardContent>
-                </Card>
+                        </CardContent>
+                    </Card>
 
-                {/* Cards de stats */}
-                <div className="mb-8 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                    <Card className="bg-emerald-600 text-white shadow-md border-none">
-                        <CardContent className="p-6">
-                            <p className="mb-2 text-sm font-medium uppercase tracking-wider text-emerald-100">
-                                Efectivo en Cajón (Aprox)
-                            </p>
-                            <p className="text-4xl font-bold">{formatCurrency(expectedCash)}</p>
-                            <p className="mt-2 text-sm text-emerald-200">
-                                Fondo inicial: {formatCurrency(session.initialAmount)}
-                            </p>
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardContent className="p-6">
-                            <div className="mb-2 flex items-center justify-between">
-                                <p className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-                                    Ventas Efectivo
-                                </p>
-                                <Wallet className="size-5 text-muted-foreground" />
-                            </div>
-                            <p className="text-3xl font-bold">{formatCurrency(salesCash)}</p>
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardContent className="p-6">
-                            <div className="mb-2 flex items-center justify-between">
-                                <p className="text-sm font-medium uppercase tracking-wider text-blue-600/80">
-                                    Transferencias
-                                </p>
-                                <Wallet className="size-5 text-blue-600/50" />
-                            </div>
-                            <p className="text-3xl font-bold text-blue-600">{formatCurrency(salesTransfer)}</p>
-                            <p className="mt-2 text-xs text-muted-foreground">
-                                Dinero digital, no está en el cajón.
-                            </p>
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardContent className="p-6">
-                            <p className="mb-2 text-sm font-medium uppercase tracking-wider text-muted-foreground">
-                                Gastos / Retiros
-                            </p>
-                            <p className="text-3xl font-bold text-rose-600">{formatCurrency(manualOut)}</p>
-                        </CardContent>
-                    </Card>
-                </div>
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <MetricCard
+                            label="Efectivo en caja"
+                            value={formatCurrency(expectedCash)}
+                            description={`Fondo inicial ${formatCurrency(session.initialAmount)}`}
+                            icon={<Wallet className="size-5" />}
+                            tone="dark"
+                        />
+                        <MetricCard
+                            label="Ventas efectivo"
+                            value={formatCurrency(salesCash)}
+                            description="Cobros que impactan en el cajón."
+                            icon={<DollarSign className="size-5" />}
+                        />
+                        <MetricCard
+                            label="Transferencias"
+                            value={formatCurrency(salesTransfer)}
+                            description="Cobros digitales fuera del efectivo."
+                            icon={<ChevronRight className="size-5" />}
+                            tone="success"
+                        />
+                        <MetricCard
+                            label="Retiros / gastos"
+                            value={formatCurrency(manualOut)}
+                            description="Salidas manuales registradas en el turno."
+                            icon={<ArrowDownCircle className="size-5" />}
+                            tone="danger"
+                        />
+                    </div>
 
-                {/* Movimientos + Cierre */}
-                <div className="grid gap-8 lg:grid-cols-3">
-                    <Card className="lg:col-span-2">
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <History className="size-5 text-muted-foreground" />
-                                Movimientos Manuales de Hoy
-                            </CardTitle>
-                            <CardDescription>
-                                Gastos, retiros o ingresos extra fuera de las ventas.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            {session.movements.length === 0 ? (
-                                <div className="text-center py-10 text-muted-foreground">
-                                    No se registraron movimientos manuales hoy.
-                                </div>
-                            ) : (
-                                <div className="space-y-4">
-                                    {session.movements.map((mov) => (
-                                        <div
-                                            key={mov.id}
-                                            className="flex items-center justify-between p-3 rounded-lg border bg-muted/20"
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                {mov.type === "INGRESO" ? (
-                                                    <ArrowUpCircle className="size-8 text-emerald-500" />
-                                                ) : (
-                                                    <ArrowDownCircle className="size-8 text-rose-500" />
-                                                )}
-                                                <div>
-                                                    <p className="font-semibold text-sm">{mov.reason}</p>
-                                                    <p className="text-xs text-muted-foreground">
-                                                        {format(new Date(mov.createdAt), "HH:mm")} hs
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <p
-                                                className={cn(
-                                                    "font-bold",
-                                                    mov.type === "INGRESO"
-                                                        ? "text-emerald-600"
-                                                        : "text-rose-600"
-                                                )}
+                    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+                        <Card className="rounded-[1.75rem] border-border/70 bg-card/92 shadow-sm">
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                    <History className="size-5 text-muted-foreground" />
+                                    Movimientos manuales de hoy
+                                </CardTitle>
+                                <CardDescription>
+                                    Gastos, retiros o ingresos extra fuera de las ventas.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                {session.movements.length === 0 ? (
+                                    <EmptyState
+                                        title="Sin movimientos manuales"
+                                        description="Todavía no registraste ingresos extra ni retiros en esta jornada."
+                                    />
+                                ) : (
+                                    <div className="space-y-3">
+                                        {session.movements.map((mov) => (
+                                            <div
+                                                key={mov.id}
+                                                className="flex items-center justify-between rounded-2xl border border-border/70 bg-background/75 p-4"
                                             >
-                                                {mov.type === "INGRESO" ? "+" : "-"}
-                                                {formatCurrency(mov.amount)}
-                                            </p>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
-
-                    {/* Panel de cierre ADMIN */}
-                    <Card className="h-fit border-slate-200 bg-slate-50">
-                        <CardHeader>
-                            <CardTitle>Cierre de Turno</CardTitle>
-                            <CardDescription>
-                                Finalizá el día. Podés hacer el arqueo ahora o después.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="rounded-xl border border-slate-200 bg-white p-4">
-                                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                                    Resumen previo
-                                </p>
-                                <div className="mt-3 space-y-2 text-sm">
-                                    <div className="flex items-center justify-between">
-                                        <span>Efectivo esperado</span>
-                                        <span className="font-semibold">{formatCurrency(expectedCash)}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                        <span>Ingresos manuales</span>
-                                        <span className="font-semibold text-emerald-600">
-                                            {formatCurrency(manualIn)}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                        <span>Retiros manuales</span>
-                                        <span className="font-semibold text-rose-600">
-                                            {formatCurrency(manualOut)}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label className="text-xs text-muted-foreground">
-                                    Responsable del cierre
-                                </Label>
-                                <Select value={selectedSellerId} onValueChange={setSelectedSellerId}>
-                                    <SelectTrigger className="w-full">
-                                        <SelectValue placeholder="Seleccioná un usuario" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {sellers.map((s) => (
-                                            <SelectItem key={s.id} value={s.id}>
-                                                {s.name}
-                                            </SelectItem>
+                                                <div className="flex items-center gap-3">
+                                                    {mov.type === "INGRESO" ? (
+                                                        <ArrowUpCircle className="size-8 text-emerald-500" />
+                                                    ) : (
+                                                        <ArrowDownCircle className="size-8 text-rose-500" />
+                                                    )}
+                                                    <div>
+                                                        <p className="font-semibold text-sm">{mov.reason}</p>
+                                                        <p className="text-xs text-muted-foreground">
+                                                            {format(new Date(mov.createdAt), "HH:mm")} hs
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <p
+                                                    className={cn(
+                                                        "font-bold",
+                                                        mov.type === "INGRESO"
+                                                            ? "text-emerald-600"
+                                                            : "text-rose-600"
+                                                    )}
+                                                >
+                                                    {mov.type === "INGRESO" ? "+" : "-"}
+                                                    {formatCurrency(mov.amount)}
+                                                </p>
+                                            </div>
                                         ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
 
-                            <Button
-                                className="h-12 w-full text-base text-white bg-slate-900 hover:bg-slate-800"
-                                onClick={() => setCloseDialogOpen(true)}
-                            >
-                                Realizar Arqueo y Cerrar
-                            </Button>
-                            <Button
-                                variant="outline"
-                                className="h-12 w-full text-base border-amber-300 text-amber-700 hover:bg-amber-50"
-                                onClick={() => setCloseWithoutDialogOpen(true)}
-                            >
-                                Cerrar sin arquear
-                            </Button>
-                        </CardContent>
-                    </Card>
+                        <Card className="h-fit rounded-[1.75rem] border-slate-200 bg-slate-50 shadow-sm">
+                            <CardHeader>
+                                <CardTitle>Cierre de turno</CardTitle>
+                                <CardDescription>
+                                    Finalizá el día. Podés hacer el arqueo ahora o después.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                                        Resumen previo
+                                    </p>
+                                    <div className="mt-3 space-y-2 text-sm">
+                                        <div className="flex items-center justify-between">
+                                            <span>Efectivo esperado</span>
+                                            <span className="font-semibold">{formatCurrency(expectedCash)}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                            <span>Ingresos manuales</span>
+                                            <span className="font-semibold text-emerald-600">
+                                                {formatCurrency(manualIn)}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                            <span>Retiros manuales</span>
+                                            <span className="font-semibold text-rose-600">
+                                                {formatCurrency(manualOut)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label className="text-xs text-muted-foreground">
+                                        Responsable del cierre
+                                    </Label>
+                                    <Select value={selectedSellerId} onValueChange={setSelectedSellerId}>
+                                        <SelectTrigger className="w-full">
+                                            <SelectValue placeholder="Seleccioná un usuario" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {sellers.map((s) => (
+                                                <SelectItem key={s.id} value={s.id}>
+                                                    {s.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <Button
+                                    className="h-12 w-full text-base text-white bg-slate-900 hover:bg-slate-800"
+                                    onClick={() => setCloseDialogOpen(true)}
+                                >
+                                    Realizar arqueo y cerrar
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    className="h-12 w-full text-base border-orange-900/20 text-orange-700 hover:bg-orange-950/6"
+                                    onClick={() => setCloseWithoutDialogOpen(true)}
+                                >
+                                    Cerrar sin arquear
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    </div>
                 </div>
             </div>
 
@@ -691,9 +924,9 @@ function AdminCajaView({
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-6 py-4">
-                        <div className="rounded-lg bg-emerald-50 p-4 flex justify-between items-center border border-emerald-100">
-                            <span className="text-emerald-800 font-medium">El sistema espera:</span>
-                            <span className="text-2xl font-bold text-emerald-700">
+                        <div className="rounded-lg border border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.14),rgba(6,95,70,0.04))] p-4 flex justify-between items-center">
+                            <span className="text-emerald-900 dark:text-emerald-100 font-medium">El sistema espera:</span>
+                            <span className="text-2xl font-bold text-emerald-900 dark:text-emerald-100">
                                 {formatCurrency(expectedCash)}
                             </span>
                         </div>
@@ -731,8 +964,8 @@ function AdminCajaView({
             <Dialog open={closeWithoutDialogOpen} onOpenChange={setCloseWithoutDialogOpen}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                        <div className="mx-auto mb-3 flex size-14 items-center justify-center rounded-full bg-amber-100">
-                            <BadgeCheck className="size-7 text-amber-600" />
+                        <div className="mx-auto mb-3 flex size-14 items-center justify-center rounded-full bg-orange-900">
+                            <BadgeCheck className="size-7 text-orange-100" />
                         </div>
                         <DialogTitle className="text-center">Cerrar sin arquear</DialogTitle>
                         <DialogDescription className="text-center">
@@ -746,7 +979,7 @@ function AdminCajaView({
                             Cancelar
                         </Button>
                         <Button
-                            className="bg-amber-500 hover:bg-amber-600 text-white"
+                            className="bg-orange-700 hover:bg-orange-800 text-white"
                             onClick={handleConfirmCloseWithout}
                             disabled={isSavingWithout}
                         >
@@ -878,8 +1111,20 @@ export default function CajaPage() {
 
     if (isLoading) {
         return (
-            <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-                <Loader2 className="size-10 animate-spin text-emerald-600" />
+            <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-6">
+                <div className="rounded-[1.75rem] border border-border/70 bg-card/90 px-10 py-8 shadow-sm">
+                    <div className="flex items-center gap-4">
+                        <div className="rounded-2xl bg-[linear-gradient(135deg,#059669_0%,#065f46_100%)] p-3 text-emerald-50">
+                            <Loader2 className="size-6 animate-spin" />
+                        </div>
+                        <div>
+                            <p className="text-base font-semibold text-foreground">Cargando caja</p>
+                            <p className="text-sm text-muted-foreground">
+                                Estamos trayendo la sesión y los vendedores.
+                            </p>
+                        </div>
+                    </div>
+                </div>
             </div>
         );
     }
@@ -929,8 +1174,8 @@ export default function CajaPage() {
             <Dialog open={staffSuccessOpen} onOpenChange={setStaffSuccessOpen}>
                 <DialogContent className="sm:max-w-sm text-center">
                     <DialogHeader>
-                        <div className="mx-auto mb-3 flex size-16 items-center justify-center rounded-full bg-emerald-100">
-                            <CheckCircle2 className="size-9 text-emerald-600" />
+                        <div className="mx-auto mb-3 flex size-16 items-center justify-center rounded-full bg-emerald-900">
+                            <CheckCircle2 className="size-9 text-emerald-100" />
                         </div>
                         <DialogTitle className="text-center text-xl">Caja cerrada</DialogTitle>
                         <DialogDescription className="text-center text-base">

@@ -41,6 +41,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
     Table,
     TableBody,
@@ -482,10 +483,19 @@ export default function StockPage() {
 
     if (isLoading) {
         return (
-            <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-                <div className="flex flex-col items-center gap-4 text-muted-foreground">
-                    <Loader2 className="size-10 animate-spin text-primary" />
-                    <p className="text-lg font-medium">Cargando movimientos de stock...</p>
+            <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-6">
+                <div className="rounded-[1.75rem] border border-border/70 bg-card/90 px-10 py-8 shadow-sm">
+                    <div className="flex items-center gap-4">
+                        <div className="rounded-2xl bg-[linear-gradient(135deg,#2563eb_0%,#1d4ed8_100%)] p-3 text-blue-50">
+                            <Loader2 className="size-6 animate-spin" />
+                        </div>
+                        <div>
+                            <p className="text-base font-semibold text-foreground">Cargando stock</p>
+                            <p className="text-sm text-muted-foreground">
+                                Estamos preparando movimientos, productos y proveedores.
+                            </p>
+                        </div>
+                    </div>
                 </div>
             </div>
         );
@@ -494,180 +504,195 @@ export default function StockPage() {
     return (
     <>
         {/* Envolvemos todo en un div que se oculta al imprimir */}
-        <div className="print:hidden p-4 lg:p-8">
-            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">
-                        Stock
-                    </h1>
-                    <p className="mt-1 text-muted-foreground">
-                        Gestioná ingresos y bajas de stock
-                    </p>
-                </div>
-                <div className="flex gap-2">
-                    <Button
-                        variant="outline"
-                        size="lg"
-                        className="h-12 gap-2 text-base"
-                        disabled={selectedMovements.length === 0}
-                        onClick={handleOpenPrintDialog}
-                    >
-                        <Barcode className="size-5" />
-                        <span className="hidden sm:inline">Imprimir Etiquetas</span>
-                        <span className="sm:hidden">Etiquetas</span>
-                    </Button>
-                    <Button
-                        variant="outline"
-                        size="lg"
-                        className="h-12 gap-2 border-rose-200 text-base text-rose-700 hover:bg-rose-50 hover:text-rose-800"
-                        onClick={handleOpenReduceStock}
-                    >
-                        <Minus className="size-5" />
-                        Reducir Stock
-                    </Button>
-                    <Button
-                        size="lg"
-                        className="h-12 gap-2 bg-emerald-600 text-base font-semibold hover:bg-emerald-700"
-                        onClick={handleOpenNewStock}
-                    >
-                        <PackagePlus className="size-5" />
-                        Ingresar Stock
-                    </Button>
-                </div>
-            </div>
-
-            <div className="mb-6 grid gap-4 sm:grid-cols-3">
-                <Card>
-                    <CardContent className="flex items-center gap-4 p-4">
-                        <div className="flex size-10 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                            <Package className="size-5" />
+        <div className="print:hidden p-4 sm:p-5 lg:p-6">
+            <div className="flex flex-col gap-5">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                    <div>
+                        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200/70 bg-indigo-50/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-700">
+                            <Package className="size-3.5" />
+                            Gestión de stock
                         </div>
-                        <div>
-                            <p className="text-sm text-muted-foreground">
-                                Variacion total stock
+                        <h1 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-foreground sm:text-3xl">
+                            Stock
+                        </h1>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <div className="rounded-[1.1rem] border border-border/70 bg-card/90 px-4 py-3 shadow-sm">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                                Movimientos
                             </p>
-                            <p className="text-2xl font-bold">{totalUnits}</p>
+                            <p className="mt-1 text-xl font-semibold text-foreground">{movements.length}</p>
                         </div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent className="flex items-center gap-4 p-4">
-                        <div className="flex size-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-                            <PackagePlus className="size-5" />
-                        </div>
-                        <div>
-                            <p className="text-sm text-muted-foreground">
-                                Movimientos registrados
-                            </p>
-                            <p className="text-2xl font-bold">{movements.length}</p>
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent className="flex items-center gap-4 p-4">
-                        <div className="flex size-10 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
-                            <CalendarDays className="size-5" />
-                        </div>
-                        <div>
-                            <p className="text-sm text-muted-foreground">Movimientos hoy</p>
-                            <p className="text-2xl font-bold">{todayEntries}</p>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-
-            <div className="mb-4 flex items-center gap-2">
-                <Button
-                    variant={showFilters ? "secondary" : "outline"}
-                    size="sm"
-                    className="gap-2"
-                    onClick={() => setShowFilters((current) => !current)}
-                >
-                    <Filter className="size-4" />
-                    Filtros
-                    {hasActiveFilters && (
-                        <Badge
-                            variant="default"
-                            className="ml-1 flex size-5 items-center justify-center rounded-full p-0 text-xs"
+                        <Button
+                            variant="outline"
+                            size="lg"
+                            className="h-12 gap-2 rounded-2xl border-border/80 bg-white text-base"
+                            disabled={selectedMovements.length === 0}
+                            onClick={handleOpenPrintDialog}
                         >
-                            !
-                        </Badge>
-                    )}
-                </Button>
-                {hasActiveFilters && (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="gap-1 text-muted-foreground"
-                        onClick={clearFilters}
-                    >
-                        <X className="size-3.5" />
-                        Limpiar filtros
-                    </Button>
-                )}
-                <span className="ml-auto text-sm text-muted-foreground">
-                    {filteredMovements.length} de {movements.length} registros
-                </span>
-            </div>
-
-            {showFilters && (
-                <div className="mb-4 rounded-lg border bg-muted/30 p-4">
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        <div className="space-y-1.5">
-                            <Label className="text-sm font-medium">Producto</Label>
-                            <Select value={filterProduct} onValueChange={setFilterProduct}>
-                                <SelectTrigger className="h-10">
-                                    <SelectValue placeholder="Todos" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">Todos los productos</SelectItem>
-                                    {products.map((product) => (
-                                        <SelectItem key={product.id} value={product.id}>
-                                            {product.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className="space-y-1.5">
-                            <Label className="text-sm font-medium">Proveedor</Label>
-                            <Select value={filterProvider} onValueChange={setFilterProvider}>
-                                <SelectTrigger className="h-10">
-                                    <SelectValue placeholder="Todos" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">Todos los proveedores</SelectItem>
-                                    {providers.map((provider) => (
-                                        <SelectItem key={provider.id} value={provider.id}>
-                                            {provider.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className="space-y-1.5">
-                            <Label className="text-sm font-medium">Desde</Label>
-                            <Input
-                                type="date"
-                                value={filterDateFrom}
-                                onChange={(event) => setFilterDateFrom(event.target.value)}
-                                className="h-10"
-                            />
-                        </div>
-                        <div className="space-y-1.5">
-                            <Label className="text-sm font-medium">Hasta</Label>
-                            <Input
-                                type="date"
-                                value={filterDateTo}
-                                onChange={(event) => setFilterDateTo(event.target.value)}
-                                className="h-10"
-                            />
-                        </div>
+                            <Barcode className="size-5" />
+                            Imprimir etiquetas
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="lg"
+                            className="h-12 gap-2 rounded-2xl border-rose-900/20 bg-white text-base text-rose-700 hover:bg-rose-950/6 hover:text-rose-800"
+                            onClick={handleOpenReduceStock}
+                        >
+                            <Minus className="size-5" />
+                            Reducir stock
+                        </Button>
+                        <Button
+                            size="lg"
+                            className="h-12 gap-2 rounded-2xl bg-emerald-600 text-base font-semibold hover:bg-emerald-700"
+                            onClick={handleOpenNewStock}
+                        >
+                            <PackagePlus className="size-5" />
+                            Ingresar stock
+                        </Button>
                     </div>
                 </div>
-            )}
 
-            <div className="rounded-xl border bg-card">
+                <div className="grid gap-4 sm:grid-cols-3">
+                    <Card className="rounded-[1.5rem] border-blue-800/20 bg-[linear-gradient(135deg,rgba(37,99,235,0.14),rgba(30,64,175,0.04))] shadow-sm">
+                        <CardContent className="flex items-center gap-4 p-5">
+                            <div className="flex size-12 items-center justify-center rounded-2xl bg-blue-900 text-blue-100">
+                                <Package className="size-5" />
+                            </div>
+                            <div>
+                                <p className="text-sm text-muted-foreground">
+                                    Variación total stock
+                                </p>
+                                <p className="text-3xl font-semibold tracking-[-0.05em]">{totalUnits}</p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card className="rounded-[1.5rem] border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.14),rgba(6,95,70,0.04))] shadow-sm">
+                        <CardContent className="flex items-center gap-4 p-5">
+                            <div className="flex size-12 items-center justify-center rounded-2xl bg-emerald-900 text-emerald-100">
+                                <PackagePlus className="size-5" />
+                            </div>
+                            <div>
+                                <p className="text-sm text-muted-foreground">
+                                    Movimientos registrados
+                                </p>
+                                <p className="text-3xl font-semibold tracking-[-0.05em]">{movements.length}</p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card className="rounded-[1.5rem] border-orange-800/20 bg-[linear-gradient(135deg,rgba(234,88,12,0.14),rgba(194,65,12,0.04))] shadow-sm">
+                        <CardContent className="flex items-center gap-4 p-5">
+                            <div className="flex size-12 items-center justify-center rounded-2xl bg-orange-900 text-orange-100">
+                                <CalendarDays className="size-5" />
+                            </div>
+                            <div>
+                                <p className="text-sm text-muted-foreground">Movimientos hoy</p>
+                                <p className="text-3xl font-semibold tracking-[-0.05em]">{todayEntries}</p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+
+                <Card className="rounded-[1.75rem] border-border/70 bg-card/92 shadow-sm">
+                    <CardContent className="p-4 sm:p-5">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Button
+                                    variant={showFilters ? "secondary" : "outline"}
+                                    size="sm"
+                                    className="gap-2 rounded-xl"
+                                    onClick={() => setShowFilters((current) => !current)}
+                                >
+                                    <Filter className="size-4" />
+                                    Filtros
+                                    {hasActiveFilters && (
+                                        <Badge
+                                            variant="default"
+                                            className="ml-1 flex size-5 items-center justify-center rounded-full p-0 text-xs"
+                                        >
+                                            !
+                                        </Badge>
+                                    )}
+                                </Button>
+                                {hasActiveFilters && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="gap-1 rounded-xl text-muted-foreground"
+                                        onClick={clearFilters}
+                                    >
+                                        <X className="size-3.5" />
+                                        Limpiar filtros
+                                    </Button>
+                                )}
+                            </div>
+                            <div className="lg:ml-auto">
+                                <span className="text-sm text-muted-foreground">
+                                    {filteredMovements.length} de {movements.length} registros
+                                </span>
+                            </div>
+                        </div>
+
+                        {showFilters && (
+                            <div className="mt-4 rounded-[1.5rem] border border-border/70 bg-muted/25 p-4">
+                                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                    <div className="space-y-1.5">
+                                        <Label className="text-sm font-medium">Producto</Label>
+                                        <Select value={filterProduct} onValueChange={setFilterProduct}>
+                                            <SelectTrigger className="h-10">
+                                                <SelectValue placeholder="Todos" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">Todos los productos</SelectItem>
+                                                {products.map((product) => (
+                                                    <SelectItem key={product.id} value={product.id}>
+                                                        {product.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-sm font-medium">Proveedor</Label>
+                                        <Select value={filterProvider} onValueChange={setFilterProvider}>
+                                            <SelectTrigger className="h-10">
+                                                <SelectValue placeholder="Todos" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">Todos los proveedores</SelectItem>
+                                                {providers.map((provider) => (
+                                                    <SelectItem key={provider.id} value={provider.id}>
+                                                        {provider.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-sm font-medium">Desde</Label>
+                                        <Input
+                                            type="date"
+                                            value={filterDateFrom}
+                                            onChange={(event) => setFilterDateFrom(event.target.value)}
+                                            className="h-10"
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-sm font-medium">Hasta</Label>
+                                        <Input
+                                            type="date"
+                                            value={filterDateTo}
+                                            onChange={(event) => setFilterDateTo(event.target.value)}
+                                            className="h-10"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+
+            <div className="mt-5 overflow-hidden rounded-[1.75rem] border border-border/70 bg-card/92 shadow-sm">
                 <Table>
                     <TableHeader>
                         <TableRow className="hover:bg-transparent">
@@ -704,17 +729,15 @@ export default function StockPage() {
                             filteredMovements.map((movement) => (
                                 <TableRow key={movement.id}>
                                     <TableCell>
-                                        <input
-                                            type="checkbox"
+                                        <Checkbox
                                             checked={selectedMovementIds.includes(movement.id)}
-                                            onChange={(event) =>
+                                            onCheckedChange={(checked) =>
                                                 toggleMovementSelection(
                                                     movement.id,
-                                                    event.target.checked
+                                                    checked === true
                                                 )
                                             }
                                             aria-label={`Seleccionar ingreso de ${getProductName(movement.productId)}`}
-                                            className="size-4 accent-emerald-600"
                                         />
                                     </TableCell>
                                     <TableCell className="text-sm">
@@ -734,8 +757,8 @@ export default function StockPage() {
                                         <Badge
                                             className={
                                                 movement.totalQuantity >= 0
-                                                    ? "bg-emerald-100 text-sm font-bold text-emerald-700"
-                                                    : "bg-rose-100 text-sm font-bold text-rose-700"
+                                                    ? "bg-emerald-900 text-sm font-bold text-emerald-100"
+                                                    : "bg-rose-900 text-sm font-bold text-rose-100"
                                             }
                                         >
                                             {movement.totalQuantity > 0 ? "+" : ""}
@@ -762,6 +785,7 @@ export default function StockPage() {
                     </TableBody>
                 </Table>
             </div>
+            </div>
 
             <Dialog
                 open={Boolean(selectedMovement)}
@@ -782,7 +806,7 @@ export default function StockPage() {
                                 </DialogDescription>
                             </DialogHeader>
 
-                            <div className="max-h-[60vh] overflow-y-auto rounded-lg border">
+                            <div className="max-h-[60vh] overflow-y-auto rounded-[1.25rem] border border-border/70">
                                 <Table>
                                     <TableHeader>
                                         <TableRow className="hover:bg-transparent">
@@ -875,7 +899,7 @@ export default function StockPage() {
                         >
                             <div className="space-y-2">
                                 <Label>Producto</Label>
-                                <div className="rounded-lg border bg-background">
+                                <div className="rounded-[1.25rem] border border-border/70 bg-background">
                                     <div className="relative border-b">
                                         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                                         <Input
@@ -899,7 +923,7 @@ export default function StockPage() {
                                                         onClick={() => handleProductChange(product.id)}
                                                         className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors ${
                                                             selectedProductId === product.id
-                                                                ? "bg-emerald-50 text-emerald-700"
+                                                                ? "bg-emerald-950/8 text-emerald-800 dark:text-emerald-100"
                                                                 : "hover:bg-muted"
                                                         }`}
                                                     >
@@ -919,7 +943,7 @@ export default function StockPage() {
                             {stockAction === "add" && (
                                 <div className="space-y-2">
                                     <Label>Proveedor</Label>
-                                    <div className="rounded-lg border bg-background">
+                                <div className="rounded-[1.25rem] border border-border/70 bg-background">
                                         <div className="relative border-b">
                                             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                                             <Input
@@ -947,7 +971,7 @@ export default function StockPage() {
                                                             }
                                                             className={`flex w-full items-center rounded-md px-3 py-2 text-left text-sm transition-colors ${
                                                                 selectedProviderId === provider.id
-                                                                    ? "bg-emerald-50 text-emerald-700"
+                                                                    ? "bg-emerald-950/8 text-emerald-800 dark:text-emerald-100"
                                                                     : "hover:bg-muted"
                                                             }`}
                                                         >
@@ -964,7 +988,7 @@ export default function StockPage() {
                             )}
                         </div>
 
-                        <div className="flex rounded-lg border p-1">
+                        <div className="flex rounded-[1.15rem] border border-border/70 bg-muted/20 p-1">
                             <Button
                                 type="button"
                                 variant={!advancedMode ? "default" : "ghost"}
@@ -984,7 +1008,7 @@ export default function StockPage() {
                         </div>
 
                         {advancedMode ? (
-                            <div className="space-y-4 rounded-lg border bg-muted/20 p-4">
+                            <div className="space-y-4 rounded-[1.25rem] border border-border/70 bg-muted/20 p-4">
                                 <div className="space-y-2">
                                     <Label htmlFor="advanced-color">Color</Label>
                                     <Input
@@ -1084,7 +1108,7 @@ export default function StockPage() {
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="max-h-[60vh] overflow-y-auto rounded-lg border">
+                    <div className="max-h-[60vh] overflow-y-auto rounded-[1.25rem] border border-border/70">
                         <Table>
                             <TableHeader>
                                 <TableRow className="hover:bg-transparent">

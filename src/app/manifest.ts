@@ -2,10 +2,10 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "POS Indumentaria",
-    short_name: "POS",
+    name: "GangaFits",
+    short_name: "GangaFits",
     description:
-      "Sistema de punto de venta y gestión de inventario para tu tienda de indumentaria.",
+      "Punto de venta, caja e inventario para la operación diaria de GangaFits.",
     start_url: "/",
     display: "standalone",
     background_color: "#ffffff",

@@ -46,7 +46,7 @@ export default function LoginPage() {
             
             <Card className="z-10 w-full max-w-[400px] shadow-2xl border-border/50">
                 <CardHeader className="space-y-3 pb-6 text-center">
-                    <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                    <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-[linear-gradient(135deg,#ea580c_0%,#c2410c_100%)] text-orange-50 shadow-[0_18px_28px_-18px_rgba(194,65,12,0.7)]">
                         <Store className="size-8" />
                     </div>
                     <div>

@@ -191,10 +191,10 @@ export default function EmpleadosPage() {
 
     if (role === "STAFF") {
         return (
-            <div className="p-6 lg:p-10">
-                <Card className="mx-auto mt-12 max-w-xl border-amber-200 bg-amber-50">
+            <div className="p-4 sm:p-5 lg:p-6">
+                <Card className="mx-auto mt-12 max-w-xl border-orange-800/30 bg-[linear-gradient(135deg,rgba(234,88,12,0.12),rgba(194,65,12,0.05))]">
                     <CardContent className="flex flex-col items-center gap-4 p-8 text-center">
-                        <div className="flex size-14 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                        <div className="flex size-14 items-center justify-center rounded-full bg-[linear-gradient(135deg,#ea580c_0%,#c2410c_100%)] text-orange-50">
                             <ShieldAlert className="size-7" />
                         </div>
                         <div>
@@ -210,46 +210,44 @@ export default function EmpleadosPage() {
     }
 
     return (
-        <div className="p-6 lg:p-10">
-            <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                        Administración
-                    </p>
-                    <h1 className="mt-2 flex items-center gap-3 text-3xl font-bold tracking-tight">
-                        <Users className="size-8 text-sky-700" />
-                        Empleados
-                    </h1>
-                    <p className="mt-1 text-muted-foreground">
-                        Creá usuarios de staff, actualizalos y controlá si pueden ingresar al sistema.
-                    </p>
+        <div className="p-4 sm:p-5 lg:p-6">
+            <div className="flex flex-col gap-5">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <div className="inline-flex items-center gap-2 rounded-full border border-blue-800/30 bg-[linear-gradient(135deg,rgba(37,99,235,0.18),rgba(30,64,175,0.08))] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-800 dark:text-blue-100">
+                            <Users className="size-3.5" />
+                            Personal
+                        </div>
+                        <h1 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-foreground sm:text-3xl">
+                            Empleados
+                        </h1>
+                    </div>
+                    <Button className="h-12 gap-2 bg-sky-700 hover:bg-sky-800" onClick={openCreateDialog}>
+                        <UserPlus className="size-5" />
+                        Nuevo empleado
+                    </Button>
                 </div>
-
-                <Button className="h-12 gap-2 bg-sky-700 hover:bg-sky-800" onClick={openCreateDialog}>
-                    <UserPlus className="size-5" />
-                    Nuevo empleado
-                </Button>
             </div>
 
-            <div className="mb-8 grid gap-4 md:grid-cols-3">
-                <Card className="border-sky-200 bg-sky-50">
+            <div className="mb-8 mt-5 grid gap-4 md:grid-cols-3">
+                <Card className="rounded-[1.5rem] border-blue-800/20 bg-[linear-gradient(135deg,rgba(37,99,235,0.14),rgba(30,64,175,0.04))] shadow-sm">
                     <CardContent className="p-6">
-                        <p className="text-sm font-medium uppercase tracking-wider text-sky-700">Total usuarios</p>
-                        <p className="mt-2 text-4xl font-bold text-sky-900">{employees.length}</p>
+                        <p className="text-sm font-medium uppercase tracking-wider text-blue-800 dark:text-blue-100">Total usuarios</p>
+                        <p className="mt-2 text-4xl font-bold text-blue-950 dark:text-blue-100">{employees.length}</p>
                     </CardContent>
                 </Card>
-                <Card>
+                <Card className="rounded-[1.5rem] border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.14),rgba(6,95,70,0.04))] shadow-sm">
                     <CardContent className="p-6">
-                        <p className="text-sm font-medium uppercase tracking-wider text-emerald-700">Administradores</p>
-                        <p className="mt-2 text-4xl font-bold text-emerald-700">
+                        <p className="text-sm font-medium uppercase tracking-wider text-emerald-800 dark:text-emerald-100">Administradores</p>
+                        <p className="mt-2 text-4xl font-bold text-emerald-900 dark:text-emerald-100">
                             {employees.filter((employee) => employee.role === "ADMIN").length}
                         </p>
                     </CardContent>
                 </Card>
-                <Card>
+                <Card className="rounded-[1.5rem] border-rose-900/20 bg-[linear-gradient(135deg,rgba(225,29,72,0.14),rgba(159,18,57,0.04))] shadow-sm">
                     <CardContent className="p-6">
-                        <p className="text-sm font-medium uppercase tracking-wider text-rose-700">Staff</p>
-                        <p className="mt-2 text-4xl font-bold text-rose-700">
+                        <p className="text-sm font-medium uppercase tracking-wider text-rose-800 dark:text-rose-100">Staff</p>
+                        <p className="mt-2 text-4xl font-bold text-rose-900 dark:text-rose-100">
                             {employees.filter((employee) => employee.role === "STAFF").length}
                         </p>
                     </CardContent>
@@ -257,15 +255,15 @@ export default function EmpleadosPage() {
             </div>
 
             <div className="mb-6 flex flex-wrap gap-3 text-sm">
-                <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                <Badge variant="outline" className="border-emerald-800/30 bg-emerald-950/8 text-emerald-800 dark:text-emerald-100">
                     Activos: {activeEmployees}
                 </Badge>
-                <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700">
+                <Badge variant="outline" className="border-rose-900/25 bg-rose-950/8 text-rose-800 dark:text-rose-100">
                     Desactivados: {inactiveEmployees}
                 </Badge>
             </div>
 
-            <Card>
+            <Card className="rounded-[1.75rem] border-border/70 bg-card/92 shadow-sm">
                 <CardHeader>
                     <CardTitle>Listado de empleados</CardTitle>
                     <CardDescription>
@@ -275,7 +273,7 @@ export default function EmpleadosPage() {
                 <CardContent>
                     {isLoading ? (
                         <div className="flex min-h-56 items-center justify-center">
-                            <Loader2 className="size-8 animate-spin text-sky-700" />
+                            <Loader2 className="size-8 animate-spin text-blue-700" />
                         </div>
                     ) : employees.length === 0 ? (
                         <div className="rounded-xl border border-dashed p-10 text-center text-muted-foreground">
@@ -304,7 +302,7 @@ export default function EmpleadosPage() {
                                                 variant="outline"
                                                 className={
                                                     employee.role === "ADMIN"
-                                                        ? "border-sky-200 bg-sky-50 text-sky-700"
+                                                        ? "border-blue-800/25 bg-blue-950/8 text-blue-800 dark:text-blue-100"
                                                         : "border-slate-200 bg-slate-50 text-slate-700"
                                                 }
                                             >
@@ -322,8 +320,8 @@ export default function EmpleadosPage() {
                                                 variant="outline"
                                                 className={
                                                     employee.active
-                                                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                                        : "border-rose-200 bg-rose-50 text-rose-700"
+                                                        ? "border-emerald-800/25 bg-emerald-950/8 text-emerald-800 dark:text-emerald-100"
+                                                        : "border-rose-900/25 bg-rose-950/8 text-rose-800 dark:text-rose-100"
                                                 }
                                             >
                                                 {employee.active ? "Activo" : "Desactivado"}
@@ -362,7 +360,7 @@ export default function EmpleadosPage() {
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
-                                                    className="gap-2 border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                                                    className="gap-2 border-rose-900/20 text-rose-700 hover:bg-rose-950/6 hover:text-rose-800"
                                                     onClick={() => setEmployeePendingDelete(employee)}
                                                 >
                                                     <Trash2 className="size-4" />
@@ -463,7 +461,7 @@ export default function EmpleadosPage() {
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+                    <div className="rounded-xl border border-rose-900/20 bg-rose-950/8 p-4 text-sm text-rose-900 dark:text-rose-100">
                         Se eliminará a <span className="font-semibold">{employeePendingDelete?.name}</span>.
                     </div>
 

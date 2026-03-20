@@ -4,135 +4,128 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-    Home,
-    ShoppingCart,
-    Package,
-    Wallet,
+    CalendarClock,
+    ChevronDown,
     ChevronLeft,
     ChevronRight,
-    Store,
-    Menu,
-    Truck,
-    BarChart3,
-    ReceiptText,
-    LogOut,
-    Users,
-    Clock3,
     ClipboardList,
+    FileText,
+    Home,
+    LogOut,
+    Menu,
+    Plus,
+    ReceiptText,
+    Settings,
+    ShoppingCart,
+    Users,
+    Wallet,
+    Boxes,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
     Sheet,
     SheetContent,
     SheetTrigger,
     SheetTitle,
 } from "@/components/ui/sheet";
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { canAccessPath, type SessionRole } from "@/lib/permissions";
 import { useCashSessionStatus } from "@/lib/cash-session-client";
 import { logoutUser } from "@/app/actions/auth-actions";
 
-const navItems = [
+const mainItems = [
     { href: "/", label: "Inicio", icon: Home },
-    { href: "/nueva-venta", label: "Nueva Venta", icon: ShoppingCart },
-    { href: "/inventario", label: "Inventario", icon: Package },
-    { href: "/stock", label: "Stock", icon: BarChart3 },
-    { href: "/proveedores", label: "Proveedores", icon: Truck },
+    { href: "/nueva-venta", label: "Nueva venta", icon: ShoppingCart },
     { href: "/caja", label: "Caja", icon: Wallet },
-    { href: "/arqueos", label: "Arqueos", icon: ClipboardList },
-    { href: "/asistencia", label: "Asistencia", icon: Clock3 },
-    { href: "/boletas", label: "Historial Caja", icon: ReceiptText },
-    { href: "/empleados", label: "Empleados", icon: Users },
+    { href: "/asistencia", label: "Asistencia", icon: CalendarClock },
 ] as const;
 
-type NavItem = (typeof navItems)[number];
+const workspaceItems = [
+    {
+        label: "Operacion",
+        icon: Boxes,
+        badge: 3,
+        children: [
+            { href: "/inventario", label: "Inventario" },
+            { href: "/stock", label: "Stock" },
+            { href: "/proveedores", label: "Proveedores" },
+        ],
+    },
+    {
+        href: "/boletas",
+        label: "Historial caja",
+        icon: ReceiptText,
+        badge: 1,
+    },
+    {
+        href: "/arqueos",
+        label: "Arqueos",
+        icon: ClipboardList,
+        badge: 1,
+    },
+    {
+        href: "/empleados",
+        label: "Empleados",
+        icon: Users,
+        badge: 1,
+    },
+    {
+        href: "/configuracion",
+        label: "Configuracion",
+        icon: Settings,
+        hidden: true,
+    },
+] as const;
 
-function NavLink({
-    item,
-    isActive,
-    collapsed,
-    disabled = false,
-    onClick,
-}: {
-    item: NavItem;
-    isActive: boolean;
-    collapsed: boolean;
-    disabled?: boolean;
-    onClick?: () => void;
-}) {
-    const Icon = item.icon;
-
-    const content = (
-        <div
-            className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-3 text-base font-medium transition-all duration-200",
-                !disabled && "hover:bg-accent hover:text-accent-foreground",
-                isActive
-                    ? "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:text-primary-foreground"
-                    : "text-muted-foreground",
-                collapsed && "justify-center px-3",
-                disabled && "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-muted-foreground"
-            )}
-        >
-            <Icon className="size-5 shrink-0" />
-            {!collapsed && <span>{item.label}</span>}
-        </div>
-    );
-
-    const link = disabled ? (
-        content
-    ) : (
-        <Link href={item.href} onClick={onClick}>
-            {content}
-        </Link>
-    );
-
-    if (collapsed) {
-        return (
-            <Tooltip>
-                <TooltipTrigger asChild>{link}</TooltipTrigger>
-                <TooltipContent side="right" sideOffset={10}>
-                    {disabled ? "Abrí la caja para habilitar ventas" : item.label}
-                </TooltipContent>
-            </Tooltip>
-        );
-    }
-
-    if (disabled) {
-        return (
-            <Tooltip>
-                <TooltipTrigger asChild>{link}</TooltipTrigger>
-                <TooltipContent side="right" sideOffset={10}>
-                    Abrí la caja para habilitar ventas
-                </TooltipContent>
-            </Tooltip>
-        );
-    }
-
-    return link;
+function countVisibleWorkspaceChildren(role: SessionRole) {
+    return workspaceItems[0].children.filter((child) => canAccessPath(role, child.href)).length;
 }
 
 function SidebarContent({
     role,
+    userName,
     collapsed,
-    onToggle,
+    onToggleCollapse,
     onNavClick,
 }: {
     role: SessionRole;
+    userName: string;
     collapsed: boolean;
-    onToggle?: () => void;
+    onToggleCollapse?: () => void;
     onNavClick?: () => void;
 }) {
     const pathname = usePathname();
     const router = useRouter();
     const { hasOpenCashSession } = useCashSessionStatus();
+    const [menuExpanded, setMenuExpanded] = useState(true);
+    const [workspaceExpanded, setWorkspaceExpanded] = useState(true);
 
-    const visibleItems = navItems.filter((item) => canAccessPath(role, item.href));
+    const visibleMainItems = mainItems.filter((item) => canAccessPath(role, item.href));
+    const visibleWorkspaceItems = workspaceItems.filter((item) => {
+        if ("hidden" in item && item.hidden) {
+            return false;
+        }
+
+        if ("children" in item) {
+            return item.children.some((child) => canAccessPath(role, child.href));
+        }
+
+        return canAccessPath(role, item.href);
+    });
+
+    const initials = userName
+        .split(" ")
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase() ?? "")
+        .join("");
 
     const handleLogout = async () => {
         await logoutUser();
@@ -144,127 +137,378 @@ function SidebarContent({
         router.refresh();
     };
 
-    const logoutButton = (
-        <Button
-            variant="ghost"
-            onClick={handleLogout}
-            className={cn(
-                "w-full text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition-colors",
-                collapsed ? "justify-center px-0 h-10" : "justify-start gap-3 h-12 px-3"
-            )}
-        >
-            <LogOut className="size-5 shrink-0" />
-            {!collapsed && <span className="font-medium text-base">Cerrar Sesión</span>}
-        </Button>
-    );
-
     return (
-        <div className="flex h-full flex-col">
-            {/* Header */}
-            <div
-                className={cn(
-                    "flex items-center border-b px-4 py-5",
-                    collapsed ? "justify-center" : "gap-3"
-                )}
-            >
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                    <Store className="size-5" />
+        <TooltipProvider delayDuration={0}>
+            <aside className="relative isolate flex h-full w-full flex-col overflow-hidden border-r border-white/30 bg-white/22 shadow-[inset_1px_0_0_rgba(255,255,255,0.34),inset_0_1px_0_rgba(255,255,255,0.24),18px_0_48px_-32px_rgba(148,163,184,0.65)] backdrop-blur-3xl backdrop-saturate-[1.9] dark:border-white/14 dark:bg-white/8 dark:shadow-[inset_1px_0_0_rgba(255,255,255,0.12),inset_0_1px_0_rgba(255,255,255,0.08),18px_0_48px_-32px_rgba(0,0,0,0.75)] dark:backdrop-saturate-[1.7]">
+                <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0"
+                >
+                    <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.28)_0%,rgba(255,255,255,0.12)_18%,rgba(255,255,255,0.07)_42%,rgba(255,255,255,0.04)_100%)] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.10)_0%,rgba(255,255,255,0.04)_18%,rgba(255,255,255,0.03)_42%,rgba(255,255,255,0.02)_100%)]" />
+                    <div className="absolute inset-x-0 top-0 h-28 bg-[linear-gradient(180deg,rgba(255,255,255,0.34)_0%,rgba(255,255,255,0.12)_55%,transparent_100%)] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.10)_0%,rgba(255,255,255,0.04)_55%,transparent_100%)]" />
+                    <div className="absolute -top-16 left-[-18%] h-40 w-52 rounded-full bg-white/28 blur-3xl dark:bg-white/10" />
+                    <div className="absolute bottom-12 left-[-12%] h-48 w-48 rounded-full bg-orange-200/18 blur-3xl dark:bg-indigo-400/10" />
                 </div>
+                {/* Header */}
+                <div className="relative flex justify-end border-b border-white/35 p-4 dark:border-white/10">
+                    {onToggleCollapse && (
+                        <button
+                            onClick={onToggleCollapse}
+                            type="button"
+                            aria-label={collapsed ? "Expandir sidebar" : "Colapsar sidebar"}
+                            className="flex size-8 items-center justify-center rounded-2xl border border-white/35 bg-white/24 text-foreground shadow-[0_10px_24px_-18px_rgba(15,23,42,0.45)] backdrop-blur-xl transition-all hover:scale-105 hover:bg-white/34 dark:border-white/12 dark:bg-white/8 dark:hover:bg-white/12"
+                        >
+                            {collapsed ? (
+                                <ChevronRight className="size-4" />
+                            ) : (
+                                <ChevronLeft className="size-4" />
+                            )}
+                        </button>
+                    )}
+                </div>
+
+                {/* Nav */}
+                <ScrollArea className="relative flex-1 bg-transparent">
+                    <div className={cn("relative p-4", collapsed && "px-2")}>
+                        {/* Menu section */}
+                        <div className="mb-6">
+                            {!collapsed && (
+                                <div className="mb-3 flex items-center justify-between">
+                                    <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                                        Menu
+                                    </span>
+                                    <FileText className="size-3.5 text-muted-foreground" />
+                                </div>
+                            )}
+
+                            {(menuExpanded || collapsed) && (
+                                <nav className={cn("space-y-1.5", collapsed && "space-y-2")}>
+                                    {visibleMainItems.map((item) => {
+                                        const Icon = item.icon;
+                                        const isActive = pathname === item.href;
+                                        const isDisabled =
+                                            item.href === "/nueva-venta" &&
+                                            hasOpenCashSession === false;
+
+                                        const navItem = collapsed ? (
+                                            <Tooltip key={item.href}>
+                                                <TooltipTrigger asChild>
+                                                    <div
+                                                        className={cn(
+                                                            "flex w-full items-center justify-center rounded-2xl p-3 transition-colors",
+                                                            isActive
+                                                                ? "text-white shadow-[0_18px_30px_-20px_rgba(0,0,0,0.7)]"
+                                                                : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+                                                            isDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-muted-foreground"
+                                                        )}
+                                                        style={isActive ? { background: "linear-gradient(135deg, #17171f 0%, #2c2d3b 100%)" } : undefined}
+                                                    >
+                                                        <Icon className="size-4.5 shrink-0" />
+                                                    </div>
+                                                </TooltipTrigger>
+                                                <TooltipContent side="right">{item.label}</TooltipContent>
+                                            </Tooltip>
+                                        ) : (
+                                            <div
+                                                key={item.href}
+                                                className={cn(
+                                                    "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition-colors",
+                                                    isActive
+                                                        ? "text-white shadow-[0_18px_30px_-20px_rgba(0,0,0,0.7)]"
+                                                        : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+                                                    isDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-muted-foreground"
+                                                )}
+                                                style={isActive ? { background: "linear-gradient(135deg, #17171f 0%, #2c2d3b 100%)" } : undefined}
+                                            >
+                                                <Icon className="size-4.5 shrink-0" />
+                                                <span className="flex-1 text-left">{item.label}</span>
+                                                {isActive && (
+                                                    <span className="rounded-full bg-white/14 px-2 py-0.5 text-[11px] uppercase tracking-[0.14em] text-white/80">
+                                                        Activo
+                                                    </span>
+                                                )}
+                                            </div>
+                                        );
+
+                                        if (isDisabled) {
+                                            return <div key={item.href} title="Abrí la caja para habilitar ventas">{navItem}</div>;
+                                        }
+
+                                        return (
+                                            <Link key={item.href} href={item.href} onClick={onNavClick}>
+                                                {navItem}
+                                            </Link>
+                                        );
+                                    })}
+                                </nav>
+                            )}
+                        </div>
+
+                        {/* Workspace section */}
+                        <div>
+                            {!collapsed && (
+                                <div className="mb-3 flex items-center justify-between">
+                                    <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                                        Workspace
+                                    </span>
+                                    <Plus className="size-3.5 text-muted-foreground" />
+                                </div>
+                            )}
+
+                            <nav className={cn("space-y-1.5", collapsed && "space-y-2")}>
+                                {visibleWorkspaceItems.map((item) => {
+                                    const Icon = item.icon;
+
+                                    if ("children" in item) {
+                                        const visibleChildren = item.children.filter((child) =>
+                                            canAccessPath(role, child.href)
+                                        );
+
+                                        if (collapsed) {
+                                            return visibleChildren.map((child) => {
+                                                const isActive = pathname === child.href;
+                                                return (
+                                                    <Tooltip key={child.href}>
+                                                        <TooltipTrigger asChild>
+                                                            <Link href={child.href} onClick={onNavClick}>
+                                                                <div
+                                                                    className={cn(
+                                                                        "flex w-full items-center justify-center rounded-2xl p-3 transition-colors",
+                                                                        isActive
+                                                                            ? "font-medium text-white shadow-[0_18px_28px_-20px_rgba(124,58,237,0.8)]"
+                                                                            : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                                                                    )}
+                                                                    style={isActive ? { background: "linear-gradient(135deg, #6d28d9 0%, #312e81 100%)" } : undefined}
+                                                                >
+                                                                    <Icon className="size-4.5" />
+                                                                </div>
+                                                            </Link>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent side="right">{child.label}</TooltipContent>
+                                                    </Tooltip>
+                                                );
+                                            });
+                                        }
+
+                                        return (
+                                            <div key={item.label}>
+                                                <button
+                                                    onClick={() =>
+                                                        setWorkspaceExpanded((current) => !current)
+                                                    }
+                                                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+                                                    type="button"
+                                                >
+                                                    <ChevronDown
+                                                        className={cn(
+                                                            "size-4 transition-transform",
+                                                            !workspaceExpanded && "-rotate-90"
+                                                        )}
+                                                    />
+                                                    <Icon className="size-4.5" />
+                                                    <span className="flex-1 text-left">{item.label}</span>
+                                                    <span className="rounded-full bg-[linear-gradient(135deg,#6d28d9_0%,#4c1d95_100%)] px-2 py-0.5 text-xs text-white shadow-[0_12px_24px_-18px_rgba(76,29,149,0.9)]">
+                                                        {countVisibleWorkspaceChildren(role)}
+                                                    </span>
+                                                </button>
+
+                                                {workspaceExpanded && (
+                                                    <div className="ml-8 mt-1 space-y-1">
+                                                        {visibleChildren.map((child) => (
+                                                            <Link
+                                                                key={child.href}
+                                                                href={child.href}
+                                                                onClick={onNavClick}
+                                                            >
+                                                                <div
+                                                                    className={cn(
+                                                                        "rounded-2xl px-3 py-2.5 text-sm transition-colors",
+                                                                        pathname === child.href
+                                                                            ? "font-medium text-white shadow-[0_18px_28px_-20px_rgba(124,58,237,0.8)]"
+                                                                            : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                                                                    )}
+                                                                    style={
+                                                                        pathname === child.href
+                                                                            ? { background: "linear-gradient(135deg, #6d28d9 0%, #312e81 100%)" }
+                                                                            : undefined
+                                                                    }
+                                                                >
+                                                                    {child.label}
+                                                                </div>
+                                                            </Link>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    }
+
+                                    const isActive = pathname === item.href;
+
+                                    if (collapsed) {
+                                        return (
+                                            <Tooltip key={item.href}>
+                                                <TooltipTrigger asChild>
+                                                    <Link href={item.href} onClick={onNavClick}>
+                                                        <div
+                                                            className={cn(
+                                                                "flex w-full items-center justify-center rounded-2xl p-3 transition-colors",
+                                                                isActive
+                                                                    ? "text-white shadow-[0_18px_30px_-20px_rgba(0,0,0,0.7)]"
+                                                                    : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                                                            )}
+                                                            style={isActive ? { background: "linear-gradient(135deg, #17171f 0%, #2c2d3b 100%)" } : undefined}
+                                                        >
+                                                            <span className="sr-only">{item.label}</span>
+                                                            <Icon className="size-4.5" />
+                                                        </div>
+                                                    </Link>
+                                                </TooltipTrigger>
+                                                <TooltipContent side="right">{item.label}</TooltipContent>
+                                            </Tooltip>
+                                        );
+                                    }
+
+                                    return (
+                                        <Link key={item.href} href={item.href} onClick={onNavClick}>
+                                            <div
+                                                className={cn(
+                                                    "flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition-colors",
+                                                    isActive
+                                                        ? "text-white shadow-[0_18px_30px_-20px_rgba(0,0,0,0.7)]"
+                                                        : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                                                )}
+                                                style={isActive ? { background: "linear-gradient(135deg, #17171f 0%, #2c2d3b 100%)" } : undefined}
+                                            >
+                                                <span className="w-4" />
+                                                <Icon className="size-4.5" />
+                                                <span className="flex-1 text-left">{item.label}</span>
+                                                {"badge" in item && (
+                                                    <span
+                                                        className={cn(
+                                                            "rounded-full px-2 py-0.5 text-xs",
+                                                            isActive
+                                                                ? "bg-white/15 text-white"
+                                                                : "bg-[linear-gradient(135deg,#6d28d9_0%,#4c1d95_100%)] text-white"
+                                                        )}
+                                                        style={
+                                                            isActive
+                                                                ? { background: "linear-gradient(135deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0.1) 100%)" }
+                                                                : undefined
+                                                        }
+                                                    >
+                                                        {item.badge}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </Link>
+                                    );
+                                })}
+                            </nav>
+                        </div>
+                    </div>
+                </ScrollArea>
+
+                {/* Footer */}
                 {!collapsed && (
-                    <div className="flex flex-col">
-                        <span className="text-base font-bold tracking-tight">Mi Tienda</span>
-                        <span className="text-xs text-muted-foreground">
-                            Punto de Venta
-                        </span>
+                    <div className="relative border-t border-white/35 dark:border-white/10 p-4">
+                        <div className="mb-3 flex items-center gap-3 rounded-[1.4rem] bg-card/65 px-3 py-3 shadow-xs">
+                            <div className="flex size-10 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#ea580c_0%,#c2410c_100%)] text-sm font-semibold text-orange-50">
+                                {initials}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium">{userName}</p>
+                                <p className="text-xs text-muted-foreground">
+                                    Sesion activa
+                                </p>
+                            </div>
+                        </div>
+
+                        <Button
+                            variant="ghost"
+                            onClick={handleLogout}
+                            className="h-11 w-full justify-start gap-3 rounded-2xl px-3 text-rose-600 transition-colors hover:bg-rose-950/8 hover:text-rose-700 dark:hover:bg-rose-500/12"
+                        >
+                            <LogOut className="size-4.5 shrink-0" />
+                            <span className="text-sm font-medium">Cerrar sesion</span>
+                        </Button>
                     </div>
                 )}
-            </div>
 
-            {/* Navigation */}
-            <nav className="flex-1 space-y-1 p-3">
-                {visibleItems.map((item) => (
-                    <NavLink
-                        key={item.href}
-                        item={item}
-                        isActive={pathname === item.href}
-                        collapsed={collapsed}
-                        disabled={item.href === "/nueva-venta" && hasOpenCashSession === false}
-                        onClick={onNavClick}
-                    />
-                ))}
-            </nav>
-
-            {/* Bottom Actions (Logout & Collapse) */}
-            <div className="border-t p-3 space-y-2">
-                {/* Botón de Logout */}
-                {collapsed ? (
-                    <Tooltip>
-                        <TooltipTrigger asChild>{logoutButton}</TooltipTrigger>
-                        <TooltipContent side="right" sideOffset={10}>
-                            Cerrar Sesión
-                        </TooltipContent>
-                    </Tooltip>
-                ) : (
-                    logoutButton
+                {/* Footer colapsado: solo avatar + logout */}
+                {collapsed && (
+                    <div className="relative border-t border-white/35 dark:border-white/10 px-2 py-3 flex flex-col items-center gap-2">
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <div className="flex size-10 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#ea580c_0%,#c2410c_100%)] text-sm font-semibold text-orange-50 cursor-default">
+                                    {initials}
+                                </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">{userName} — Sesion activa</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    onClick={handleLogout}
+                                    className="flex size-9 items-center justify-center rounded-2xl text-rose-500 transition-colors hover:bg-rose-500/10"
+                                    type="button"
+                                >
+                                    <LogOut className="size-4" />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">Cerrar sesion</TooltipContent>
+                        </Tooltip>
+                    </div>
                 )}
-
-                {/* Collapse toggle (desktop only) */}
-                {onToggle && (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={onToggle}
-                        className={cn(
-                            "w-full justify-center text-muted-foreground",
-                            !collapsed && "justify-start gap-3 px-3 h-10"
-                        )}
-                    >
-                        {collapsed ? (
-                            <ChevronRight className="size-4" />
-                        ) : (
-                            <>
-                                <ChevronLeft className="size-4" />
-                                <span>Colapsar</span>
-                            </>
-                        )}
-                    </Button>
-                )}
-            </div>
-        </div>
+            </aside>
+        </TooltipProvider>
     );
 }
 
-export function Sidebar({ role }: { role: SessionRole }) {
-    const [collapsed, setCollapsed] = useState(false);
-
+export function Sidebar({
+    role,
+    userName,
+    collapsed,
+    onToggleCollapse,
+}: {
+    role: SessionRole;
+    userName: string;
+    collapsed: boolean;
+    onToggleCollapse: () => void;
+}) {
     return (
         <>
-            {/* Mobile: Sheet sidebar */}
+            {/* Mobile: Sheet drawer */}
             <div className="lg:hidden fixed top-0 left-0 z-50 p-3">
                 <Sheet>
                     <SheetTrigger asChild>
-                        <Button variant="outline" size="icon-lg">
+                        <Button
+                            variant="outline"
+                            size="icon-lg"
+                            className="rounded-2xl border-border/70 bg-background/85 backdrop-blur"
+                        >
                             <Menu className="size-5" />
                         </Button>
                     </SheetTrigger>
                     <SheetContent side="left" className="w-72 p-0">
                         <SheetTitle className="sr-only">Menú de navegación</SheetTitle>
-                        <SidebarContent role={role} collapsed={false} />
+                        <SidebarContent role={role} userName={userName} collapsed={false} />
                     </SheetContent>
                 </Sheet>
             </div>
 
-            {/* Desktop: Fixed sidebar */}
+            {/* Desktop: sticky sidebar con transición de ancho */}
             <aside
                 className={cn(
-                    "hidden lg:flex flex-col border-r bg-card transition-all duration-300 h-screen sticky top-0",
-                    collapsed ? "w-[72px]" : "w-64"
+                    "relative z-10 hidden h-screen lg:sticky lg:top-0 lg:flex transition-[width] duration-300 ease-in-out",
+                    collapsed ? "w-[72px]" : "w-72"
                 )}
             >
                 <SidebarContent
                     role={role}
+                    userName={userName}
                     collapsed={collapsed}
-                    onToggle={() => setCollapsed(!collapsed)}
+                    onToggleCollapse={onToggleCollapse}
                 />
             </aside>
         </>

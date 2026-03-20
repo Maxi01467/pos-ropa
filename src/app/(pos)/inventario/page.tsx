@@ -207,27 +207,35 @@ export default function InventarioPage() {
 
     if (isLoading) {
         return (
-            <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-                <div className="flex flex-col items-center gap-4 text-muted-foreground">
-                    <Loader2 className="size-10 animate-spin text-primary" />
-                    <p className="text-lg font-medium">Cargando inventario...</p>
+            <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-6">
+                <div className="rounded-[1.75rem] border border-border/70 bg-card/90 px-10 py-8 shadow-sm">
+                    <div className="flex items-center gap-4">
+                        <div className="rounded-2xl bg-[linear-gradient(135deg,#2563eb_0%,#1d4ed8_100%)] p-3 text-blue-50">
+                            <Loader2 className="size-6 animate-spin" />
+                        </div>
+                        <div>
+                            <p className="text-base font-semibold text-foreground">Cargando inventario</p>
+                            <p className="text-sm text-muted-foreground">Estamos preparando catálogo y precios.</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="p-4 lg:p-8">
-            {/* Header */}
-            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">
-                        Inventario
-                    </h1>
-                    <p className="mt-1 text-muted-foreground">
-                        Catálogo de productos de tu tienda
-                    </p>
-                </div>
+        <div className="p-4 sm:p-5 lg:p-6">
+            <div className="flex flex-col gap-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <div className="inline-flex items-center gap-2 rounded-full border border-violet-900/25 bg-[linear-gradient(135deg,rgba(109,40,217,0.18),rgba(67,56,202,0.08))] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-violet-800 dark:text-violet-100">
+                            <Package className="size-3.5" />
+                            Catálogo
+                        </div>
+                        <h1 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-foreground sm:text-3xl">
+                            Inventario
+                        </h1>
+                    </div>
                 <Button
                     size="lg"
                     className="gap-2 h-12 text-base font-semibold"
@@ -236,13 +244,14 @@ export default function InventarioPage() {
                     <Plus className="size-5" />
                     Nuevo Producto
                 </Button>
+                </div>
             </div>
 
             {/* Stats Cards */}
-            <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <Card>
+            <div className="mb-6 mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <Card className="rounded-[1.5rem] border-blue-800/20 bg-[linear-gradient(135deg,rgba(37,99,235,0.14),rgba(30,64,175,0.04))] shadow-sm">
                     <CardContent className="flex items-center gap-4 p-4">
-                        <div className="flex size-10 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                        <div className="flex size-10 items-center justify-center rounded-lg bg-blue-900 text-blue-100">
                             <Package className="size-5" />
                         </div>
                         <div>
@@ -251,9 +260,9 @@ export default function InventarioPage() {
                         </div>
                     </CardContent>
                 </Card>
-                <Card>
+                <Card className="rounded-[1.5rem] border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.14),rgba(6,95,70,0.04))] shadow-sm">
                     <CardContent className="flex items-center gap-4 p-4">
-                        <div className="flex size-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                        <div className="flex size-10 items-center justify-center rounded-lg bg-emerald-900 text-emerald-100">
                             <DollarSign className="size-5" />
                         </div>
                         <div>
@@ -262,9 +271,9 @@ export default function InventarioPage() {
                         </div>
                     </CardContent>
                 </Card>
-                <Card className="sm:col-span-2 lg:col-span-1">
+                <Card className="rounded-[1.5rem] border-orange-800/20 bg-[linear-gradient(135deg,rgba(234,88,12,0.14),rgba(194,65,12,0.04))] shadow-sm sm:col-span-2 lg:col-span-1">
                     <CardContent className="flex items-center gap-4 p-4">
-                        <div className="flex size-10 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                        <div className="flex size-10 items-center justify-center rounded-lg bg-orange-900 text-orange-100">
                             <TrendingUp className="size-5" />
                         </div>
                         <div>
@@ -316,7 +325,7 @@ export default function InventarioPage() {
                     {filteredProducts.map((product) => (
                         <Card
                             key={product.id}
-                            className="group transition-all duration-200 hover:shadow-md"
+                            className="group rounded-[1.5rem] border-border/70 bg-card/92 transition-all duration-200 hover:shadow-md"
                         >
                             <CardContent className="p-4">
                                 <div className="flex items-start justify-between gap-2">

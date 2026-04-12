@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { SessionRole } from "@/lib/permissions";
 import {
     createEmployee,
@@ -10,6 +10,8 @@ import {
     updateEmployee,
 } from "@/app/actions/employee-actions";
 import { useSessionSnapshot } from "@/lib/session-client";
+import { CACHE_TAGS } from "@/lib/cache-tags";
+import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
 import {
     Users,
     UserPlus,
@@ -79,6 +81,16 @@ function formatDate(date: string) {
     }).format(new Date(date));
 }
 
+function sortEmployees(items: Employee[]) {
+    return [...items].sort((left, right) => {
+        if (left.active !== right.active) {
+            return Number(right.active) - Number(left.active);
+        }
+
+        return left.name.localeCompare(right.name, "es", { sensitivity: "base" });
+    });
+}
+
 export default function EmpleadosPage() {
     const { role } = useSessionSnapshot();
     const [employees, setEmployees] = useState<Employee[]>([]);
@@ -91,7 +103,7 @@ export default function EmpleadosPage() {
     const [isDeleting, setIsDeleting] = useState(false);
     const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
 
-    const loadEmployees = async () => {
+    const loadEmployees = useCallback(async () => {
         setIsLoading(true);
         try {
             const data = await getEmployees();
@@ -103,11 +115,13 @@ export default function EmpleadosPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
-        loadEmployees();
-    }, []);
+        void loadEmployees();
+    }, [loadEmployees]);
+
+    useDataRefresh(CACHE_TAGS.employees, loadEmployees);
 
     const openCreateDialog = () => {
         setEditingEmployee(null);
@@ -133,17 +147,29 @@ export default function EmpleadosPage() {
         setIsSaving(true);
         try {
             if (editingEmployee) {
-                await updateEmployee(editingEmployee.id, form);
+                const updatedEmployee = await updateEmployee(editingEmployee.id, form);
+                setEmployees((current) =>
+                    sortEmployees(
+                        current.map((employee) =>
+                            employee.id === updatedEmployee.id ? updatedEmployee : employee
+                        )
+                    )
+                );
                 toast.success("Empleado actualizado");
             } else {
-                await createEmployee(form);
+                const createdEmployee = await createEmployee(form);
+                setEmployees((current) => sortEmployees([...current, createdEmployee]));
                 toast.success("Empleado creado");
             }
 
             setDialogOpen(false);
             setEditingEmployee(null);
             setForm(EMPTY_FORM);
-            await loadEmployees();
+            notifyDataUpdated([
+                CACHE_TAGS.employees,
+                CACHE_TAGS.posSellers,
+                CACHE_TAGS.attendance,
+            ]);
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : "No se pudo guardar el empleado";
@@ -156,9 +182,20 @@ export default function EmpleadosPage() {
     const handleToggleStatus = async (employee: Employee) => {
         setStatusUpdatingId(employee.id);
         try {
-            await setEmployeeStatus(employee.id, !employee.active);
+            const updatedEmployee = await setEmployeeStatus(employee.id, !employee.active);
+            setEmployees((current) =>
+                sortEmployees(
+                    current.map((currentEmployee) =>
+                        currentEmployee.id === updatedEmployee.id ? updatedEmployee : currentEmployee
+                    )
+                )
+            );
             toast.success(employee.active ? "Empleado desactivado" : "Empleado reactivado");
-            await loadEmployees();
+            notifyDataUpdated([
+                CACHE_TAGS.employees,
+                CACHE_TAGS.posSellers,
+                CACHE_TAGS.attendance,
+            ]);
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : "No se pudo actualizar el estado";
@@ -174,9 +211,16 @@ export default function EmpleadosPage() {
         setIsDeleting(true);
         try {
             await deleteEmployee(employeePendingDelete.id);
+            setEmployees((current) =>
+                current.filter((employee) => employee.id !== employeePendingDelete.id)
+            );
             toast.success("Empleado eliminado");
             setEmployeePendingDelete(null);
-            await loadEmployees();
+            notifyDataUpdated([
+                CACHE_TAGS.employees,
+                CACHE_TAGS.posSellers,
+                CACHE_TAGS.attendance,
+            ]);
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : "No se pudo eliminar el empleado";

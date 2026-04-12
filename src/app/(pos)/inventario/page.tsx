@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 // Importamos nuestras nuevas Server Actions
 import { 
     getInventoryData, 
@@ -33,6 +33,8 @@ import {
     DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { CACHE_TAGS } from "@/lib/cache-tags";
+import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
 
 // Interfaz adaptada a lo que devuelve nuestra BD
 export interface DBProduct {
@@ -43,6 +45,10 @@ export interface DBProduct {
     wholesalePrice: number;
     costPrice?: number;
     stock: number;
+}
+
+function sortProducts(items: DBProduct[]) {
+    return [...items].sort((left, right) => right.id.localeCompare(left.id));
 }
 
 function formatCurrency(amount: number): string {
@@ -70,7 +76,7 @@ export default function InventarioPage() {
     const [formCostPrice, setFormCostPrice] = useState("");
 
     // Cargar datos al iniciar
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         try {
             const data = await getInventoryData();
             setProducts(data.products);
@@ -80,11 +86,13 @@ export default function InventarioPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
-        loadData();
-    }, []);
+        void loadData();
+    }, [loadData]);
+
+    useDataRefresh([CACHE_TAGS.inventory, CACHE_TAGS.stock, CACHE_TAGS.posProducts], loadData);
 
     const resetForm = () => {
         setFormName("");
@@ -145,16 +153,49 @@ export default function InventarioPage() {
             };
 
             if (editingProduct) {
-                await updateProduct(editingProduct.id, productData);
+                const updatedProduct = await updateProduct(editingProduct.id, productData);
+                setProducts((current) =>
+                    sortProducts(
+                        current.map((product) =>
+                            product.id === updatedProduct.id
+                                ? {
+                                      ...product,
+                                      name: updatedProduct.name,
+                                      price: Number(updatedProduct.priceNormal),
+                                      wholesalePrice: Number(updatedProduct.priceWholesale),
+                                      costPrice: updatedProduct.costPrice
+                                          ? Number(updatedProduct.costPrice)
+                                          : undefined,
+                                  }
+                                : product
+                        )
+                    )
+                );
                 toast.success("Producto actualizado");
             } else {
-                await createProduct(productData);
+                const createdProduct = await createProduct(productData);
+                setProducts((current) =>
+                    sortProducts([
+                        {
+                            id: createdProduct.id,
+                            code: createdProduct.id.slice(-6).toUpperCase(),
+                            name: createdProduct.name,
+                            price: Number(createdProduct.priceNormal),
+                            wholesalePrice: Number(createdProduct.priceWholesale),
+                            costPrice: createdProduct.costPrice
+                                ? Number(createdProduct.costPrice)
+                                : undefined,
+                            stock: 0,
+                        },
+                        ...current,
+                    ])
+                );
                 toast.success("Producto creado con éxito");
             }
-            
-            await loadData(); // Recargamos la tabla
+
             setDialogOpen(false);
             resetForm();
+            notifyDataUpdated([CACHE_TAGS.inventory, CACHE_TAGS.stock, CACHE_TAGS.posProducts]);
         } catch (error) {
             toast.error("Hubo un error al guardar");
             console.error(error);
@@ -169,8 +210,8 @@ export default function InventarioPage() {
         try {
             await deleteProduct(product.id);
             setProducts((prev) => prev.filter((p) => p.id !== product.id));
+            notifyDataUpdated([CACHE_TAGS.inventory, CACHE_TAGS.stock, CACHE_TAGS.posProducts]);
             toast.success("Producto eliminado", { description: product.name });
-            loadData();
         } catch {
             toast.error("Error al eliminar el producto");
         }

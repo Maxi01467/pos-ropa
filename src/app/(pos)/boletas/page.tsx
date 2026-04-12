@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getCashSessionsHistory } from "@/app/actions/cash-actions";
 import {
     ReceiptText,
@@ -34,6 +34,8 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { CACHE_TAGS } from "@/lib/cache-tags";
+import { useDataRefresh } from "@/lib/data-sync-client";
 
 type CashSessionHistory = {
     id: string;
@@ -85,21 +87,23 @@ export default function HistorialCajaPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [selectedSession, setSelectedSession] = useState<CashSessionHistory | null>(null);
 
-    useEffect(() => {
-        const loadHistory = async () => {
-            try {
-                const data = await getCashSessionsHistory();
-                setSessions(data);
-            } catch (error) {
-                toast.error("No se pudo cargar el historial de caja");
-                console.error(error);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        loadHistory();
+    const loadHistory = useCallback(async () => {
+        try {
+            const data = await getCashSessionsHistory();
+            setSessions(data);
+        } catch (error) {
+            toast.error("No se pudo cargar el historial de caja");
+            console.error(error);
+        } finally {
+            setIsLoading(false);
+        }
     }, []);
+
+    useEffect(() => {
+        void loadHistory();
+    }, [loadHistory]);
+
+    useDataRefresh([CACHE_TAGS.cash, CACHE_TAGS.sales], loadHistory);
 
     const summary = useMemo(() => {
         const openSessions = sessions.filter((session) => session.status === "OPEN").length;

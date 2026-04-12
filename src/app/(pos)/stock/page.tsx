@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
     getStockPageData,
     registerStockEntries,
@@ -51,6 +51,8 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
+import { CACHE_TAGS } from "@/lib/cache-tags";
+import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
 
 // Reemplazamos mockSizes por un array constante aquí
 const commonSizes = ["XS", "S", "M", "L", "XL", "XXL", "38", "40", "42", "44", "46", "48"];
@@ -198,7 +200,7 @@ export default function StockPage() {
     const [printDialogOpen, setPrintDialogOpen] = useState(false);
     const [printQuantities, setPrintQuantities] = useState<Record<string, string>>({});
     
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         try {
             const data = await getStockPageData();
             setProducts(data.products);
@@ -210,11 +212,16 @@ export default function StockPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
-        loadData();
-    }, []);
+        void loadData();
+    }, [loadData]);
+
+    useDataRefresh(
+        [CACHE_TAGS.stock, CACHE_TAGS.inventory, CACHE_TAGS.suppliers, CACHE_TAGS.posProducts],
+        loadData
+    );
 
     useEffect(() => {
         const handleAfterPrint = () => {
@@ -406,6 +413,7 @@ export default function StockPage() {
                 await reduceStockEntries(newEntries);
             }
             await loadData();
+            notifyDataUpdated([CACHE_TAGS.stock, CACHE_TAGS.inventory, CACHE_TAGS.posProducts]);
             
             setStockDialogOpen(false);
             resetStockForm();

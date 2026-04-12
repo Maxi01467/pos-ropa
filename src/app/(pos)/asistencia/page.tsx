@@ -43,6 +43,8 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { CACHE_TAGS } from "@/lib/cache-tags";
+import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
 type AttendanceEmployee = {
     id: string;
     name: string;
@@ -144,6 +146,13 @@ export default function AsistenciaPage() {
         }
     }, []);
 
+    const refreshAttendanceData = useCallback(async () => {
+        await Promise.all([loadEmployees(), loadBoard()]);
+        if (selectedEmployeeId) {
+            await loadDashboard(selectedEmployeeId);
+        }
+    }, [loadBoard, loadDashboard, loadEmployees, selectedEmployeeId]);
+
     useEffect(() => {
         const loadInitialData = async () => {
             setIsBootstrapping(true);
@@ -164,6 +173,11 @@ export default function AsistenciaPage() {
         loadInitialData();
     }, [loadBoard, loadEmployees]);
 
+    useDataRefresh(
+        [CACHE_TAGS.attendance, CACHE_TAGS.employees, CACHE_TAGS.cash],
+        refreshAttendanceData
+    );
+
     useEffect(() => {
         if (!selectedEmployeeId) return;
         loadDashboard(selectedEmployeeId);
@@ -182,6 +196,7 @@ export default function AsistenciaPage() {
                 loadDashboard(selectedEmployeeId),
                 loadBoard(),
             ]);
+            notifyDataUpdated([CACHE_TAGS.attendance, CACHE_TAGS.cash]);
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : "No se pudo registrar la entrada";
@@ -204,6 +219,7 @@ export default function AsistenciaPage() {
                 loadDashboard(selectedEmployeeId),
                 loadBoard(),
             ]);
+            notifyDataUpdated([CACHE_TAGS.attendance, CACHE_TAGS.cash]);
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : "No se pudo registrar la salida";

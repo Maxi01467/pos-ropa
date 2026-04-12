@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 // Importamos las nuevas Server Actions
 import { 
     getSuppliers, 
@@ -33,6 +33,8 @@ import {
     DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { CACHE_TAGS } from "@/lib/cache-tags";
+import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
 
 // Interfaz adaptada a la Base de Datos
 export interface DBSupplier {
@@ -40,6 +42,12 @@ export interface DBSupplier {
     name: string;
     phone: string | null;
     notes: string | null;
+}
+
+function sortSuppliers(items: DBSupplier[]) {
+    return [...items].sort((left, right) =>
+        left.name.localeCompare(right.name, "es", { sensitivity: "base" })
+    );
 }
 
 export default function ProveedoresPage() {
@@ -58,7 +66,7 @@ export default function ProveedoresPage() {
     const [formNotes, setFormNotes] = useState("");
 
     // Cargar datos al iniciar
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         try {
             const data = await getSuppliers();
             setProviders(data);
@@ -68,11 +76,13 @@ export default function ProveedoresPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
-        loadData();
-    }, []);
+        void loadData();
+    }, [loadData]);
+
+    useDataRefresh([CACHE_TAGS.suppliers, CACHE_TAGS.stock], loadData);
 
     const resetForm = () => {
         setFormName("");
@@ -109,16 +119,24 @@ export default function ProveedoresPage() {
             };
 
             if (editingProvider) {
-                await updateSupplier(editingProvider.id, providerData);
+                const updatedProvider = await updateSupplier(editingProvider.id, providerData);
+                setProviders((current) =>
+                    sortSuppliers(
+                        current.map((provider) =>
+                            provider.id === updatedProvider.id ? updatedProvider : provider
+                        )
+                    )
+                );
                 toast.success("Proveedor actualizado");
             } else {
-                await createSupplier(providerData);
+                const createdProvider = await createSupplier(providerData);
+                setProviders((current) => sortSuppliers([...current, createdProvider]));
                 toast.success("Proveedor creado con éxito");
             }
 
-            await loadData();
             setDialogOpen(false);
             resetForm();
+            notifyDataUpdated([CACHE_TAGS.suppliers, CACHE_TAGS.stock]);
         } catch (error) {
             toast.error("Hubo un error al guardar el proveedor");
             console.error(error);
@@ -133,6 +151,7 @@ export default function ProveedoresPage() {
         try {
             await deleteSupplier(provider.id);
             setProviders((prev) => prev.filter((p) => p.id !== provider.id));
+            notifyDataUpdated([CACHE_TAGS.suppliers, CACHE_TAGS.stock]);
             toast.success("Proveedor eliminado", { description: provider.name });
         } catch (error) {
             // Si el proveedor tiene productos asociados, Prisma tira error por Foreign Key

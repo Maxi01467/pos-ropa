@@ -68,7 +68,12 @@ function serializeCashSession(session: CashSessionWithIncludes) {
 
 // 1. Obtener la caja que está actualmente abierta
 export async function getCurrentSession() {
-    return getCurrentSessionCached();
+    const session = await prisma.cashSession.findFirst({
+        where: { status: "OPEN" },
+        include: SESSION_INCLUDE,
+    });
+
+    return session ? serializeCashSession(session) : null;
 }
 
 // 2. Abrir una nueva caja al inicio del día
@@ -240,19 +245,6 @@ export async function getClosedSessions(limit = 30) {
 export async function getCashSessionsHistory() {
     return getCashSessionsHistoryCached();
 }
-const getCurrentSessionCached = unstable_cache(
-    async () => {
-        const session = await prisma.cashSession.findFirst({
-            where: { status: "OPEN" },
-            include: SESSION_INCLUDE,
-        });
-
-        return session ? serializeCashSession(session) : null;
-    },
-    ["cash-current-session"],
-    { revalidate: 60, tags: [CACHE_TAGS.cash, CACHE_TAGS.sales] }
-);
-
 const getPendingCountSessionsCached = unstable_cache(
     async () => {
         const sessions = await prisma.cashSession.findMany({

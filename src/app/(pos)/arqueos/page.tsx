@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
     getPendingCountSessions,
     getClosedSessions,
@@ -37,6 +37,8 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+import { CACHE_TAGS } from "@/lib/cache-tags";
+import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
 
 type Seller = { id: string; name: string; role: string };
 
@@ -84,7 +86,7 @@ export default function ArqueosPage() {
     const [countedById, setCountedById] = useState("");
     const [isSaving, setIsSaving] = useState(false);
 
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         setIsLoading(true);
         try {
             const [p, c, s] = await Promise.all([
@@ -101,11 +103,13 @@ export default function ArqueosPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
-        loadData();
-    }, []);
+        void loadData();
+    }, [loadData]);
+
+    useDataRefresh([CACHE_TAGS.cash, CACHE_TAGS.sales, CACHE_TAGS.employees], loadData);
 
     const handleOpenArqueoDialog = (session: CashSession) => {
         setArqueoDialogSession(session);
@@ -123,10 +127,11 @@ export default function ArqueosPage() {
         setIsSaving(true);
         try {
             await submitArqueo(arqueoDialogSession.id, Number(actualAmount), countedById);
+            notifyDataUpdated(CACHE_TAGS.cash);
             toast.success("Arqueo registrado correctamente");
             setArqueoDialogSession(null);
             setActualAmount("");
-            loadData();
+            await loadData();
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Error al registrar el arqueo");
         } finally {

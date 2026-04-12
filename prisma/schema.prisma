@@ -128,6 +128,7 @@ model ProductVariant {
   
   movements      StockMovement[]
   saleItems      SaleItem[]
+  barcodeAliases BarcodeAlias[]
   
   createdAt      DateTime @default(now())
 }
@@ -189,4 +190,17 @@ model SaleItem {
   
   // Control para devoluciones futuras
   returnedQuantity Int            @default(0) 
+}
+
+// ------------------------------------------------------
+// 🏷️ CÓDIGOS DE BARRAS ALTERNATIVOS (MIGRACIÓN)
+// ------------------------------------------------------
+// Permite que el sistema reconozca los códigos de barras viejos
+// sin necesidad de re-etiquetar la mercadería.
+model BarcodeAlias {
+  id        String         @id @default(cuid())
+  barcode   String         @unique // Código del sistema anterior
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
 }

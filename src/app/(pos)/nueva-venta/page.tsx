@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, useRef } from "react";
-import { getProductsForPOS, getSellers } from "@/app/actions/pos-actions";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getFeaturedProductsForPOS, getProductsForPOS, getSellers } from "@/app/actions/pos-actions";
 import { createQuickProductWithStock } from "@/app/actions/inventory-actions";
 import { createExchangeSale, createSale, getSalesHistory } from "@/app/actions/sales-actions";
 import { TicketReceipt } from "@/components/ticket-receipt";
@@ -48,6 +48,8 @@ import { cn } from "@/lib/utils";
 import { barcodeFromSku, barcodeFromTicketNumber } from "@/lib/barcodes";
 import { renderReceiptHtml, type ReceiptPrintData } from "@/lib/receipt-printing";
 import { printHtmlWithQzTray } from "@/lib/qz-tray";
+import { CACHE_TAGS } from "@/lib/cache-tags";
+import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
 
 export interface POSProduct {
     id: string;
@@ -59,6 +61,7 @@ export interface POSProduct {
     sizes: string[];
     color: string;
     productId?: string;
+    legacyBarcodes?: string[]; // Códigos del sistema viejo (aliases temporales)
 }
 
 interface CartItem {
@@ -140,6 +143,7 @@ export default function NuevaVentaPage() {
     const [checkoutOpen, setCheckoutOpen] = useState(false);
     const [priceMode, setPriceMode] = useState<PriceMode>("retail");
     const [allProducts, setAllProducts] = useState<POSProduct[]>([]);
+    const [featuredProducts, setFeaturedProducts] = useState<POSProduct[]>([]);
     const [exchangeSales, setExchangeSales] = useState<ExchangeSaleTicket[]>([]);
     const [isLoadingExchangeSales, setIsLoadingExchangeSales] = useState(false);
     const [exchangeSearchQuery, setExchangeSearchQuery] = useState("");
@@ -215,49 +219,87 @@ export default function NuevaVentaPage() {
         }
     };
 
-    useEffect(() => {
+    const loadCatalog = useCallback(async () => {
         let cancelled = false;
 
-        const loadInitialData = async () => {
-            setIsLoadingProducts(true);
-            setProductsError(null);
+        setIsLoadingProducts(true);
+        setProductsError(null);
 
-            try {
-                const [products, sellersData] = await Promise.all([
-                    getProductsForPOS(),
-                    getSellers(),
-                ]);
+        try {
+            const [products, featuredProductsData, sellersData] = await Promise.all([
+                getProductsForPOS(),
+                getFeaturedProductsForPOS(),
+                getSellers(),
+            ]);
 
-                if (cancelled) return;
+            if (cancelled) return;
 
-                setAllProducts(products);
-                setSellers(sellersData);
-                if (sellersData.length > 0) {
-                    setSelectedSellerId(sellersData[0].id);
-                }
-            } catch (error) {
-                if (cancelled) return;
-                console.error("Error loading initial data:", error);
-                setProductsError("No se pudieron cargar los datos.");
-                toast.error("Error al conectar con la base de datos");
-            } finally {
-                if (!cancelled) {
-                    setIsLoadingProducts(false);
-                }
+            setAllProducts(products);
+            setFeaturedProducts(featuredProductsData);
+            setSellers(sellersData);
+            if (sellersData.length > 0) {
+                setSelectedSellerId((currentSelectedSellerId) => {
+                    if (currentSelectedSellerId && sellersData.some((seller) => seller.id === currentSelectedSellerId)) {
+                        return currentSelectedSellerId;
+                    }
+
+                    return sellersData[0].id;
+                });
             }
-        };
-
-        loadInitialData();
+        } catch (error) {
+            if (cancelled) return;
+            console.error("Error loading initial data:", error);
+            setProductsError("No se pudieron cargar los datos.");
+            toast.error("Error al conectar con la base de datos");
+        } finally {
+            if (!cancelled) {
+                setIsLoadingProducts(false);
+            }
+        }
 
         return () => {
             cancelled = true;
         };
     }, []);
 
-    const reloadProducts = async () => {
-        const products = await getProductsForPOS();
+    useEffect(() => {
+        let cleanup: (() => void) | undefined;
+        void loadCatalog().then((nextCleanup) => {
+            cleanup = nextCleanup;
+        });
+
+        return () => {
+            cleanup?.();
+        };
+    }, [loadCatalog]);
+
+    const reloadProducts = useCallback(async () => {
+        const [products, featuredProductsData] = await Promise.all([
+            getProductsForPOS(),
+            getFeaturedProductsForPOS(),
+        ]);
         setAllProducts(products);
-    };
+        setFeaturedProducts(featuredProductsData);
+    }, []);
+
+    const refreshSalesData = useCallback(async () => {
+        await loadCatalog();
+        if (exchangeDialogOpen) {
+            await loadExchangeSales();
+        }
+    }, [exchangeDialogOpen, loadCatalog]);
+
+    useDataRefresh(
+        [
+            CACHE_TAGS.posProducts,
+            CACHE_TAGS.inventory,
+            CACHE_TAGS.stock,
+            CACHE_TAGS.employees,
+            CACHE_TAGS.sales,
+            CACHE_TAGS.cash,
+        ],
+        refreshSalesData
+    );
 
     useEffect(() => {
         const handleAfterPrint = () => {
@@ -283,7 +325,7 @@ export default function NuevaVentaPage() {
     useEffect(() => {
         const handleGlobalScannerInput = (event: KeyboardEvent) => {
             if (event.ctrlKey || event.metaKey || event.altKey) return;
-        if (checkoutOpen || exchangeDialogOpen) return;
+            if (checkoutOpen || exchangeDialogOpen) return;
 
             const searchInput = searchInputRef.current;
             if (!searchInput) return;
@@ -316,7 +358,7 @@ export default function NuevaVentaPage() {
     const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter") {
             e.preventDefault();
-            
+
             // Usamos e.currentTarget.value en vez del estado searchQuery porque 
             // el escáner dispara los eventos en milisegundos.
             const scannedValue = e.currentTarget.value.trim().toLowerCase();
@@ -326,7 +368,8 @@ export default function NuevaVentaPage() {
             const matchedProduct = allProducts.find(
                 (p) =>
                     p.code.toLowerCase() === scannedValue ||
-                    barcodeFromSku(p.code) === scannedValue
+                    barcodeFromSku(p.code) === scannedValue ||
+                    p.legacyBarcodes?.includes(scannedValue)  // ← códigos barras viejos
             );
 
             if (matchedProduct) {
@@ -352,9 +395,18 @@ export default function NuevaVentaPage() {
             (product) =>
                 product.name.toLowerCase().includes(q) ||
                 product.code.toLowerCase().includes(q) ||
-                barcodeFromSku(product.code).includes(q)
+                barcodeFromSku(product.code).includes(q) ||
+                product.legacyBarcodes?.some((b) => b.includes(q)) // ← códigos barras viejos
         );
     }, [searchQuery, allProducts]);
+
+    const visibleProducts = useMemo(() => {
+        if (searchQuery.trim()) {
+            return filteredProducts;
+        }
+
+        return featuredProducts;
+    }, [featuredProducts, filteredProducts, searchQuery]);
 
     const addToCart = (product: POSProduct) => {
         setCart((prev) => {
@@ -477,17 +529,17 @@ export default function NuevaVentaPage() {
 
         const sale = appliedExchange
             ? await createExchangeSale({
-                  ...exchangePayload,
-                  originalSaleId: appliedExchange.saleId,
-                  returnedItems: appliedExchange.items.map((item) => ({
-                      saleItemId: item.saleItemId,
-                      quantity: item.quantity,
-                  })),
-              })
+                ...exchangePayload,
+                originalSaleId: appliedExchange.saleId,
+                returnedItems: appliedExchange.items.map((item) => ({
+                    saleItemId: item.saleItemId,
+                    quantity: item.quantity,
+                })),
+            })
             : await createSale({
-                  ...exchangePayload,
-                  paymentMethod: paymentMethodMap[payment!.paymentMethod],
-              });
+                ...exchangePayload,
+                paymentMethod: paymentMethodMap[payment!.paymentMethod],
+            });
 
         const nextReceiptData: ReceiptPrintData = {
             ticketNumber: sale.ticketNumber,
@@ -519,6 +571,13 @@ export default function NuevaVentaPage() {
         setAllProducts(updatedProducts);
         setAppliedExchange(null);
         setReceiptData(nextReceiptData);
+        notifyDataUpdated([
+            CACHE_TAGS.sales,
+            CACHE_TAGS.cash,
+            CACHE_TAGS.posProducts,
+            CACHE_TAGS.inventory,
+            CACHE_TAGS.stock,
+        ]);
         setTimeout(() => {
             void triggerPrint(nextReceiptData);
         }, 150);
@@ -619,6 +678,23 @@ export default function NuevaVentaPage() {
         setExchangeDialogOpen(false);
     };
 
+    const handleRemoveExchangeItem = (saleItemId: string) => {
+        setAppliedExchange((currentExchange) => {
+            if (!currentExchange) return null;
+
+            const nextItems = currentExchange.items.filter((item) => item.saleItemId !== saleItemId);
+            if (nextItems.length === 0) {
+                return null;
+            }
+
+            return {
+                ...currentExchange,
+                items: nextItems,
+                credit: nextItems.reduce((sum, item) => sum + item.amount, 0),
+            };
+        });
+    };
+
     const openQuickCreateDialog = () => {
         const normalizedQuery = searchQuery.trim();
         setQuickCreateName(normalizedQuery);
@@ -660,6 +736,11 @@ export default function NuevaVentaPage() {
             });
 
             await reloadProducts();
+            notifyDataUpdated([
+                CACHE_TAGS.inventory,
+                CACHE_TAGS.stock,
+                CACHE_TAGS.posProducts,
+            ]);
             setSearchQuery(normalizedName);
             setQuickCreateOpen(false);
             toast.success("Producto creado con éxito");
@@ -700,10 +781,10 @@ export default function NuevaVentaPage() {
                         </div>
                     </div>
 
-                    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+                    <div className="items-start gap-5 xl:grid xl:grid-cols-[minmax(0,1fr)_360px]">
                         <div className="min-w-0">
-                            <Card className="h-full rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)]">
-                                <CardContent className="flex h-full flex-col p-5 sm:p-6">
+                            <Card className="rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)]">
+                                <CardContent className="flex flex-col p-5 sm:p-6">
                                     <div className="mb-5 flex flex-col gap-3 xl:flex-row">
                                         <div className="relative flex-1">
                                             <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4.5 -translate-y-1/2 text-muted-foreground" />
@@ -740,7 +821,26 @@ export default function NuevaVentaPage() {
                                         </div>
                                     </div>
 
-                                    <ScrollArea className="flex-1">
+                                    {!searchQuery.trim() && (
+                                        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[1.35rem] border border-emerald-900/15 bg-[linear-gradient(135deg,rgba(5,150,105,0.08),rgba(6,95,70,0.03))] px-4 py-3">
+                                            <div>
+                                                <p className="text-sm font-semibold text-foreground">
+                                                    Más vendidos de las últimas 24 hs
+                                                </p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    Mostrando hasta 3 filas para mantener la venta ágil.
+                                                </p>
+                                            </div>
+                                            <Badge
+                                                variant="outline"
+                                                className="rounded-full border-emerald-800/25 bg-emerald-950/8 text-emerald-700"
+                                            >
+                                                {visibleProducts.length} destacados
+                                            </Badge>
+                                        </div>
+                                    )}
+
+                                    <ScrollArea className="max-h-[calc(100vh-16rem)]">
                                         {isLoadingProducts ? (
                                             <div className="flex flex-col items-center justify-center py-24 text-center">
                                                 <Loader2 className="mb-3 size-10 animate-spin text-muted-foreground" />
@@ -758,19 +858,23 @@ export default function NuevaVentaPage() {
                                                     Verificá la conexión con la base de datos
                                                 </p>
                                             </div>
-                                        ) : filteredProducts.length === 0 ? (
+                                        ) : visibleProducts.length === 0 ? (
                                             <div className="flex flex-col items-center justify-center py-24 text-center">
                                                 <Search className="mb-3 size-12 text-muted-foreground/35" />
                                                 <p className="text-lg font-medium text-muted-foreground">
-                                                    No se encontraron productos
+                                                    {searchQuery.trim()
+                                                        ? "No se encontraron productos"
+                                                        : "Todavía no hay destacados para mostrar"}
                                                 </p>
                                                 <p className="text-sm text-muted-foreground/70">
-                                                    Probá con otro nombre o código
+                                                    {searchQuery.trim()
+                                                        ? "Probá con otro nombre o código"
+                                                        : "En cuanto haya ventas o stock disponible, aparecerán acá"}
                                                 </p>
                                             </div>
                                         ) : (
                                             <div className="grid grid-cols-1 gap-3 pr-2 sm:grid-cols-2 2xl:grid-cols-3">
-                                                {filteredProducts.map((product) => {
+                                                {visibleProducts.map((product) => {
                                                     const inCart = cart.find(
                                                         (item) => item.product.id === product.id
                                                     );
@@ -861,9 +965,9 @@ export default function NuevaVentaPage() {
                             </Card>
                         </div>
 
-                        <div className="min-w-0">
-                            <Card className="h-full rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)]">
-                                <CardContent className="flex h-full flex-col p-5 sm:p-6">
+                        <div className="min-w-0 xl:sticky xl:top-5">
+                            <Card className="rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)] xl:h-[calc(100vh-6rem)]">
+                                <CardContent className="flex flex-col p-5 sm:p-6 xl:h-[calc(100vh-6rem)] xl:overflow-hidden">
                                     <div className="mb-4 flex items-center justify-between">
                                         <div className="flex items-center gap-2">
                                             <ShoppingBag className="size-5 text-muted-foreground" />
@@ -913,7 +1017,7 @@ export default function NuevaVentaPage() {
                                         </button>
                                     </div>
 
-                                    <ScrollArea className="flex-1">
+                                    <ScrollArea className="min-h-0 xl:flex-1 xl:overflow-hidden">
                                         {cart.length === 0 && !appliedExchange ? (
                                             <div className="flex h-full min-h-56 flex-col items-center justify-center gap-3 text-center">
                                                 <div className="flex size-14 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#f5f5f7_0%,#ebebf0_100%)] text-2xl dark:bg-[linear-gradient(135deg,#232328_0%,#18181d_100%)]">
@@ -931,18 +1035,33 @@ export default function NuevaVentaPage() {
                                                 {appliedExchange?.items.map((item) => (
                                                     <div
                                                         key={item.saleItemId}
-                                                        className="rounded-2xl border border-rose-900/20 bg-rose-950/8 px-4 py-3 text-rose-900 dark:text-rose-100"
+                                                        className="flex h-[130px] flex-col justify-between rounded-[1.4rem] border border-rose-300/75 bg-[linear-gradient(135deg,rgba(255,241,242,0.98),rgba(255,228,230,0.92))] p-4 text-rose-900 shadow-[0_18px_30px_-24px_rgba(225,29,72,0.25)] dark:border-rose-400/35 dark:bg-[linear-gradient(135deg,rgba(76,5,25,0.92),rgba(136,19,55,0.52))] dark:text-rose-100"
                                                     >
-                                                        <div className="flex items-center justify-between gap-3">
+                                                        <div className="flex items-start justify-between gap-3">
                                                             <div className="min-w-0 flex-1">
                                                                 <p className="truncate text-sm font-semibold">
                                                                     {item.label}
                                                                 </p>
-                                                                <p className="mt-1 text-xs uppercase tracking-[0.14em] text-rose-700">
+                                                                <p className="mt-1 text-xs text-rose-600 dark:text-rose-300">
                                                                     Crédito por cambio
                                                                 </p>
                                                             </div>
-                                                            <span className="text-sm font-bold text-rose-700">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon-sm"
+                                                                className="shrink-0 rounded-xl text-rose-600 hover:bg-rose-200/60 hover:text-rose-800 dark:text-rose-300 dark:hover:bg-rose-400/15 dark:hover:text-rose-100"
+                                                                onClick={() => handleRemoveExchangeItem(item.saleItemId)}
+                                                                title="Quitar del cambio"
+                                                            >
+                                                                <Trash2 className="size-3.5" />
+                                                            </Button>
+                                                        </div>
+
+                                                        <div className="flex items-center justify-between gap-3">
+                                                            <p className="text-xs text-rose-600/80 dark:text-rose-300/80">
+                                                                Cambio aplicado
+                                                            </p>
+                                                            <span className="text-sm font-bold text-rose-700 dark:text-rose-200">
                                                                 -{formatCurrency(item.amount)}
                                                             </span>
                                                         </div>
@@ -953,9 +1072,9 @@ export default function NuevaVentaPage() {
                                                     <div
                                                         key={item.product.id}
                                                         className={cn(
-                                                            "group rounded-[1.4rem] border border-border/70 bg-background/85 p-4 transition-colors",
+                                                            "group flex h-[130px] flex-col justify-between rounded-[1.4rem] border border-border/70 bg-background/85 p-4 transition-colors",
                                                             item.isGift &&
-                                                                "border-orange-900/20 bg-orange-950/8 dark:border-orange-500/35 dark:bg-orange-500/10"
+                                                            "border-amber-300/80 bg-[linear-gradient(135deg,rgba(254,243,199,0.98),rgba(253,230,138,0.72))] shadow-[0_18px_32px_-24px_rgba(217,119,6,0.5)] dark:border-amber-300/45 dark:bg-[linear-gradient(135deg,rgba(120,53,15,0.82),rgba(245,158,11,0.24))] dark:shadow-[0_20px_36px_-24px_rgba(251,191,36,0.4)]"
                                                         )}
                                                     >
                                                         <div className="flex items-start gap-3">
@@ -979,8 +1098,8 @@ export default function NuevaVentaPage() {
                                                                 className={cn(
                                                                     "shrink-0 rounded-xl",
                                                                     item.isGift
-                                                                        ? "text-orange-700 hover:text-orange-800"
-                                                                        : "text-muted-foreground hover:text-orange-700"
+                                                                        ? "bg-amber-100 text-amber-800 hover:bg-amber-200 hover:text-amber-900 dark:bg-amber-400/15 dark:text-amber-200 dark:hover:bg-amber-400/25 dark:hover:text-amber-100"
+                                                                        : "text-muted-foreground hover:text-amber-700 dark:hover:text-amber-300"
                                                                 )}
                                                                 onClick={() => toggleGiftItem(item.product.id)}
                                                                 title="Marcar como regalo"
@@ -989,7 +1108,7 @@ export default function NuevaVentaPage() {
                                                             </Button>
                                                         </div>
 
-                                                        <div className="mt-4 flex items-center justify-between gap-3">
+                                                        <div className="flex items-center justify-between gap-3">
                                                             <div className="flex items-center gap-1">
                                                                 <Button
                                                                     variant="outline"
@@ -1040,7 +1159,7 @@ export default function NuevaVentaPage() {
                                         )}
                                     </ScrollArea>
 
-                                    <div className="mt-5 space-y-4 border-t border-border/70 pt-5">
+                                    <div className="mt-5 shrink-0 space-y-4 border-t border-border/70 bg-card/90 pt-5">
                                         <div className="space-y-2">
                                             <Label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                                                 <UserCircle className="size-3.5" />
@@ -1063,32 +1182,46 @@ export default function NuevaVentaPage() {
                                             </Select>
                                         </div>
 
-                                        {appliedExchange && (
-                                            <div className="rounded-2xl border border-rose-900/20 bg-rose-950/8 px-4 py-3">
-                                                <div className="flex items-center justify-between gap-3">
-                                                    <div>
-                                                        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-rose-700">
-                                                            Crédito aplicado
-                                                        </p>
-                                                        <p className="text-xs text-rose-600">
-                                                            Boleta #{appliedExchange.ticketNumber.toString().padStart(5, "0")} · {appliedExchange.items.length} producto(s)
-                                                        </p>
-                                                    </div>
-                                                    <span className="text-2xl font-black tracking-tight text-rose-700">
-                                                        -{formatCurrency(exchangeCredit)}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        )}
-
                                         <div className="space-y-2 rounded-[1.5rem] bg-muted/55 p-4">
                                             <div className="flex items-center justify-between text-sm text-muted-foreground">
                                                 <span>Items</span>
                                                 <span>{totalItems}</span>
                                             </div>
-                                            <div className="flex items-center justify-between text-sm text-muted-foreground">
-                                                <span>Crédito por cambio</span>
-                                                <span>-{formatCurrency(exchangeCredit)}</span>
+                                            <div
+                                                className={cn(
+                                                    "grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 rounded-xl px-3 py-2 text-sm text-muted-foreground",
+                                                    appliedExchange &&
+                                                        "bg-[linear-gradient(135deg,rgba(255,241,242,0.95),rgba(255,228,230,0.82))] text-rose-700 dark:bg-[linear-gradient(135deg,rgba(76,5,25,0.58),rgba(136,19,55,0.28))] dark:text-rose-100"
+                                                )}
+                                            >
+                                                <div className="min-w-0">
+                                                    <span className={cn(appliedExchange && "font-medium")}>
+                                                        Crédito por cambio
+                                                    </span>
+                                                    <div className="h-4 overflow-hidden pt-0.5 text-[11px] text-rose-600 dark:text-rose-300">
+                                                        {appliedExchange ? (
+                                                            <button
+                                                                type="button"
+                                                                className="truncate font-medium underline decoration-rose-400/70 underline-offset-2 hover:text-rose-700 dark:hover:text-rose-200"
+                                                                onClick={() => setExchangeDialogOpen(true)}
+                                                            >
+                                                                Boleta #{appliedExchange.ticketNumber.toString().padStart(5, "0")} · {appliedExchange.items.length} producto(s) · Ver detalle
+                                                            </button>
+                                                        ) : (
+                                                            "\u00A0"
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <span
+                                                    className={cn(
+                                                        "whitespace-nowrap text-right",
+                                                        appliedExchange
+                                                            ? "font-bold text-rose-700 dark:text-rose-100"
+                                                            : ""
+                                                    )}
+                                                >
+                                                    -{formatCurrency(exchangeCredit)}
+                                                </span>
                                             </div>
                                             <div className="flex items-center justify-between border-t border-border/70 pt-3">
                                                 <div>
@@ -1100,11 +1233,13 @@ export default function NuevaVentaPage() {
                                                             ? "Usando precio mayorista"
                                                             : "Usando precio de venta"}
                                                     </p>
-                                                    {hasExchangeOverage && (
-                                                        <p className="mt-1 text-xs text-rose-600">
-                                                            El cambio supera la nueva venta.
-                                                        </p>
-                                                    )}
+                                                    <div className="h-4 overflow-hidden">
+                                                        {hasExchangeOverage && (
+                                                            <p className="mt-1 text-xs text-rose-600">
+                                                                El cambio supera la nueva venta.
+                                                            </p>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <span className="text-3xl font-bold tracking-tight">
                                                     {formatCurrency(payableAmount)}
@@ -1305,27 +1440,34 @@ function ExchangeDialog({
 }) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-h-[85vh] sm:max-w-4xl">
+            <DialogContent className="max-h-[85vh] overflow-hidden border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.98))] shadow-[0_28px_90px_-40px_rgba(15,23,42,0.45)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.98),rgba(17,24,39,0.98))] dark:shadow-[0_32px_100px_-36px_rgba(0,0,0,0.8)] sm:max-w-4xl">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2 text-xl">
                         <ReceiptText className="size-5" />
                         Aplicar Cambio
                     </DialogTitle>
-                    <DialogDescription>
+                    <DialogDescription className="text-sm leading-6 text-muted-foreground dark:text-slate-300">
                         Buscá una boleta, elegí los productos a cambiar y aplicá el crédito.
                     </DialogDescription>
                 </DialogHeader>
 
                 <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
                     <div className="space-y-3">
+                        <div className="rounded-[1.2rem] border border-sky-200/70 bg-[linear-gradient(135deg,rgba(239,246,255,0.95),rgba(224,242,254,0.7))] px-4 py-3 text-sm text-sky-900 dark:border-sky-400/20 dark:bg-[linear-gradient(135deg,rgba(8,47,73,0.92),rgba(14,116,144,0.24))] dark:text-sky-100">
+                            <p className="font-semibold">1. Elegí la boleta</p>
+                            <p className="mt-1 text-xs leading-5 text-sky-800/80 dark:text-sky-100/75">
+                                Podés escanear el número o buscarlo manualmente.
+                            </p>
+                        </div>
                         <Input
                             ref={searchInputRef}
                             placeholder="Escanear o buscar N° de boleta..."
                             value={searchQuery}
                             onChange={(event) => onSearchQueryChange(event.target.value)}
+                            className="border-border/70 bg-background/90 dark:border-white/10 dark:bg-slate-950/65 dark:text-slate-100 dark:placeholder:text-slate-400"
                         />
 
-                        <div className="max-h-[52vh] space-y-2 overflow-y-auto rounded-lg border p-2">
+                        <div className="max-h-[52vh] space-y-2 overflow-y-auto rounded-[1.25rem] border border-border/70 bg-background/65 p-2 dark:border-white/10 dark:bg-slate-950/45">
                             {isLoading ? (
                                 <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
                                     <Loader2 className="mr-2 size-4 animate-spin" />
@@ -1341,10 +1483,10 @@ function ExchangeDialog({
                                         key={sale.id}
                                         type="button"
                                         className={cn(
-                                            "w-full rounded-lg border px-3 py-2 text-left transition-colors",
+                                            "w-full rounded-xl border px-3 py-2 text-left transition-colors",
                                             selectedSale?.id === sale.id
-                                                ? "border-emerald-700 bg-emerald-950/8"
-                                                : "hover:border-muted-foreground/30 hover:bg-muted/40"
+                                                ? "border-emerald-500/80 bg-[linear-gradient(135deg,rgba(236,253,245,0.96),rgba(209,250,229,0.78))] shadow-[0_14px_26px_-24px_rgba(5,150,105,0.45)] dark:border-emerald-400/45 dark:bg-[linear-gradient(135deg,rgba(6,78,59,0.88),rgba(5,150,105,0.2))] dark:text-emerald-50"
+                                                : "hover:border-muted-foreground/30 hover:bg-muted/40 dark:hover:border-white/15 dark:hover:bg-white/6"
                                         )}
                                         onClick={() => onSelectSale(sale)}
                                     >
@@ -1363,19 +1505,25 @@ function ExchangeDialog({
                         </div>
                     </div>
 
-                    <div className="rounded-lg border">
+                    <div className="rounded-[1.35rem] border border-border/70 bg-background/65 dark:border-white/10 dark:bg-slate-950/40">
                         {!selectedSale ? (
-                            <div className="flex h-full min-h-[260px] items-center justify-center text-sm text-muted-foreground">
-                                Seleccioná una boleta para ver sus productos.
+                            <div className="flex h-full min-h-[260px] items-center justify-center p-6 text-center text-sm text-muted-foreground dark:text-slate-300">
+                                Seleccioná una boleta a la izquierda para cargar los productos disponibles para cambio.
                             </div>
                         ) : (
                             <div className="flex h-full flex-col">
-                                <div className="border-b p-4">
+                                <div className="border-b border-border/70 p-4 dark:border-white/10">
                                     <p className="font-semibold">
                                         Boleta #{selectedSale.ticketNumber.toString().padStart(5, "0")}
                                     </p>
-                                    <p className="text-sm text-muted-foreground">
+                                    <p className="text-sm text-muted-foreground dark:text-slate-300">
                                         {selectedSale.sellerName} · {new Date(selectedSale.date).toLocaleString("es-AR")}
+                                    </p>
+                                </div>
+                                <div className="rounded-[1.1rem] border border-dashed border-rose-200/70 bg-[linear-gradient(135deg,rgba(255,241,242,0.88),rgba(255,255,255,0.4))] px-4 py-3 text-sm text-rose-900 dark:border-rose-400/20 dark:bg-[linear-gradient(135deg,rgba(76,5,25,0.52),rgba(15,23,42,0.18))] dark:text-rose-100">
+                                    <p className="font-semibold">2. Marcá cantidades a devolver</p>
+                                    <p className="mt-1 text-xs leading-5 text-rose-800/80 dark:text-rose-100/75">
+                                        Sólo podés cargar hasta la cantidad disponible de cada producto en la boleta.
                                     </p>
                                 </div>
                                 <div className="max-h-[44vh] space-y-2 overflow-y-auto p-4">
@@ -1386,15 +1534,15 @@ function ExchangeDialog({
                                         return (
                                             <div
                                                 key={item.id}
-                                                className="grid gap-3 rounded-lg border p-3 sm:grid-cols-[minmax(0,1fr)_100px]"
+                                                className="grid gap-3 rounded-xl border border-border/70 bg-background/85 p-3 dark:border-white/10 dark:bg-slate-900/55 sm:grid-cols-[minmax(0,1fr)_100px]"
                                             >
                                                 <div>
                                                     <p className="font-medium">{item.productName}</p>
-                                                    <p className="text-xs text-muted-foreground">
+                                                    <p className="text-xs text-muted-foreground dark:text-slate-300">
                                                         {item.size !== "Único" ? `Talle ${item.size} · ` : ""}
                                                         {item.color}
                                                     </p>
-                                                    <p className="text-xs text-muted-foreground">
+                                                    <p className="text-xs text-muted-foreground dark:text-slate-300">
                                                         Disponible para cambio: {availableQuantity} · {formatCurrency(item.priceAtTime)} c/u
                                                     </p>
                                                 </div>
@@ -1404,6 +1552,7 @@ function ExchangeDialog({
                                                     max={availableQuantity}
                                                     disabled={availableQuantity === 0}
                                                     value={value}
+                                                    className="border-border/70 bg-background/90 dark:border-white/10 dark:bg-slate-950/70 dark:text-slate-100"
                                                     onChange={(event) =>
                                                         onQuantityChange(item.id, event.target.value)
                                                     }
@@ -1413,7 +1562,7 @@ function ExchangeDialog({
                                     })}
                                 </div>
 
-                                <div className="border-t p-4">
+                                <div className="border-t border-border/70 p-4 dark:border-white/10">
                                     <div className="mb-3 flex items-center justify-between font-semibold">
                                         <span>Crédito a aplicar</span>
                                         <span>{formatCurrency(selectedCredit)}</span>

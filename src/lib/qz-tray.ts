@@ -72,11 +72,14 @@ function storePrinterName(printerName: string) {
 
 async function loadQzTray(): Promise<QzTrayModule> {
     if (!qzPromise) {
+        console.log("[QZ] Cargando módulo qz-tray...");
         qzPromise = import("qz-tray").then((module) => {
             const qz = (module.default ?? module) as QzTrayModule;
+            console.log("[QZ] Módulo cargado OK. Configurando seguridad...");
 
             // Load the digital certificate (public file served from /public/qz/)
             qz.security.setCertificatePromise((resolve, reject) => {
+                console.log("[QZ] Fetching certificado desde /qz/digital-certificate.txt ...");
                 void fetch("/qz/digital-certificate.txt", {
                     cache: "no-store",
                     headers: { "Content-Type": "text/plain" },
@@ -87,31 +90,47 @@ async function loadQzTray(): Promise<QzTrayModule> {
                             "No se pudo cargar el certificado público de QZ Tray"
                         )
                     )
-                    .then(resolve)
-                    .catch(reject);
+                    .then((cert) => {
+                        console.log("[QZ] Certificado cargado OK. Primeros 80 chars:", cert.substring(0, 80));
+                        resolve(cert);
+                    })
+                    .catch((err) => {
+                        console.error("[QZ] ERROR al cargar certificado:", err);
+                        reject(err);
+                    });
             });
 
             // Sign each request via the server-side API route (keeps private key secure)
+            // IMPORTANT: Algorithm must match what the server uses (SHA512 with RSA key → SHA512withRSA)
             qz.security.setSignatureAlgorithm("SHA512");
             qz.security.setSignaturePromise((toSign) => {
                 return (resolve, reject) => {
+                    console.log("[QZ] Firmando request. Longitud del mensaje:", toSign.length);
                     void fetch(`/api/qz-sign?request=${encodeURIComponent(toSign)}`, {
                         cache: "no-store",
                         headers: { "Content-Type": "text/plain" },
                     })
-                        .then((res) =>
-                            readTextResponse(
+                        .then((res) => {
+                            console.log("[QZ] Respuesta del servidor de firma:", res.status, res.statusText);
+                            return readTextResponse(
                                 res,
                                 "No se pudo firmar la solicitud para QZ Tray"
-                            )
-                        )
-                        .then(resolve)
-                        .catch(reject);
+                            );
+                        })
+                        .then((signature) => {
+                            console.log("[QZ] Firma obtenida OK. Longitud:", signature.length);
+                            resolve(signature);
+                        })
+                        .catch((err) => {
+                            console.error("[QZ] ERROR al firmar:", err);
+                            reject(err);
+                        });
                 };
             });
 
             return qz;
         }).catch((error) => {
+            console.error("[QZ] ERROR al cargar módulo qz-tray:", error);
             qzPromise = null;
             throw error;
         });
@@ -123,8 +142,11 @@ async function loadQzTray(): Promise<QzTrayModule> {
 async function getConnectedQzTray(): Promise<QzTrayModule> {
     const qz = await loadQzTray();
     if (qz.websocket.isActive()) {
+        console.log("[QZ] WebSocket ya está activo, reutilizando conexión.");
         return qz;
     }
+
+    console.log("[QZ] Conectando a QZ Tray...");
 
     // QZ Tray's connect() Promise may stall even when the WebSocket is
     // established (blocked on certificate handshake with empty certs).
@@ -141,31 +163,40 @@ async function getConnectedQzTray(): Promise<QzTrayModule> {
             fn();
         };
 
-        // Poll every 100 ms — resolves as soon as socket is active
+        // Poll every 500 ms — give the certificate handshake time to complete
+        // before declaring the connection active
         const pollId = setInterval(() => {
             if (qz.websocket.isActive()) {
+                console.log("[QZ] isActive() = true (via polling)");
                 settle(resolve);
             }
-        }, 100);
+        }, 500);
 
         // Also resolve if the connect Promise itself resolves
         qz.websocket.connect().then(
-            () => settle(resolve),
-            (err: unknown) => settle(() => reject(err as Error))
+            () => {
+                console.log("[QZ] connect() Promise resolvió OK");
+                settle(resolve);
+            },
+            (err: unknown) => {
+                console.error("[QZ] connect() Promise rechazó:", err);
+                settle(() => reject(err as Error));
+            }
         );
 
-        // Give up after 15 s
+        // Give up after 20 s
         const timeoutId = setTimeout(() => {
             settle(() =>
                 reject(
                     new Error(
-                        "QZ Tray no respondió en 15 s. Verificá que esté corriendo."
+                        "QZ Tray no respondió en 20 s. Verificá que esté corriendo."
                     )
                 )
             );
-        }, 15_000);
+        }, 20_000);
     });
 
+    console.log("[QZ] Conexión establecida exitosamente.");
     return qz;
 }
 
@@ -194,8 +225,11 @@ async function resolvePrinterName(qz: QzTrayModule): Promise<string> {
 }
 
 export async function printHtmlWithQzTray(html: string, jobName: string): Promise<string> {
+    console.log(`[QZ] Iniciando impresión: "${jobName}"`);
     const qz = await getConnectedQzTray();
     const printerName = await resolvePrinterName(qz);
+    console.log(`[QZ] Imprimiendo en: "${printerName}"`);
+
     const config = qz.configs.create(printerName, {
         jobName,
     });
@@ -212,6 +246,7 @@ export async function printHtmlWithQzTray(html: string, jobName: string): Promis
         "QZ Tray no confirmó la impresión"
     );
 
+    console.log(`[QZ] Impresión enviada correctamente a "${printerName}"`);
     return printerName;
 }
 
@@ -222,4 +257,39 @@ export async function canUseQzTray(): Promise<boolean> {
     } catch {
         return false;
     }
+}
+
+// Exponer función de diagnóstico en la consola del navegador
+if (typeof window !== "undefined") {
+    (window as unknown as Record<string, unknown>).debugQzTray = async () => {
+        console.group("[QZ] === DIAGNÓSTICO QZ TRAY ===");
+        try {
+            console.log("1. Testeando endpoint /api/qz-sign...");
+            const signRes = await fetch("/api/qz-sign?request=test_diagnostico", { cache: "no-store" });
+            console.log("   Status:", signRes.status);
+            const signText = await signRes.text();
+            console.log("   Respuesta (primeros 80 chars):", signText.substring(0, 80));
+
+            console.log("2. Testeando carga del certificado...");
+            const certRes = await fetch("/qz/digital-certificate.txt", { cache: "no-store" });
+            const certText = await certRes.text();
+            console.log("   Status:", certRes.status, "| Longitud:", certText.length);
+            console.log("   Primeros 60 chars:", certText.substring(0, 60));
+
+            console.log("3. Conectando a QZ Tray...");
+            const qz = await getConnectedQzTray();
+            console.log("   Conexión OK. isActive:", qz.websocket.isActive());
+
+            console.log("4. Buscando impresoras...");
+            const printers = await qz.printers.find();
+            console.log("   Impresoras encontradas:", printers);
+
+            const defaultPrinter = await qz.printers.getDefault();
+            console.log("   Impresora por defecto:", defaultPrinter);
+        } catch (err) {
+            console.error("[QZ] Error en diagnóstico:", err);
+        }
+        console.groupEnd();
+    };
+    console.log("[QZ] Función de diagnóstico disponible. Ejecutá: window.debugQzTray()");
 }

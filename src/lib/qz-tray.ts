@@ -30,6 +30,17 @@ type QzTrayModule = {
 
 let qzPromise: Promise<QzTrayModule> | null = null;
 
+async function readTextResponse(
+    response: Response,
+    fallbackMessage: string
+): Promise<string> {
+    const text = (await response.text()).trim();
+    if (!response.ok) {
+        throw new Error(text || fallbackMessage);
+    }
+    return text;
+}
+
 function withTimeout<T>(promise: Promise<T>, message: string): Promise<T> {
     return new Promise<T>((resolve, reject) => {
         const timeoutId = window.setTimeout(() => {
@@ -66,24 +77,36 @@ async function loadQzTray(): Promise<QzTrayModule> {
 
             // Load the digital certificate (public file served from /public/qz/)
             qz.security.setCertificatePromise((resolve, reject) => {
-                fetch("/qz/digital-certificate.txt", {
+                void fetch("/qz/digital-certificate.txt", {
                     cache: "no-store",
                     headers: { "Content-Type": "text/plain" },
-                }).then((res) =>
-                    res.ok ? resolve(res.text()) : reject(res.text())
-                );
+                })
+                    .then((res) =>
+                        readTextResponse(
+                            res,
+                            "No se pudo cargar el certificado público de QZ Tray"
+                        )
+                    )
+                    .then(resolve)
+                    .catch(reject);
             });
 
             // Sign each request via the server-side API route (keeps private key secure)
             qz.security.setSignatureAlgorithm("SHA512");
             qz.security.setSignaturePromise((toSign) => {
                 return (resolve, reject) => {
-                    fetch(`/api/qz-sign?request=${encodeURIComponent(toSign)}`, {
+                    void fetch(`/api/qz-sign?request=${encodeURIComponent(toSign)}`, {
                         cache: "no-store",
                         headers: { "Content-Type": "text/plain" },
-                    }).then((res) =>
-                        res.ok ? resolve(res.text()) : reject(res.text())
-                    );
+                    })
+                        .then((res) =>
+                            readTextResponse(
+                                res,
+                                "No se pudo firmar la solicitud para QZ Tray"
+                            )
+                        )
+                        .then(resolve)
+                        .catch(reject);
                 };
             });
 

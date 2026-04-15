@@ -58,6 +58,7 @@ import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
 
 // Reemplazamos mockSizes por un array constante aquí
 const commonSizes = ["XS", "S", "M", "L", "XL", "XXL", "38", "40", "42", "44", "46", "48"];
+const STOCK_MOVEMENTS_PER_PAGE = 12;
 
 type LabelPrintItem = {
     productName: string;
@@ -198,6 +199,7 @@ export default function StockPage() {
     const [filterDateFrom, setFilterDateFrom] = useState("");
     const [filterDateTo, setFilterDateTo] = useState("");
     const [showFilters, setShowFilters] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
     const [stockDialogOpen, setStockDialogOpen] = useState(false);
     const [stockAction, setStockAction] = useState<"add" | "remove" | "adjust">("add");
     const [advancedMode, setAdvancedMode] = useState(false);
@@ -266,6 +268,13 @@ export default function StockPage() {
         [filteredMovements, selectedMovementIds]
     );
 
+    const totalMovementPages = Math.max(1, Math.ceil(filteredMovements.length / STOCK_MOVEMENTS_PER_PAGE));
+
+    const paginatedMovements = useMemo(() => {
+        const start = (currentPage - 1) * STOCK_MOVEMENTS_PER_PAGE;
+        return filteredMovements.slice(start, start + STOCK_MOVEMENTS_PER_PAGE);
+    }, [currentPage, filteredMovements]);
+
     const printableVariants = useMemo(
         () =>
             selectedMovements
@@ -285,6 +294,17 @@ export default function StockPage() {
     ).length;
 
     const hasActiveFilters = filterProduct !== "all" || filterProvider !== "all" || filterDateFrom !== "" || filterDateTo !== "";
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filterProduct, filterProvider, filterDateFrom, filterDateTo]);
+
+    useEffect(() => {
+        if (currentPage > totalMovementPages) {
+            setCurrentPage(totalMovementPages);
+        }
+    }, [currentPage, totalMovementPages]);
+
     const searchedProducts = useMemo(() => {
         const query = productSearchQuery.trim().toLowerCase();
         if (!query) return products;
@@ -844,7 +864,7 @@ export default function StockPage() {
                                 </TableCell>
                             </TableRow>
                         ) : (
-                            filteredMovements.map((movement) => (
+                            paginatedMovements.map((movement) => (
                                 <TableRow key={movement.id}>
                                     <TableCell>
                                         <Checkbox
@@ -897,6 +917,27 @@ export default function StockPage() {
                         )}
                     </TableBody>
                 </Table>
+            </div>
+            <div className="mt-4 flex flex-col gap-3 rounded-[1.25rem] border border-border/70 bg-card/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-muted-foreground">
+                    Página {currentPage} de {totalMovementPages} · {filteredMovements.length} movimiento(s)
+                </p>
+                <div className="flex gap-2">
+                    <Button
+                        variant="outline"
+                        onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                        disabled={currentPage === 1}
+                    >
+                        Anterior
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={() => setCurrentPage((page) => Math.min(totalMovementPages, page + 1))}
+                        disabled={currentPage === totalMovementPages}
+                    >
+                        Siguiente
+                    </Button>
+                </div>
             </div>
             </div>
 

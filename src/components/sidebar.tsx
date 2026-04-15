@@ -127,18 +127,21 @@ function SidebarContent({
         .map((part) => part[0]?.toUpperCase() ?? "")
         .join("");
 
+    const navItemBaseClass =
+        "rounded-2xl transform-gpu transition-[background-color,color,box-shadow,transform] duration-150 ease-out";
+    const navItemHoverClass = "text-muted-foreground hover:bg-muted/70 hover:text-foreground";
+
     const handleLogout = async () => {
         await logoutUser();
         localStorage.removeItem("pos_session");
         localStorage.removeItem("pos_user");
         localStorage.removeItem("pos_role");
         localStorage.removeItem("pos_user_id");
-        router.replace("/login");
-        router.refresh();
+        window.location.href = "/login";
     };
 
     return (
-        <TooltipProvider delayDuration={0}>
+        <TooltipProvider delayDuration={140} skipDelayDuration={80}>
             <aside className="relative isolate flex h-full w-full flex-col overflow-hidden border-r border-white/30 bg-white/22 shadow-[inset_1px_0_0_rgba(255,255,255,0.34),inset_0_1px_0_rgba(255,255,255,0.24),18px_0_48px_-32px_rgba(148,163,184,0.65)] backdrop-blur-3xl backdrop-saturate-[1.9] dark:border-white/14 dark:bg-white/8 dark:shadow-[inset_1px_0_0_rgba(255,255,255,0.12),inset_0_1px_0_rgba(255,255,255,0.08),18px_0_48px_-32px_rgba(0,0,0,0.75)] dark:backdrop-saturate-[1.7]">
                 <div
                     aria-hidden="true"
@@ -156,7 +159,7 @@ function SidebarContent({
                             onClick={onToggleCollapse}
                             type="button"
                             aria-label={collapsed ? "Expandir sidebar" : "Colapsar sidebar"}
-                            className="flex size-8 items-center justify-center rounded-2xl border border-white/35 bg-white/24 text-foreground shadow-[0_10px_24px_-18px_rgba(15,23,42,0.45)] backdrop-blur-xl transition-all hover:scale-105 hover:bg-white/34 dark:border-white/12 dark:bg-white/8 dark:hover:bg-white/12"
+                            className="flex size-8 items-center justify-center rounded-2xl border border-white/35 bg-white/24 text-foreground shadow-[0_10px_24px_-18px_rgba(15,23,42,0.45)] backdrop-blur-xl transform-gpu transition-[background-color,transform,box-shadow] duration-150 ease-out hover:scale-105 hover:bg-white/34 dark:border-white/12 dark:bg-white/8 dark:hover:bg-white/12"
                         >
                             {collapsed ? (
                                 <ChevronRight className="size-4" />
@@ -195,10 +198,11 @@ function SidebarContent({
                                                 <TooltipTrigger asChild>
                                                     <div
                                                         className={cn(
-                                                            "flex w-full items-center justify-center rounded-2xl p-3 transition-colors",
+                                                            "flex w-full items-center justify-center p-3",
+                                                            navItemBaseClass,
                                                             isActive
                                                                 ? "text-white shadow-[0_18px_30px_-20px_rgba(0,0,0,0.7)]"
-                                                                : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+                                                                : navItemHoverClass,
                                                             isDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-muted-foreground"
                                                         )}
                                                         style={isActive ? { background: "linear-gradient(135deg, #17171f 0%, #2c2d3b 100%)" } : undefined}
@@ -212,10 +216,11 @@ function SidebarContent({
                                             <div
                                                 key={item.href}
                                                 className={cn(
-                                                    "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition-colors",
+                                                    "flex w-full items-center gap-3 px-3 py-3 text-sm font-medium",
+                                                    navItemBaseClass,
                                                     isActive
                                                         ? "text-white shadow-[0_18px_30px_-20px_rgba(0,0,0,0.7)]"
-                                                        : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+                                                        : navItemHoverClass,
                                                     isDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-muted-foreground"
                                                 )}
                                                 style={isActive ? { background: "linear-gradient(135deg, #17171f 0%, #2c2d3b 100%)" } : undefined}
@@ -273,10 +278,11 @@ function SidebarContent({
                                                             <Link href={child.href} onClick={onNavClick}>
                                                                 <div
                                                                     className={cn(
-                                                                        "flex w-full items-center justify-center rounded-2xl p-3 transition-colors",
+                                                                        "flex w-full items-center justify-center p-3",
+                                                                        navItemBaseClass,
                                                                         isActive
                                                                             ? "font-medium text-white shadow-[0_18px_28px_-20px_rgba(124,58,237,0.8)]"
-                                                                            : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                                                                            : navItemHoverClass
                                                                     )}
                                                                     style={isActive ? { background: "linear-gradient(135deg, #6d28d9 0%, #312e81 100%)" } : undefined}
                                                                 >
@@ -296,7 +302,11 @@ function SidebarContent({
                                                     onClick={() =>
                                                         setWorkspaceExpanded((current) => !current)
                                                     }
-                                                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+                                                    className={cn(
+                                                        "flex w-full items-center gap-3 px-3 py-3 text-sm font-medium",
+                                                        navItemBaseClass,
+                                                        navItemHoverClass
+                                                    )}
                                                     type="button"
                                                 >
                                                     <ChevronDown
@@ -322,10 +332,11 @@ function SidebarContent({
                                                             >
                                                                 <div
                                                                     className={cn(
-                                                                        "rounded-2xl px-3 py-2.5 text-sm transition-colors",
+                                                                        "px-3 py-2.5 text-sm",
+                                                                        navItemBaseClass,
                                                                         pathname === child.href
                                                                             ? "font-medium text-white shadow-[0_18px_28px_-20px_rgba(124,58,237,0.8)]"
-                                                                            : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                                                                            : navItemHoverClass
                                                                     )}
                                                                     style={
                                                                         pathname === child.href
@@ -352,10 +363,11 @@ function SidebarContent({
                                                     <Link href={item.href} onClick={onNavClick}>
                                                         <div
                                                             className={cn(
-                                                                "flex w-full items-center justify-center rounded-2xl p-3 transition-colors",
+                                                                "flex w-full items-center justify-center p-3",
+                                                                navItemBaseClass,
                                                                 isActive
                                                                     ? "text-white shadow-[0_18px_30px_-20px_rgba(0,0,0,0.7)]"
-                                                                    : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                                                                    : navItemHoverClass
                                                             )}
                                                             style={isActive ? { background: "linear-gradient(135deg, #17171f 0%, #2c2d3b 100%)" } : undefined}
                                                         >
@@ -373,10 +385,11 @@ function SidebarContent({
                                         <Link key={item.href} href={item.href} onClick={onNavClick}>
                                             <div
                                                 className={cn(
-                                                    "flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition-colors",
+                                                    "flex items-center gap-3 px-3 py-3 text-sm font-medium",
+                                                    navItemBaseClass,
                                                     isActive
                                                         ? "text-white shadow-[0_18px_30px_-20px_rgba(0,0,0,0.7)]"
-                                                        : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                                                        : navItemHoverClass
                                                 )}
                                                 style={isActive ? { background: "linear-gradient(135deg, #17171f 0%, #2c2d3b 100%)" } : undefined}
                                             >
@@ -427,7 +440,7 @@ function SidebarContent({
                         <Button
                             variant="ghost"
                             onClick={handleLogout}
-                            className="h-11 w-full justify-start gap-3 rounded-2xl px-3 text-rose-600 transition-colors hover:bg-rose-950/8 hover:text-rose-700 dark:hover:bg-rose-500/12"
+                            className="h-11 w-full justify-start gap-3 rounded-2xl px-3 text-rose-600 transform-gpu transition-[background-color,color,transform] duration-150 ease-out hover:bg-rose-950/8 hover:text-rose-700 dark:hover:bg-rose-500/12"
                         >
                             <LogOut className="size-4.5 shrink-0" />
                             <span className="text-sm font-medium">Cerrar sesion</span>
@@ -450,7 +463,7 @@ function SidebarContent({
                             <TooltipTrigger asChild>
                                 <button
                                     onClick={handleLogout}
-                                    className="flex size-9 items-center justify-center rounded-2xl text-rose-500 transition-colors hover:bg-rose-500/10"
+                                    className="flex size-9 items-center justify-center rounded-2xl text-rose-500 transform-gpu transition-[background-color,color,transform] duration-150 ease-out hover:bg-rose-500/10"
                                     type="button"
                                 >
                                     <LogOut className="size-4" />

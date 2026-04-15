@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
     getCurrentSession,
     openCashSession,
@@ -84,6 +84,8 @@ type CashSession = {
     movements: CashMovement[];
     sales: CashSale[];
 };
+
+const CASH_MOVEMENTS_PER_PAGE = 8;
 
 function formatCurrency(amount: number | string | null | undefined): string {
     return new Intl.NumberFormat("es-AR", {
@@ -575,6 +577,7 @@ function AdminCajaView({
     const [actualAmount, setActualAmount] = useState("");
     const [isSaving, setIsSaving] = useState(false);
     const [isSavingWithout, setIsSavingWithout] = useState(false);
+    const [currentMovementsPage, setCurrentMovementsPage] = useState(1);
 
     const salesCash = session.sales.reduce((acc, sale) => acc + Number(sale.cashAmount || 0), 0);
     const salesTransfer = session.sales.reduce(
@@ -589,6 +592,17 @@ function AdminCajaView({
         .reduce((acc, m) => acc + m.amount, 0);
     const expectedCash =
         Number(session.initialAmount) + salesCash + manualIn - manualOut;
+    const totalMovementPages = Math.max(1, Math.ceil(session.movements.length / CASH_MOVEMENTS_PER_PAGE));
+    const paginatedMovements = useMemo(() => {
+        const start = (currentMovementsPage - 1) * CASH_MOVEMENTS_PER_PAGE;
+        return session.movements.slice(start, start + CASH_MOVEMENTS_PER_PAGE);
+    }, [currentMovementsPage, session.movements]);
+
+    useEffect(() => {
+        if (currentMovementsPage > totalMovementPages) {
+            setCurrentMovementsPage(totalMovementPages);
+        }
+    }, [currentMovementsPage, totalMovementPages]);
 
     const handleAddMovement = async () => {
         if (!movementAmount || isNaN(Number(movementAmount)) || Number(movementAmount) <= 0)
@@ -759,7 +773,7 @@ function AdminCajaView({
                                     />
                                 ) : (
                                     <div className="space-y-3">
-                                        {session.movements.map((mov) => (
+                                        {paginatedMovements.map((mov) => (
                                             <div
                                                 key={mov.id}
                                                 className="flex items-center justify-between rounded-2xl border border-border/70 bg-background/85 p-4 dark:border-white/10 dark:bg-white/5"
@@ -790,6 +804,29 @@ function AdminCajaView({
                                                 </p>
                                             </div>
                                         ))}
+                                        <div className="flex flex-col gap-3 rounded-[1.25rem] border border-border/70 bg-card/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                            <p className="text-sm text-muted-foreground">
+                                                Página {currentMovementsPage} de {totalMovementPages} · {session.movements.length} movimiento(s)
+                                            </p>
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    variant="outline"
+                                                    onClick={() => setCurrentMovementsPage((page) => Math.max(1, page - 1))}
+                                                    disabled={currentMovementsPage === 1}
+                                                >
+                                                    Anterior
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    onClick={() =>
+                                                        setCurrentMovementsPage((page) => Math.min(totalMovementPages, page + 1))
+                                                    }
+                                                    disabled={currentMovementsPage === totalMovementPages}
+                                                >
+                                                    Siguiente
+                                                </Button>
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
                             </CardContent>

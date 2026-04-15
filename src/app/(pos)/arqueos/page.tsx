@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
     getPendingCountSessions,
     getClosedSessions,
@@ -59,6 +59,8 @@ type CashSession = {
     sales: Array<{ id: string; total: number; paymentMethod: string; cashAmount: number | null; createdAt: string }>;
 };
 
+const CLOSED_ARQUEOS_PER_PAGE = 8;
+
 function formatCurrency(amount: number | null | undefined): string {
     return new Intl.NumberFormat("es-AR", {
         style: "currency",
@@ -79,6 +81,7 @@ export default function ArqueosPage() {
     const [closed, setClosed] = useState<CashSession[]>([]);
     const [sellers, setSellers] = useState<Seller[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [currentClosedPage, setCurrentClosedPage] = useState(1);
 
     // Dialog state
     const [arqueoDialogSession, setArqueoDialogSession] = useState<CashSession | null>(null);
@@ -110,6 +113,18 @@ export default function ArqueosPage() {
     }, [loadData]);
 
     useDataRefresh([CACHE_TAGS.cash, CACHE_TAGS.sales, CACHE_TAGS.employees], loadData);
+
+    const totalClosedPages = Math.max(1, Math.ceil(closed.length / CLOSED_ARQUEOS_PER_PAGE));
+    const paginatedClosed = useMemo(() => {
+        const start = (currentClosedPage - 1) * CLOSED_ARQUEOS_PER_PAGE;
+        return closed.slice(start, start + CLOSED_ARQUEOS_PER_PAGE);
+    }, [closed, currentClosedPage]);
+
+    useEffect(() => {
+        if (currentClosedPage > totalClosedPages) {
+            setCurrentClosedPage(totalClosedPages);
+        }
+    }, [currentClosedPage, totalClosedPages]);
 
     const handleOpenArqueoDialog = (session: CashSession) => {
         setArqueoDialogSession(session);
@@ -280,7 +295,7 @@ export default function ArqueosPage() {
                     <p className="text-sm text-muted-foreground">No hay arqueos completados aún.</p>
                 ) : (
                     <div className="space-y-3">
-                        {closed.map((s) => {
+                        {paginatedClosed.map((s) => {
                             const diff = s.difference ?? 0;
                             const isExact = diff === 0;
                             const isSurplus = diff > 0;
@@ -351,6 +366,27 @@ export default function ArqueosPage() {
                                 </Card>
                             );
                         })}
+                        <div className="flex flex-col gap-3 rounded-[1.25rem] border border-border/70 bg-card/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-sm text-muted-foreground">
+                                Página {currentClosedPage} de {totalClosedPages} · {closed.length} arqueo(s)
+                            </p>
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setCurrentClosedPage((page) => Math.max(1, page - 1))}
+                                    disabled={currentClosedPage === 1}
+                                >
+                                    Anterior
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setCurrentClosedPage((page) => Math.min(totalClosedPages, page + 1))}
+                                    disabled={currentClosedPage === totalClosedPages}
+                                >
+                                    Siguiente
+                                </Button>
+                            </div>
+                        </div>
                     </div>
                 )}
             </section>

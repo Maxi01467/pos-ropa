@@ -653,7 +653,7 @@ export default function NuevaVentaPage() {
 
     const filteredExchangeSales = useMemo(() => {
         const query = exchangeSearchQuery.trim();
-        if (!query) return exchangeSales.slice(0, 20);
+        if (!query) return exchangeSales.slice(0, 5);
 
         return exchangeSales.filter((sale) => {
             return (
@@ -815,7 +815,7 @@ export default function NuevaVentaPage() {
 
                     <div className="items-start gap-5 min-[1400px]:grid min-[1400px]:grid-cols-[minmax(0,1fr)_380px]">
                         <div className="min-w-0">
-                            <Card className="overflow-hidden rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)]">
+                            <Card className="overflow-hidden rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(30,41,59,0.94),rgba(15,23,42,0.96))] dark:shadow-[0_28px_70px_-40px_rgba(0,0,0,0.78)]">
                                 <CardContent className="flex min-w-0 flex-col p-5 sm:p-6">
                                     <div className="mb-5 flex flex-col gap-3 xl:flex-row">
                                         <div className="relative min-w-0 flex-1">
@@ -843,7 +843,7 @@ export default function NuevaVentaPage() {
                                             </Button>
                                             {searchQuery.trim() && filteredProducts.length === 0 && (
                                                 <Button
-                                                    className="h-12 rounded-2xl bg-neutral-950 px-4 text-white hover:bg-neutral-800"
+                                                    className="h-12 rounded-2xl bg-[linear-gradient(135deg,#1f2937_0%,#334155_100%)] px-4 text-white shadow-[0_18px_30px_-24px_rgba(15,23,42,0.72)] hover:opacity-95 dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.98),rgba(30,41,59,0.98))] dark:text-slate-50 dark:shadow-[0_20px_34px_-24px_rgba(0,0,0,0.85)]"
                                                     onClick={openQuickCreateDialog}
                                                 >
                                                     <Plus className="size-4" />
@@ -936,7 +936,7 @@ export default function NuevaVentaPage() {
                                                                         {product.color && ` · ${product.color}`}
                                                                     </p>
                                                                 </div>
-                                                                <div className="flex size-10 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#f5f5f7_0%,#ebebf0_100%)] text-neutral-900 dark:bg-[linear-gradient(135deg,#232328_0%,#18181d_100%)] dark:text-white">
+                                                                <div className="flex size-10 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#f5f5f7_0%,#ebebf0_100%)] text-neutral-900 dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.92),rgba(30,41,59,0.96))] dark:text-slate-50">
                                                                     <Plus className="size-4" />
                                                                 </div>
                                                             </div>
@@ -998,7 +998,7 @@ export default function NuevaVentaPage() {
                         </div>
 
                         <div className="min-w-0 min-[1400px]:sticky min-[1400px]:top-5">
-                            <Card className="rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)] min-[1400px]:h-[calc(100vh-6rem)]">
+                            <Card className="rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(30,41,59,0.94),rgba(15,23,42,0.96))] dark:shadow-[0_28px_70px_-40px_rgba(0,0,0,0.78)] min-[1400px]:h-[calc(100vh-6rem)]">
                                 <CardContent className="flex flex-col p-5 sm:p-6 min-[1400px]:h-[calc(100vh-6rem)] min-[1400px]:overflow-hidden">
                                     <div className="mb-4 flex items-center justify-between">
                                         <div className="flex items-center gap-2">
@@ -1029,8 +1029,8 @@ export default function NuevaVentaPage() {
                                             className={cn(
                                                 "cursor-pointer rounded-2xl px-3 py-3 text-sm font-medium transition-all",
                                                 priceMode === "retail"
-                                                    ? "bg-[linear-gradient(135deg,#1c1c28_0%,#3f3f50_100%)] text-white"
-                                                    : "bg-muted text-muted-foreground"
+                                                    ? "bg-[linear-gradient(135deg,#1c1c28_0%,#3f3f50_100%)] text-white dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.98),rgba(30,41,59,0.98))] dark:text-slate-50 dark:shadow-[0_18px_32px_-24px_rgba(0,0,0,0.8)]"
+                                                    : "bg-muted text-muted-foreground dark:bg-slate-800/70 dark:text-slate-300"
                                             )}
                                         >
                                             Precio venta
@@ -1041,8 +1041,8 @@ export default function NuevaVentaPage() {
                                             className={cn(
                                                 "cursor-pointer rounded-2xl px-3 py-3 text-sm font-medium transition-all",
                                                 priceMode === "wholesale"
-                                                    ? "bg-[linear-gradient(135deg,#2563eb_0%,#93c5fd_100%)] text-white"
-                                                    : "bg-muted text-muted-foreground"
+                                                    ? "bg-[linear-gradient(135deg,#2563eb_0%,#93c5fd_100%)] text-white dark:bg-[linear-gradient(135deg,rgba(37,99,235,0.92),rgba(30,64,175,0.92))] dark:text-sky-50 dark:shadow-[0_18px_32px_-24px_rgba(37,99,235,0.55)]"
+                                                    : "bg-muted text-muted-foreground dark:bg-slate-800/70 dark:text-slate-300"
                                             )}
                                         >
                                             Mayorista
@@ -1052,7 +1052,7 @@ export default function NuevaVentaPage() {
                                     <ScrollArea className="min-h-0 max-w-full min-[1400px]:flex-1 min-[1400px]:overflow-hidden">
                                         {cart.length === 0 && !appliedExchange ? (
                                             <div className="flex h-full min-h-56 flex-col items-center justify-center gap-3 text-center">
-                                                <div className="flex size-14 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#f5f5f7_0%,#ebebf0_100%)] text-2xl dark:bg-[linear-gradient(135deg,#232328_0%,#18181d_100%)]">
+                                                <div className="flex size-14 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#f5f5f7_0%,#ebebf0_100%)] text-2xl dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.9),rgba(30,41,59,0.96))] dark:text-slate-50">
                                                     🛒
                                                 </div>
                                                 <p className="text-base font-medium text-muted-foreground">
@@ -1191,7 +1191,7 @@ export default function NuevaVentaPage() {
                                         )}
                                     </ScrollArea>
 
-                                    <div className="mt-5 shrink-0 space-y-4 border-t border-border/70 bg-card/90 pt-5">
+                                    <div className="mt-5 shrink-0 space-y-4 border-t border-border/70 bg-card/90 pt-5 dark:border-white/10 dark:bg-transparent">
                                         <div className="space-y-2">
                                             <Label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                                                 <UserCircle className="size-3.5" />
@@ -1214,7 +1214,7 @@ export default function NuevaVentaPage() {
                                             </Select>
                                         </div>
 
-                                        <div className="space-y-2 rounded-[1.5rem] bg-muted/55 p-4">
+                                        <div className="space-y-2 rounded-[1.5rem] bg-muted/55 p-4 dark:bg-[linear-gradient(180deg,rgba(51,65,85,0.32),rgba(30,41,59,0.42))]">
                                             <div className="flex items-center justify-between text-sm text-muted-foreground">
                                                 <span>Items</span>
                                                 <span>{totalItems}</span>
@@ -1281,7 +1281,7 @@ export default function NuevaVentaPage() {
 
                                         <Button
                                             size="lg"
-                                            className="h-14 w-full rounded-2xl bg-[linear-gradient(135deg,#1c1c28_0%,#3f3f50_100%)] text-base font-semibold text-white shadow-[0_20px_36px_-22px_rgba(0,0,0,0.8)] hover:opacity-95"
+                                            className="h-14 w-full rounded-2xl bg-[linear-gradient(135deg,#1c1c28_0%,#3f3f50_100%)] text-base font-semibold text-white shadow-[0_20px_36px_-22px_rgba(0,0,0,0.8)] hover:opacity-95 dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.98),rgba(30,41,59,0.98))] dark:text-slate-50 dark:shadow-[0_24px_40px_-24px_rgba(0,0,0,0.88)]"
                                             disabled={cart.length === 0 || !selectedSellerId || hasExchangeOverage}
                                             onClick={() =>
                                                 payableAmount === 0 && appliedExchange

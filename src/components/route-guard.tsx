@@ -20,7 +20,7 @@ export function RouteGuard({ children }: { children: React.ReactNode }) {
 
     if (isSalesRoute && hasOpenCashSession === null) {
         return (
-            <div className="flex h-screen w-full items-center justify-center bg-background">
+            <div className="flex h-full min-h-[calc(100vh-4rem)] w-full items-center justify-center">
                 <Loader2 className="size-10 animate-spin text-emerald-700" />
             </div>
         );
@@ -28,7 +28,7 @@ export function RouteGuard({ children }: { children: React.ReactNode }) {
 
     if (isSalesRoute && hasOpenCashSession === false) {
         return (
-            <div className="flex h-screen w-full items-center justify-center bg-background">
+            <div className="flex h-full min-h-[calc(100vh-4rem)] w-full items-center justify-center">
                 <Loader2 className="size-10 animate-spin text-emerald-700" />
             </div>
         );

@@ -17,7 +17,7 @@ datasource db {
 model User {
   id        String   @id @default(cuid())
   name      String
-  pin       String   @default("1234") // Para el fichaje rápido y cobro
+  pin       String   @default("1234") // Contraseña de acceso
   role      String   @default("STAFF") // ADMIN o STAFF
   active    Boolean  @default(true)
   deviceId  String?  @unique // Si en el futuro usan QR con celular

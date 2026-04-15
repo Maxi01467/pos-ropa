@@ -26,8 +26,6 @@ import {
 import {
     DropdownMenu,
     DropdownMenuContent,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
@@ -69,6 +67,7 @@ export function AppHeader({
     const initials = getInitials(userName);
     const { theme, setTheme } = useTheme();
     const [notifications, setNotifications] = useState<QuickCreationNotification[]>([]);
+    const [seenNotificationIds, setSeenNotificationIds] = useState<Set<string>>(new Set());
     const [palette, setPalette] = useState<PosPalette>(() => {
         if (typeof window === "undefined") {
             return "current";
@@ -88,6 +87,7 @@ export function AppHeader({
         try {
             const items = await getQuickCreationNotifications();
             setNotifications(items);
+            setSeenNotificationIds(new Set());
         } catch (error) {
             console.error("Error loading quick creation notifications:", error);
         }
@@ -110,17 +110,36 @@ export function AppHeader({
     const handleNotificationsOpenChange = useCallback(
         async (open: boolean) => {
             if (!open || role !== "ADMIN" || notifications.length === 0) return;
-            const ids = notifications.map((notification) => notification.id);
-            setNotifications([]);
+            const ids = notifications
+                .map((notification) => notification.id)
+                .filter((id) => !seenNotificationIds.has(id));
+
+            if (ids.length === 0) return;
+
+            setSeenNotificationIds((current) => {
+                const next = new Set(current);
+                ids.forEach((id) => next.add(id));
+                return next;
+            });
+
             try {
                 await markQuickCreationNotificationsSeen(ids);
             } catch (error) {
                 console.error("Error marking notifications seen:", error);
+                setSeenNotificationIds((current) => {
+                    const next = new Set(current);
+                    ids.forEach((id) => next.delete(id));
+                    return next;
+                });
                 void loadNotifications();
             }
         },
-        [loadNotifications, notifications, role]
+        [loadNotifications, notifications, role, seenNotificationIds]
     );
+
+    const unreadNotificationCount = notifications.filter(
+        (notification) => !seenNotificationIds.has(notification.id)
+    ).length;
 
     return (
         <header className="sticky top-0 z-30 border-b border-white/20 bg-white/40 dark:bg-black/20 dark:border-white/10 backdrop-blur-xl">
@@ -202,23 +221,14 @@ export function AppHeader({
                                     aria-label="Notificaciones"
                                 >
                                     <Bell className="size-4 text-muted-foreground" />
-                                    {notifications.length > 0 && (
+                                    {unreadNotificationCount > 0 && (
                                         <span className="absolute -right-1 -top-1 flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                                            {notifications.length}
+                                            {unreadNotificationCount}
                                         </span>
                                     )}
                                 </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-[360px] p-0">
-                                <div className="p-4">
-                                    <DropdownMenuLabel className="px-0 py-0 text-foreground">
-                                        Creaciones rápidas
-                                    </DropdownMenuLabel>
-                                    <p className="mt-1 text-sm text-muted-foreground">
-                                        Avisos visibles sólo para admins.
-                                    </p>
-                                </div>
-                                <DropdownMenuSeparator />
                                 <div className="max-h-[360px] overflow-y-auto p-2">
                                     {notifications.length === 0 ? (
                                         <div className="rounded-[1rem] px-3 py-6 text-center">

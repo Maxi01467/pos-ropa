@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getFeaturedProductsForPOS, getProductsForPOS, getSellers } from "@/app/actions/pos-actions";
+import { getProductsForPOS, getSellers } from "@/app/actions/pos-actions";
 import { createQuickProductWithStock } from "@/app/actions/inventory-actions";
 import { createExchangeSale, createSale, getSalesHistory } from "@/app/actions/sales-actions";
 import { TicketReceipt } from "@/components/ticket-receipt";
@@ -143,7 +143,6 @@ export default function NuevaVentaPage() {
     const [checkoutOpen, setCheckoutOpen] = useState(false);
     const [priceMode, setPriceMode] = useState<PriceMode>("retail");
     const [allProducts, setAllProducts] = useState<POSProduct[]>([]);
-    const [featuredProducts, setFeaturedProducts] = useState<POSProduct[]>([]);
     const [exchangeSales, setExchangeSales] = useState<ExchangeSaleTicket[]>([]);
     const [isLoadingExchangeSales, setIsLoadingExchangeSales] = useState(false);
     const [exchangeSearchQuery, setExchangeSearchQuery] = useState("");
@@ -224,9 +223,8 @@ export default function NuevaVentaPage() {
         setProductsError(null);
 
         try {
-            const [productsResult, featuredResult, sellersResult] = await Promise.allSettled([
+            const [productsResult, sellersResult] = await Promise.allSettled([
                 getProductsForPOS(),
-                getFeaturedProductsForPOS(),
                 getSellers(),
             ]);
 
@@ -235,24 +233,17 @@ export default function NuevaVentaPage() {
                 throw productsResult.reason;
             }
 
-            if (featuredResult.status === "rejected") {
-                console.error("Error loading featured products for POS:", featuredResult.reason);
-                throw featuredResult.reason;
-            }
-
             if (sellersResult.status === "rejected") {
                 console.error("Error loading sellers for POS:", sellersResult.reason);
                 throw sellersResult.reason;
             }
 
             const products = productsResult.value;
-            const featuredProductsData = featuredResult.value;
             const sellersData = sellersResult.value;
 
             if (cancelled) return;
 
             setAllProducts(products);
-            setFeaturedProducts(featuredProductsData);
             setSellers(sellersData);
             setHasLoadedCatalogOnce(true);
             if (sellersData.length > 0) {
@@ -265,7 +256,7 @@ export default function NuevaVentaPage() {
                 });
             }
             console.log(
-                `[nueva-venta] loadCatalog success products=${products.length} featured=${featuredProductsData.length} sellers=${sellersData.length} reason=${reason}`
+                `[nueva-venta] loadCatalog success products=${products.length} sellers=${sellersData.length} reason=${reason}`
             );
         } catch (error) {
             if (cancelled) return;
@@ -295,12 +286,8 @@ export default function NuevaVentaPage() {
     }, [loadCatalog]);
 
     const reloadProducts = useCallback(async () => {
-        const [products, featuredProductsData] = await Promise.all([
-            getProductsForPOS(),
-            getFeaturedProductsForPOS(),
-        ]);
+        const products = await getProductsForPOS();
         setAllProducts(products);
-        setFeaturedProducts(featuredProductsData);
     }, []);
 
     const refreshSalesData = useCallback(async () => {
@@ -402,6 +389,14 @@ export default function NuevaVentaPage() {
                 setSearchQuery("");
                 // Mantenemos el cursor en el input
                 setTimeout(() => searchInputRef.current?.focus(), 10);
+            } else if (filteredProducts.length === 1) {
+                addToCart(filteredProducts[0]);
+                setSearchQuery("");
+                setTimeout(() => searchInputRef.current?.focus(), 10);
+            } else if (filteredProducts.length > 1) {
+                toast.info("Hay varios productos para esa búsqueda", {
+                    description: "Escribí un poco más o escaneá el código.",
+                });
             } else {
                 // Opcional: Si tipeó algo largo (ej: un código) y presionó Enter pero no existe
                 if (scannedValue.length >= 4) {
@@ -422,14 +417,36 @@ export default function NuevaVentaPage() {
                 product.legacyBarcodes?.some((b) => b.includes(q)) // ← códigos barras viejos
         );
     }, [searchQuery, allProducts]);
+    const searchSuggestions = useMemo(() => {
+        const q = searchQuery.trim().toLowerCase();
+        if (!q) return [];
 
-    const visibleProducts = useMemo(() => {
-        if (searchQuery.trim()) {
-            return filteredProducts;
-        }
+        return filteredProducts
+            .map((product) => {
+                const name = product.name.toLowerCase();
+                const code = product.code.toLowerCase();
+                const barcode = barcodeFromSku(product.code);
+                const legacyMatch = product.legacyBarcodes?.some((b) => b.includes(q));
+                let score = 10;
 
-        return featuredProducts;
-    }, [featuredProducts, filteredProducts, searchQuery]);
+                if (code === q || barcode === q || product.legacyBarcodes?.includes(q)) score = 0;
+                else if (code.startsWith(q)) score = 1;
+                else if (name.startsWith(q)) score = 2;
+                else if (barcode.includes(q) || legacyMatch) score = 3;
+                else if (code.includes(q)) score = 4;
+                else if (name.includes(q)) score = 5;
+
+                return { product, score };
+            })
+            .sort((left, right) => {
+                if (left.score !== right.score) return left.score - right.score;
+                return left.product.name.localeCompare(right.product.name, "es", {
+                    sensitivity: "base",
+                });
+            })
+            .slice(0, 5)
+            .map(({ product }) => product);
+    }, [filteredProducts, searchQuery]);
 
     const addToCart = (product: POSProduct) => {
         setCart((prev) => {
@@ -789,7 +806,7 @@ export default function NuevaVentaPage() {
         <>
             <div className="print:hidden p-4 sm:p-5 lg:p-6">
                 <div className="flex w-full flex-col gap-5">
-                    <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                    {/* <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                         <div className="space-y-2">
                             <div className="inline-flex items-center gap-2 rounded-full bg-[linear-gradient(135deg,#059669_0%,#065f46_100%)] px-3 py-1 text-xs font-medium text-emerald-50 shadow-[0_12px_24px_-18px_rgba(6,95,70,0.8)]">
                                 <span className="size-2 rounded-full bg-emerald-100" />
@@ -811,7 +828,7 @@ export default function NuevaVentaPage() {
                                 {priceMode === "wholesale" ? "Modo mayorista" : "Modo venta"}
                             </div>
                         </div>
-                    </div>
+                    </div> */}
 
                     <div className="items-start gap-5 min-[1400px]:grid min-[1400px]:grid-cols-[minmax(0,1fr)_380px]">
                         <div className="min-w-0">
@@ -830,6 +847,41 @@ export default function NuevaVentaPage() {
                                                 className="h-12 rounded-2xl border-border/70 bg-background/85 pl-11 text-base"
                                                 autoFocus
                                             />
+                                            {searchSuggestions.length > 0 && (
+                                                <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-border/70 bg-background shadow-[0_22px_44px_-26px_rgba(0,0,0,0.45)] dark:border-white/10 dark:bg-slate-950">
+                                                    {searchSuggestions.map((product) => (
+                                                        <button
+                                                            key={product.id}
+                                                            type="button"
+                                                            className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/70"
+                                                            onMouseDown={(event) => {
+                                                                event.preventDefault();
+                                                                addToCart(product);
+                                                                setSearchQuery("");
+                                                                setTimeout(() => searchInputRef.current?.focus(), 10);
+                                                            }}
+                                                        >
+                                                            <span className="min-w-0">
+                                                                <span className="block truncate text-sm font-semibold text-foreground">
+                                                                    {product.name}
+                                                                </span>
+                                                                <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                                                                    {product.code}
+                                                                    {product.color && ` · ${product.color}`}
+                                                                </span>
+                                                            </span>
+                                                            <span className="shrink-0 text-right text-xs">
+                                                                <span className="block font-semibold text-foreground">
+                                                                    Venta: {formatCurrency(product.price)}
+                                                                </span>
+                                                                <span className="mt-0.5 block font-semibold text-blue-600">
+                                                                    Mayorista: {formatCurrency(product.wholesalePrice)}
+                                                                </span>
+                                                            </span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="flex flex-wrap gap-2">
@@ -853,31 +905,12 @@ export default function NuevaVentaPage() {
                                         </div>
                                     </div>
 
-                                    {!searchQuery.trim() && (
-                                        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[1.35rem] border border-emerald-900/15 bg-[linear-gradient(135deg,rgba(5,150,105,0.08),rgba(6,95,70,0.03))] px-4 py-3">
-                                            <div>
-                                                <p className="text-sm font-semibold text-foreground">
-                                                    Más vendidos de las últimas 24 hs
-                                                </p>
-                                                <p className="text-xs text-muted-foreground">
-                                                    Mostrando hasta 3 filas para mantener la venta ágil.
-                                                </p>
-                                            </div>
-                                            <Badge
-                                                variant="outline"
-                                                className="rounded-full border-emerald-800/25 bg-emerald-950/8 text-emerald-700"
-                                            >
-                                                {visibleProducts.length} destacados
-                                            </Badge>
-                                        </div>
-                                    )}
-
                                     <ScrollArea className="max-w-full overflow-hidden min-[1400px]:max-h-[calc(100vh-16rem)]">
                                         {isLoadingProducts ? (
                                             <div className="flex flex-col items-center justify-center py-24 text-center">
                                                 <Loader2 className="mb-3 size-10 animate-spin text-muted-foreground" />
                                                 <p className="text-lg font-medium text-muted-foreground">
-                                                    Cargando productos
+                                                    Cargando venta
                                                 </p>
                                             </div>
                                         ) : productsError ? (
@@ -890,168 +923,8 @@ export default function NuevaVentaPage() {
                                                     Verificá la conexión con la base de datos
                                                 </p>
                                             </div>
-                                        ) : visibleProducts.length === 0 ? (
-                                            <div className="flex flex-col items-center justify-center py-24 text-center">
-                                                <Search className="mb-3 size-12 text-muted-foreground/35" />
-                                                <p className="text-lg font-medium text-muted-foreground">
-                                                    {searchQuery.trim()
-                                                        ? "No se encontraron productos"
-                                                        : "Todavía no hay destacados para mostrar"}
-                                                </p>
-                                                <p className="text-sm text-muted-foreground/70">
-                                                    {searchQuery.trim()
-                                                        ? "Probá con otro nombre o código"
-                                                        : "En cuanto haya ventas o stock disponible, aparecerán acá"}
-                                                </p>
-                                            </div>
-                                        ) : (
-                                            <div className="grid grid-cols-1 gap-3 pr-2 sm:grid-cols-2 xl:grid-cols-3">
-                                                {visibleProducts.map((product) => {
-                                                    const inCart = cart.find(
-                                                        (item) => item.product.id === product.id
-                                                    );
-
-                                                    return (
-                                                        <button
-                                                            key={product.id}
-                                                            onClick={() => addToCart(product)}
-                                                            className={cn(
-                                                                "group relative w-full min-w-0 cursor-pointer overflow-hidden rounded-[1.5rem] border border-border/70 bg-background/85 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-foreground/15 hover:shadow-[0_18px_30px_-24px_rgba(0,0,0,0.35)]",
-                                                                inCart && "border-violet-900/20 bg-violet-950/8 dark:border-violet-500/35 dark:bg-violet-500/12"
-                                                            )}
-                                                        >
-                                                            {inCart && (
-                                                                <span className="absolute right-3 top-3 flex size-6 items-center justify-center rounded-full bg-[linear-gradient(135deg,#6d28d9_0%,#4338ca_100%)] text-xs font-bold text-white">
-                                                                    {inCart.quantity}
-                                                                </span>
-                                                            )}
-
-                                                            <div className="mb-4 flex items-start justify-between gap-3">
-                                                                <div className="min-w-0 flex-1">
-                                                                    <p className="truncate text-base font-semibold">
-                                                                        {product.name}
-                                                                    </p>
-                                                                    <p className="mt-1 truncate text-xs text-muted-foreground">
-                                                                        {product.code}
-                                                                        {product.color && ` · ${product.color}`}
-                                                                    </p>
-                                                                </div>
-                                                                <div className="flex size-10 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#f5f5f7_0%,#ebebf0_100%)] text-neutral-900 dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.92),rgba(30,41,59,0.96))] dark:text-slate-50">
-                                                                    <Plus className="size-4" />
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="min-w-0 space-y-3">
-                                                                <div className="flex flex-wrap items-end justify-between gap-2">
-                                                                    <div className="min-w-0">
-                                                                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                                                                            Venta
-                                                                        </p>
-                                                                        <p className="text-lg font-bold">
-                                                                            {formatCurrency(product.price)}
-                                                                        </p>
-                                                                    </div>
-                                                                    <span
-                                                                        className={cn(
-                                                                            "shrink-0 whitespace-nowrap text-xs font-medium",
-                                                                            product.stock <= 3
-                                                                                ? "text-rose-500"
-                                                                                : "text-muted-foreground"
-                                                                        )}
-                                                                    >
-                                                                        Stock: {product.stock}
-                                                                    </span>
-                                                                </div>
-
-                                                                <div className="flex flex-wrap items-end justify-between gap-2">
-                                                                    <div className="min-w-0">
-                                                                        <p className="text-xs uppercase tracking-[0.18em] text-blue-600">
-                                                                            Mayorista
-                                                                        </p>
-                                                                        <p className="text-base font-semibold text-blue-600">
-                                                                            {formatCurrency(product.wholesalePrice)}
-                                                                        </p>
-                                                                    </div>
-                                                                    {product.sizes.length > 0 && (
-                                                                        <div className="flex min-w-0 max-w-full flex-wrap justify-end gap-1">
-                                                                            {product.sizes.map((size) => (
-                                                                                <Badge
-                                                                                    key={size}
-                                                                                    variant="outline"
-                                                                                    className="max-w-full rounded-full text-[11px] font-normal"
-                                                                                >
-                                                                                    {size}
-                                                                                </Badge>
-                                                                            ))}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </ScrollArea>
-                                </CardContent>
-                            </Card>
-                        </div>
-
-                        <div className="min-w-0 min-[1400px]:sticky min-[1400px]:top-5">
-                            <Card className="rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(30,41,59,0.94),rgba(15,23,42,0.96))] dark:shadow-[0_28px_70px_-40px_rgba(0,0,0,0.78)] min-[1400px]:h-[calc(100vh-6rem)]">
-                                <CardContent className="flex flex-col p-5 sm:p-6 min-[1400px]:h-[calc(100vh-6rem)] min-[1400px]:overflow-hidden">
-                                    <div className="mb-4 flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <ShoppingBag className="size-5 text-muted-foreground" />
-                                            <h2 className="text-lg font-semibold">Orden actual</h2>
-                                            {totalItems > 0 && (
-                                                <Badge variant="secondary" className="font-semibold">
-                                                    {totalItems}
-                                                </Badge>
-                                            )}
-                                        </div>
-                                        {cart.length > 0 && (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="rounded-xl text-muted-foreground hover:text-destructive"
-                                                onClick={clearCart}
-                                            >
-                                                Vaciar
-                                            </Button>
-                                        )}
-                                    </div>
-
-                                    <div className="mb-4 grid grid-cols-2 gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setPriceMode("retail")}
-                                            className={cn(
-                                                "cursor-pointer rounded-2xl px-3 py-3 text-sm font-medium transition-all",
-                                                priceMode === "retail"
-                                                    ? "bg-[linear-gradient(135deg,#1c1c28_0%,#3f3f50_100%)] text-white dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.98),rgba(30,41,59,0.98))] dark:text-slate-50 dark:shadow-[0_18px_32px_-24px_rgba(0,0,0,0.8)]"
-                                                    : "bg-muted text-muted-foreground dark:bg-slate-800/70 dark:text-slate-300"
-                                            )}
-                                        >
-                                            Precio venta
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setPriceMode("wholesale")}
-                                            className={cn(
-                                                "cursor-pointer rounded-2xl px-3 py-3 text-sm font-medium transition-all",
-                                                priceMode === "wholesale"
-                                                    ? "bg-[linear-gradient(135deg,#2563eb_0%,#93c5fd_100%)] text-white dark:bg-[linear-gradient(135deg,rgba(37,99,235,0.92),rgba(30,64,175,0.92))] dark:text-sky-50 dark:shadow-[0_18px_32px_-24px_rgba(37,99,235,0.55)]"
-                                                    : "bg-muted text-muted-foreground dark:bg-slate-800/70 dark:text-slate-300"
-                                            )}
-                                        >
-                                            Mayorista
-                                        </button>
-                                    </div>
-
-                                    <ScrollArea className="min-h-0 max-w-full min-[1400px]:flex-1 min-[1400px]:overflow-hidden">
-                                        {cart.length === 0 && !appliedExchange ? (
-                                            <div className="flex h-full min-h-56 flex-col items-center justify-center gap-3 text-center">
+                                        ) : cart.length === 0 && !appliedExchange ? (
+                                            <div className="flex min-h-72 flex-col items-center justify-center gap-3 text-center">
                                                 <div className="flex size-14 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#f5f5f7_0%,#ebebf0_100%)] text-2xl dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.9),rgba(30,41,59,0.96))] dark:text-slate-50">
                                                     🛒
                                                 </div>
@@ -1059,11 +932,11 @@ export default function NuevaVentaPage() {
                                                     El carrito está vacío
                                                 </p>
                                                 <p className="text-sm text-muted-foreground/70">
-                                                    Sumá productos desde el panel izquierdo
+                                                    Escaneá o buscá productos para sumarlos a la venta.
                                                 </p>
                                             </div>
                                         ) : (
-                                            <div className="space-y-2 pr-2">
+                                            <div className="grid grid-cols-1 gap-3 pr-2 lg:grid-cols-2">
                                                 {appliedExchange?.items.map((item) => (
                                                     <div
                                                         key={item.saleItemId}
@@ -1190,8 +1063,63 @@ export default function NuevaVentaPage() {
                                             </div>
                                         )}
                                     </ScrollArea>
+                                </CardContent>
+                            </Card>
+                        </div>
 
-                                    <div className="mt-5 shrink-0 space-y-4 border-t border-border/70 bg-card/90 pt-5 dark:border-white/10 dark:bg-transparent">
+                        <div className="min-w-0 min-[1400px]:sticky min-[1400px]:top-5">
+                            <Card className="rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(30,41,59,0.94),rgba(15,23,42,0.96))] dark:shadow-[0_28px_70px_-40px_rgba(0,0,0,0.78)]">
+                                <CardContent className="flex flex-col p-5 sm:p-6">
+                                    <div className="mb-4 flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <ShoppingBag className="size-5 text-muted-foreground" />
+                                            <h2 className="text-lg font-semibold">Orden actual</h2>
+                                            {totalItems > 0 && (
+                                                <Badge variant="secondary" className="font-semibold">
+                                                    {totalItems}
+                                                </Badge>
+                                            )}
+                                        </div>
+                                        {cart.length > 0 && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="rounded-xl text-muted-foreground hover:text-destructive"
+                                                onClick={clearCart}
+                                            >
+                                                Vaciar
+                                            </Button>
+                                        )}
+                                    </div>
+
+                                    <div className="mb-2 grid grid-cols-2 gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setPriceMode("retail")}
+                                            className={cn(
+                                                "cursor-pointer rounded-2xl px-3 py-3 text-sm font-medium transition-all",
+                                                priceMode === "retail"
+                                                    ? "bg-[linear-gradient(135deg,#1c1c28_0%,#3f3f50_100%)] text-white dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.98),rgba(30,41,59,0.98))] dark:text-slate-50 dark:shadow-[0_18px_32px_-24px_rgba(0,0,0,0.8)]"
+                                                    : "bg-muted text-muted-foreground dark:bg-slate-800/70 dark:text-slate-300"
+                                            )}
+                                        >
+                                            Precio venta
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setPriceMode("wholesale")}
+                                            className={cn(
+                                                "cursor-pointer rounded-2xl px-3 py-3 text-sm font-medium transition-all",
+                                                priceMode === "wholesale"
+                                                    ? "bg-[linear-gradient(135deg,#2563eb_0%,#93c5fd_100%)] text-white dark:bg-[linear-gradient(135deg,rgba(37,99,235,0.92),rgba(30,64,175,0.92))] dark:text-sky-50 dark:shadow-[0_18px_32px_-24px_rgba(37,99,235,0.55)]"
+                                                    : "bg-muted text-muted-foreground dark:bg-slate-800/70 dark:text-slate-300"
+                                            )}
+                                        >
+                                            Mayorista
+                                        </button>
+                                    </div>
+
+                                    <div className="mt-2 shrink-0 space-y-3 border-t border-border/70 bg-card/90 pt-3 dark:border-white/10 dark:bg-transparent">
                                         <div className="space-y-2">
                                             <Label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                                                 <UserCircle className="size-3.5" />
@@ -1219,19 +1147,13 @@ export default function NuevaVentaPage() {
                                                 <span>Items</span>
                                                 <span>{totalItems}</span>
                                             </div>
-                                            <div
-                                                className={cn(
-                                                    "grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 rounded-xl px-3 py-2 text-sm text-muted-foreground",
-                                                    appliedExchange &&
-                                                        "bg-[linear-gradient(135deg,rgba(255,241,242,0.95),rgba(255,228,230,0.82))] text-rose-700 dark:bg-[linear-gradient(135deg,rgba(76,5,25,0.58),rgba(136,19,55,0.28))] dark:text-rose-100"
-                                                )}
-                                            >
-                                                <div className="min-w-0">
-                                                    <span className={cn(appliedExchange && "font-medium")}>
-                                                        Crédito por cambio
-                                                    </span>
-                                                    <div className="h-4 overflow-hidden pt-0.5 text-[11px] text-rose-600 dark:text-rose-300">
-                                                        {appliedExchange ? (
+                                            {appliedExchange && (
+                                                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 rounded-xl bg-[linear-gradient(135deg,rgba(255,241,242,0.95),rgba(255,228,230,0.82))] px-3 py-2 text-sm text-rose-700 dark:bg-[linear-gradient(135deg,rgba(76,5,25,0.58),rgba(136,19,55,0.28))] dark:text-rose-100">
+                                                    <div className="min-w-0">
+                                                        <span className="font-medium">
+                                                            Crédito por cambio
+                                                        </span>
+                                                        <div className="h-4 overflow-hidden pt-0.5 text-[11px] text-rose-600 dark:text-rose-300">
                                                             <button
                                                                 type="button"
                                                                 className="truncate font-medium underline decoration-rose-400/70 underline-offset-2 hover:text-rose-700 dark:hover:text-rose-200"
@@ -1239,22 +1161,13 @@ export default function NuevaVentaPage() {
                                                             >
                                                                 Boleta #{appliedExchange.ticketNumber.toString().padStart(5, "0")} · {appliedExchange.items.length} producto(s) · Ver detalle
                                                             </button>
-                                                        ) : (
-                                                            "\u00A0"
-                                                        )}
+                                                        </div>
                                                     </div>
+                                                    <span className="whitespace-nowrap text-right font-bold text-rose-700 dark:text-rose-100">
+                                                        -{formatCurrency(exchangeCredit)}
+                                                    </span>
                                                 </div>
-                                                <span
-                                                    className={cn(
-                                                        "whitespace-nowrap text-right",
-                                                        appliedExchange
-                                                            ? "font-bold text-rose-700 dark:text-rose-100"
-                                                            : ""
-                                                    )}
-                                                >
-                                                    -{formatCurrency(exchangeCredit)}
-                                                </span>
-                                            </div>
+                                            )}
                                             <div className="flex items-center justify-between border-t border-border/70 pt-3">
                                                 <div>
                                                     <p className="text-sm font-medium text-muted-foreground">

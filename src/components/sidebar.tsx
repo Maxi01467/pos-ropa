@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useState, type AnchorHTMLAttributes } from "react";
+const Link = (props: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => <a {...props} />;
+import { usePathname } from "next/navigation";
 import {
     CalendarClock,
     ChevronDown,
@@ -102,9 +102,8 @@ function SidebarContent({
     onNavClick?: () => void;
 }) {
     const pathname = usePathname();
-    const router = useRouter();
     const { hasOpenCashSession } = useCashSessionStatus();
-    const [menuExpanded, setMenuExpanded] = useState(true);
+    const [menuExpanded] = useState(true);
     const [workspaceExpanded, setWorkspaceExpanded] = useState(true);
 
     const visibleMainItems = mainItems.filter((item) => canAccessPath(role, item.href));
@@ -142,7 +141,7 @@ function SidebarContent({
 
     return (
         <TooltipProvider delayDuration={140} skipDelayDuration={80}>
-            <aside className="relative isolate flex h-full w-full flex-col overflow-hidden border-r border-white/30 bg-white/22 shadow-[inset_1px_0_0_rgba(255,255,255,0.34),inset_0_1px_0_rgba(255,255,255,0.24),18px_0_48px_-32px_rgba(148,163,184,0.65)] backdrop-blur-3xl backdrop-saturate-[1.9] dark:border-white/14 dark:bg-white/8 dark:shadow-[inset_1px_0_0_rgba(255,255,255,0.12),inset_0_1px_0_rgba(255,255,255,0.08),18px_0_48px_-32px_rgba(0,0,0,0.75)] dark:backdrop-saturate-[1.7]">
+            <aside className="relative isolate flex h-full min-h-0 w-full flex-col overflow-hidden border-r border-white/30 bg-white/22 shadow-[inset_1px_0_0_rgba(255,255,255,0.34),inset_0_1px_0_rgba(255,255,255,0.24),18px_0_48px_-32px_rgba(148,163,184,0.65)] backdrop-blur-3xl backdrop-saturate-[1.9] dark:border-white/14 dark:bg-white/8 dark:shadow-[inset_1px_0_0_rgba(255,255,255,0.12),inset_0_1px_0_rgba(255,255,255,0.08),18px_0_48px_-32px_rgba(0,0,0,0.75)] dark:backdrop-saturate-[1.7]">
                 <div
                     aria-hidden="true"
                     className="pointer-events-none absolute inset-0"
@@ -153,7 +152,7 @@ function SidebarContent({
                     <div className="absolute bottom-12 left-[-12%] h-48 w-48 rounded-full bg-orange-200/18 blur-3xl dark:bg-indigo-400/10" />
                 </div>
                 {/* Header */}
-                <div className="relative flex justify-end border-b border-white/35 p-4 dark:border-white/10">
+                <div className="relative flex shrink-0 justify-end border-b border-white/35 p-3 dark:border-white/10">
                     {onToggleCollapse && (
                         <button
                             onClick={onToggleCollapse}
@@ -171,8 +170,8 @@ function SidebarContent({
                 </div>
 
                 {/* Nav */}
-                <ScrollArea className="relative flex-1 bg-transparent">
-                    <div className={cn("relative p-4", collapsed && "px-2")}>
+                <ScrollArea className="relative min-h-0 flex-1 bg-transparent">
+                    <div className={cn("relative p-3", collapsed && "px-2")}>
                         {/* Menu section */}
                         <div className="mb-6">
                             {!collapsed && (
@@ -424,9 +423,9 @@ function SidebarContent({
 
                 {/* Footer */}
                 {!collapsed && (
-                    <div className="relative border-t border-white/35 dark:border-white/10 p-4">
-                        <div className="mb-3 flex items-center gap-3 rounded-[1.4rem] bg-card/65 px-3 py-3 shadow-xs">
-                            <div className="flex size-10 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#ea580c_0%,#c2410c_100%)] text-sm font-semibold text-orange-50">
+                    <div className="relative shrink-0 border-t border-white/35 p-3 dark:border-white/10">
+                        <div className="mb-2 flex items-center gap-3 rounded-[1.2rem] bg-card/65 px-3 py-2.5 shadow-xs">
+                            <div className="flex size-9 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#ea580c_0%,#c2410c_100%)] text-sm font-semibold text-orange-50">
                                 {initials}
                             </div>
                             <div className="min-w-0 flex-1">
@@ -440,7 +439,7 @@ function SidebarContent({
                         <Button
                             variant="ghost"
                             onClick={handleLogout}
-                            className="h-11 w-full justify-start gap-3 rounded-2xl px-3 text-rose-600 transform-gpu transition-[background-color,color,transform] duration-150 ease-out hover:bg-rose-950/8 hover:text-rose-700 dark:hover:bg-rose-500/12"
+                            className="h-10 w-full justify-start gap-3 rounded-2xl px-3 text-rose-600 transform-gpu transition-[background-color,color,transform] duration-150 ease-out hover:bg-rose-950/8 hover:text-rose-700 dark:hover:bg-rose-500/12"
                         >
                             <LogOut className="size-4.5 shrink-0" />
                             <span className="text-sm font-medium">Cerrar sesion</span>
@@ -450,10 +449,10 @@ function SidebarContent({
 
                 {/* Footer colapsado: solo avatar + logout */}
                 {collapsed && (
-                    <div className="relative border-t border-white/35 dark:border-white/10 px-2 py-3 flex flex-col items-center gap-2">
+                    <div className="relative flex shrink-0 flex-col items-center gap-2 border-t border-white/35 px-2 py-2 dark:border-white/10">
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <div className="flex size-10 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#ea580c_0%,#c2410c_100%)] text-sm font-semibold text-orange-50 cursor-default">
+                                <div className="flex size-9 cursor-default items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#ea580c_0%,#c2410c_100%)] text-sm font-semibold text-orange-50">
                                     {initials}
                                 </div>
                             </TooltipTrigger>

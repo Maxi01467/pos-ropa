@@ -1,8 +1,8 @@
 // src/app/actions/stock-actions.ts
 "use server";
 
-import { revalidateTag, unstable_cache } from "next/cache";
-import { CACHE_TAGS } from "@/lib/cache-tags";
+import { revalidateTag } from "next/cache";
+import { CACHE_TAGS, unstable_cache } from "@/lib/cache-tags";
 import { prisma } from "@/lib/prisma";
 
 type RegisterStockEntry = {

@@ -135,6 +135,8 @@ export function useDataRefresh(
         const channel = getBroadcastChannel();
         channel?.addEventListener("message", handleBroadcast);
 
+        const intervalId = setInterval(runRefresh, 30000);
+
         return () => {
             window.removeEventListener(DATA_SYNC_EVENT, handleEvent as EventListener);
             window.removeEventListener("storage", handleStorage);
@@ -142,6 +144,7 @@ export function useDataRefresh(
                 window.removeEventListener("focus", runRefresh);
             }
             channel?.removeEventListener("message", handleBroadcast);
+            clearInterval(intervalId);
         };
     }, [domainsKey, options?.refreshOnFocus]);
 }

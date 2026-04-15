@@ -55,6 +55,7 @@ import {
 import { toast } from "sonner";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
+import { cn } from "@/lib/utils";
 
 // Reemplazamos mockSizes por un array constante aquí
 const commonSizes = ["XS", "S", "M", "L", "XL", "XXL", "38", "40", "42", "44", "46", "48"];
@@ -179,8 +180,24 @@ function getVariantLabel(entry: StockEntry) {
 }
 
 function clampQuantity(rawValue: string | undefined, max: number) {
+    if (rawValue === "") return 0;
     const parsed = Number.parseInt(rawValue ?? String(max), 10);
     return Number.isNaN(parsed) ? max : Math.max(0, Math.min(parsed, max));
+}
+
+function getTodayInputDate() {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function normalizePrintQuantity(rawValue: string, max: number) {
+    if (rawValue === "") return "";
+    const parsed = Number.parseInt(rawValue, 10);
+    if (Number.isNaN(parsed)) return "";
+    return String(Math.max(0, Math.min(parsed, max)));
 }
 
 export default function StockPage() {
@@ -196,8 +213,8 @@ export default function StockPage() {
     // ... Resto de tus estados se mantienen exactamente igual ...
     const [filterProduct, setFilterProduct] = useState("all");
     const [filterProvider, setFilterProvider] = useState("all");
-    const [filterDateFrom, setFilterDateFrom] = useState("");
-    const [filterDateTo, setFilterDateTo] = useState("");
+    const [filterDateFrom, setFilterDateFrom] = useState(() => getTodayInputDate());
+    const [filterDateTo, setFilterDateTo] = useState(() => getTodayInputDate());
     const [showFilters, setShowFilters] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [stockDialogOpen, setStockDialogOpen] = useState(false);
@@ -365,8 +382,9 @@ export default function StockPage() {
     const clearFilters = () => {
         setFilterProduct("all");
         setFilterProvider("all");
-        setFilterDateFrom("");
-        setFilterDateTo("");
+        const today = getTodayInputDate();
+        setFilterDateFrom(today);
+        setFilterDateTo(today);
     };
 
     const resetStockForm = () => {
@@ -551,7 +569,12 @@ export default function StockPage() {
             }
             return next;
         });
-        setPrintDialogOpen(true);
+        
+        // Defer opening the dialog until the quantities state strictly settles
+        // This avoids overlapping a heavy DOM calculation with the blur animation
+        setTimeout(() => {
+            setPrintDialogOpen(true);
+        }, 10);
     };
 
     const handleConfirmPrint = () => {
@@ -583,6 +606,11 @@ export default function StockPage() {
         setPrintDialogOpen(false);
         setTimeout(() => {
             window.print();
+            
+            // Clean up to free memory and prevent lag when navigating the stock page
+            setTimeout(() => {
+                setLabelsToPrint([]);
+            }, 1000);
         }, 300);
     };
 
@@ -864,11 +892,21 @@ export default function StockPage() {
                                 </TableCell>
                             </TableRow>
                         ) : (
-                            paginatedMovements.map((movement) => (
-                                <TableRow key={movement.id}>
-                                    <TableCell>
+                            paginatedMovements.map((movement) => {
+                                const isSelected = selectedMovementIds.includes(movement.id);
+
+                                return (
+                                <TableRow
+                                    key={movement.id}
+                                    className={cn(
+                                        "transition-colors",
+                                        isSelected &&
+                                            "bg-emerald-950/6 hover:bg-emerald-950/10 dark:bg-emerald-400/10 dark:hover:bg-emerald-400/14"
+                                    )}
+                                >
+                                    <TableCell className="text-center">
                                         <Checkbox
-                                            checked={selectedMovementIds.includes(movement.id)}
+                                            checked={isSelected}
                                             onCheckedChange={(checked) =>
                                                 toggleMovementSelection(
                                                     movement.id,
@@ -876,6 +914,7 @@ export default function StockPage() {
                                                 )
                                             }
                                             aria-label={`Seleccionar ingreso de ${getProductName(movement.productId)}`}
+                                            className="size-5 cursor-pointer rounded-lg border-2 border-muted-foreground/35 transition-all hover:border-emerald-500 hover:bg-emerald-500/10 hover:shadow-[0_0_0_4px_rgba(16,185,129,0.12)] data-[state=checked]:border-emerald-600 data-[state=checked]:bg-emerald-600 data-[state=checked]:text-white data-[state=checked]:shadow-[0_0_0_4px_rgba(16,185,129,0.22)] dark:border-white/30 dark:hover:border-emerald-300 dark:hover:bg-emerald-300/12 dark:data-[state=checked]:border-emerald-300 dark:data-[state=checked]:bg-emerald-500 dark:data-[state=checked]:shadow-[0_0_0_4px_rgba(52,211,153,0.28)]"
                                         />
                                     </TableCell>
                                     <TableCell className="text-sm">
@@ -913,7 +952,8 @@ export default function StockPage() {
                                         </Button>
                                     </TableCell>
                                 </TableRow>
-                            ))
+                                );
+                            })
                         )}
                     </TableBody>
                 </Table>
@@ -1298,7 +1338,10 @@ export default function StockPage() {
             </Dialog>
 
             <Dialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
-                <DialogContent className="print:hidden max-w-5xl">
+                <DialogContent
+                    overlayClassName="bg-black/34 backdrop-blur-[2px] transform-gpu will-change-[opacity,backdrop-filter]"
+                    className="print:hidden max-h-[90vh] max-w-[calc(100%-1rem)] sm:max-w-6xl xl:max-w-7xl transform-gpu will-change-[opacity,transform]"
+                >
                     <DialogHeader>
                         <DialogTitle>Imprimir etiquetas</DialogTitle>
                         <DialogDescription>
@@ -1306,15 +1349,13 @@ export default function StockPage() {
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="max-h-[60vh] overflow-y-auto rounded-[1.25rem] border border-border/70">
+                    <div className="max-h-[66vh] overflow-y-auto rounded-[1.25rem] border border-border/70">
                         <Table>
                             <TableHeader>
                                 <TableRow className="hover:bg-transparent">
                                     <TableHead>Ingreso</TableHead>
-                                    <TableHead>Variante</TableHead>
                                     <TableHead>Disponible</TableHead>
                                     <TableHead>Tickets a imprimir</TableHead>
-                                    <TableHead>SKU</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -1330,7 +1371,6 @@ export default function StockPage() {
                                                     <p>{formatDate(variant.date)}</p>
                                                 </div>
                                             </TableCell>
-                                            <TableCell>{getVariantLabel(variant)}</TableCell>
                                             <TableCell>
                                                 <Badge variant="outline">{variant.quantity} ticket(s)</Badge>
                                             </TableCell>
@@ -1344,17 +1384,15 @@ export default function StockPage() {
                                                         onChange={(event) =>
                                                             setPrintQuantities((current) => ({
                                                                 ...current,
-                                                                [variant.id]: event.target.value,
+                                                                [variant.id]: normalizePrintQuantity(
+                                                                    event.target.value,
+                                                                    variant.quantity
+                                                                ),
                                                             }))
                                                         }
                                                     />
                                                     <p className="text-xs text-muted-foreground">Vista previa: {previewQuantity}</p>
                                                 </div>
-                                            </TableCell>
-                                            <TableCell>
-                                                <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
-                                                    {variant.sku}
-                                                </code>
                                             </TableCell>
                                         </TableRow>
                                     );

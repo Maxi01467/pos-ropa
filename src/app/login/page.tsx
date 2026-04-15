@@ -84,10 +84,10 @@ export default function LoginPage() {
                             <Input 
                                 id="password" 
                                 type="password" 
-                                placeholder="PIN" 
+                                placeholder="Contraseña" 
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="h-11 text-base tracking-widest"
+                                className="h-11 text-base"
                             />
                         </div>
                         

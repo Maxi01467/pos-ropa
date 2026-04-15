@@ -1,7 +1,7 @@
 // src/components/barcode-labels.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Barcode from "react-barcode";
 import { barcodeFromSku } from "@/lib/barcodes";
@@ -30,7 +30,7 @@ function formatCurrency(amount: number): string {
     }).format(amount);
 }
 
-export function BarcodeLabels({ items }: BarcodeLabelsProps) {
+export const BarcodeLabels = React.memo(function BarcodeLabels({ items }: BarcodeLabelsProps) {
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
@@ -119,7 +119,7 @@ export function BarcodeLabels({ items }: BarcodeLabelsProps) {
                     <p
                         className="w-full text-center font-black uppercase"
                         style={{
-                            fontSize: "6.5px",
+                            fontSize: "6.8px",
                             lineHeight: 1,
                             whiteSpace: "nowrap",
                             textOverflow: "ellipsis",
@@ -142,15 +142,10 @@ export function BarcodeLabels({ items }: BarcodeLabelsProps) {
                             className="flex flex-col items-center justify-center rounded-[1.1mm] border border-black/80 bg-white text-black"
                             style={{ padding: "0.25mm 0.2mm" }}
                         >
-                            <span
-                                className="font-bold uppercase"
-                                style={{ fontSize: "4px", lineHeight: 1, letterSpacing: "0.05em", color: "#000000" }}
-                            >
-                                Venta
-                            </span>
+                           
                             <span
                                 className="font-black"
-                                style={{ fontSize: "7px", lineHeight: 1, color: "#000000" }}
+                                style={{ fontSize: "14px", lineHeight: 1, color: "#000000" }}
                             >
                                 {formatCurrency(item.retailPrice)}
                             </span>
@@ -160,15 +155,10 @@ export function BarcodeLabels({ items }: BarcodeLabelsProps) {
                             className="flex flex-col items-center justify-center rounded-[1.1mm] border border-black/80 bg-white text-black"
                             style={{ padding: "0.25mm 0.2mm" }}
                         >
-                            <span
-                                className="font-bold uppercase"
-                                style={{ fontSize: "4px", lineHeight: 1, letterSpacing: "0.05em", color: "#000000" }}
-                            >
-                                Mayor
-                            </span>
+                           
                             <span
                                 className="font-black"
-                                style={{ fontSize: "7px", lineHeight: 1, color: "#000000" }}
+                                style={{ fontSize: "14px", lineHeight: 1, color: "#000000" }}
                             >
                                 {formatCurrency(item.wholesalePrice)}
                             </span>
@@ -214,4 +204,4 @@ export function BarcodeLabels({ items }: BarcodeLabelsProps) {
         </div>,
         document.body
     );
-}
+});

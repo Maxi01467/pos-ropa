@@ -1,7 +1,7 @@
 "use server";
 
-import { revalidateTag, unstable_cache } from "next/cache";
-import { CACHE_TAGS } from "@/lib/cache-tags";
+import { revalidateTag } from "next/cache";
+import { CACHE_TAGS, unstable_cache } from "@/lib/cache-tags";
 import type { SessionRole } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
@@ -24,8 +24,12 @@ function validateEmployeeInput(input: EmployeeInput) {
         throw new Error("Ingresá el nombre del empleado");
     }
 
-    if (!/^\d{4,8}$/.test(pin)) {
-        throw new Error("El PIN debe tener entre 4 y 8 números");
+    if (!pin) {
+        throw new Error("Ingresá la contraseña del empleado");
+    }
+
+    if (pin.length > 128) {
+        throw new Error("La contraseña no puede superar los 128 caracteres");
     }
 
     if (role !== "ADMIN" && role !== "STAFF") {

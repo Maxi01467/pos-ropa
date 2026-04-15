@@ -1,8 +1,8 @@
 // src/app/actions/inventory-actions.ts
 "use server";
 
-import { revalidateTag, unstable_cache } from "next/cache";
-import { CACHE_TAGS } from "@/lib/cache-tags";
+import { revalidateTag } from "next/cache";
+import { CACHE_TAGS, unstable_cache } from "@/lib/cache-tags";
 import { getServerSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 

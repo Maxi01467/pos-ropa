@@ -141,7 +141,7 @@ export default function EmpleadosPage() {
 
     const handleSaveEmployee = async () => {
         if (!form.name.trim() || !form.pin.trim()) {
-            return toast.error("Completá nombre y PIN");
+            return toast.error("Completá nombre y contraseña");
         }
 
         setIsSaving(true);
@@ -329,7 +329,7 @@ export default function EmpleadosPage() {
                                 <TableRow className="hover:bg-transparent">
                                     <TableHead>Usuario</TableHead>
                                     <TableHead>Rol</TableHead>
-                                    <TableHead>PIN</TableHead>
+                                    <TableHead>Contraseña</TableHead>
                                     <TableHead>Estado</TableHead>
                                     <TableHead>Creado</TableHead>
                                     <TableHead className="text-right">Acciones</TableHead>
@@ -434,7 +434,7 @@ export default function EmpleadosPage() {
                     <DialogHeader>
                         <DialogTitle>{editingEmployee ? "Editar empleado" : "Nuevo empleado"}</DialogTitle>
                         <DialogDescription>
-                            Definí nombre, PIN y el rol con el que este usuario va a entrar al sistema.
+                            Definí nombre, contraseña y el rol con el que este usuario va a entrar al sistema.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -451,15 +451,14 @@ export default function EmpleadosPage() {
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="employee-pin">PIN</Label>
+                            <Label htmlFor="employee-pin">Contraseña</Label>
                             <Input
                                 id="employee-pin"
                                 value={form.pin}
                                 onChange={(event) =>
                                     setForm((current) => ({ ...current, pin: event.target.value }))
                                 }
-                                placeholder="Ej: 1234"
-                                inputMode="numeric"
+                                placeholder="Ej: ropa2026"
                             />
                         </div>
                         <div className="space-y-2">

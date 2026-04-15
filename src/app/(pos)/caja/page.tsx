@@ -347,15 +347,6 @@ function StaffCajaView({
     const [actualAmount, setActualAmount] = useState("");
     const [isSaving, setIsSaving] = useState(false);
 
-    const salesCash = session.sales.reduce((acc, sale) => acc + Number(sale.cashAmount || 0), 0);
-    const manualIn = session.movements
-        .filter((m) => m.type === "INGRESO")
-        .reduce((acc, m) => acc + m.amount, 0);
-    const manualOut = session.movements
-        .filter((m) => m.type === "EGRESO")
-        .reduce((acc, m) => acc + m.amount, 0);
-    const expectedCash = Number(session.initialAmount) + salesCash + manualIn - manualOut;
-
     const handleConfirmClose = async () => {
         if (actualAmount === "" || isNaN(Number(actualAmount))) {
             return toast.error("Ingresá el monto real que contaste en la caja");
@@ -392,26 +383,11 @@ function StaffCajaView({
                                         locale: es,
                                     })}
                                 </p>
-                                <div className="mt-4 rounded-2xl bg-emerald-950/8 p-3">
-                                    <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/75 dark:text-emerald-100/75">
-                                        Efectivo esperado
-                                    </p>
-                                    <p className="mt-1 text-2xl font-semibold tracking-[-0.05em] text-foreground">
-                                        {formatCurrency(expectedCash)}
-                                    </p>
-                                </div>
                             </div>
                         }
                     />
 
-                    <div className="grid gap-4 md:grid-cols-3">
-                        <MetricCard
-                            label="Efectivo esperado"
-                            value={formatCurrency(expectedCash)}
-                            description="Lo que debería haber en caja según ventas y movimientos."
-                            icon={<Wallet className="size-5" />}
-                            tone="dark"
-                        />
+                    <div className="grid gap-4 md:grid-cols-2">
                         <MetricCard
                             label="Fondo inicial"
                             value={formatCurrency(session.initialAmount)}
@@ -434,19 +410,11 @@ function StaffCajaView({
                                     Resumen del cierre
                                 </CardTitle>
                                 <CardDescription>
-                                    Al final del turno contá el efectivo real y comparalo con el monto esperado.
+                                    Al final del turno contá el efectivo real para registrar el cierre.
                                 </CardDescription>
                             </CardHeader>
                             <CardContent>
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                    <div className="rounded-[1.4rem] border border-border/70 bg-muted/35 p-5 dark:border-white/10 dark:bg-white/5">
-                                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                                            Esperado por sistema
-                                        </p>
-                                        <p className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-foreground">
-                                            {formatCurrency(expectedCash)}
-                                        </p>
-                                    </div>
+                                <div className="grid gap-4">
                                     <div className="rounded-[1.4rem] border border-border/70 bg-muted/35 p-5 dark:border-white/10 dark:bg-white/5">
                                         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                                             Fondo inicial
@@ -484,7 +452,7 @@ function StaffCajaView({
                                     </Select>
                                 </div>
                                 <div className="rounded-2xl bg-muted/55 p-4 text-sm text-muted-foreground dark:bg-white/5">
-                                    El sistema espera {formatCurrency(expectedCash)} en efectivo.
+                                    Ingresá el efectivo contado para completar el arqueo.
                                 </div>
                                 <Button
                                     className="h-14 w-full text-lg text-white bg-slate-900 hover:bg-slate-800"
@@ -508,12 +476,6 @@ function StaffCajaView({
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-5 py-2">
-                        <div className="rounded-lg border border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.14),rgba(6,95,70,0.04))] p-4 flex justify-between items-center">
-                            <span className="text-emerald-900 dark:text-emerald-100 font-medium">El sistema espera:</span>
-                            <span className="text-2xl font-bold text-emerald-900 dark:text-emerald-100">
-                                {formatCurrency(expectedCash)}
-                            </span>
-                        </div>
                         <div className="space-y-2">
                             <Label className="text-base font-semibold">Efectivo Real (Contado por vos)</Label>
                             <div className="relative">

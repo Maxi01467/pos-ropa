@@ -20,12 +20,14 @@ export default async function POSLayout({
         }
 
         return (
-            <RouteGuard>
+            <>
                 <div className="pos-shell-background fixed inset-0 -z-10" />
                 <POSLayoutClient role={session.role} userName={session.userName}>
-                    {children}
+                    <RouteGuard>
+                        {children}
+                    </RouteGuard>
                 </POSLayoutClient>
-            </RouteGuard>
+            </>
         );
     } catch (error) {
         if (

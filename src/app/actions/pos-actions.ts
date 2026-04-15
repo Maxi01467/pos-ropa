@@ -2,8 +2,8 @@
 "use server";
 
 import { Prisma } from "@prisma/client";
-import { unstable_cache } from "next/cache";
-import { CACHE_TAGS } from "@/lib/cache-tags";
+import { } from "next/cache";
+import { CACHE_TAGS, unstable_cache } from "@/lib/cache-tags";
 import { prisma } from "@/lib/prisma";
 
 type POSProduct = {

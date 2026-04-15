@@ -124,6 +124,30 @@ html[data-pos-palette="green"] {
 }
 
 html.dark[data-pos-palette="green"] {
+  --palette-surface-gradient:
+    linear-gradient(180deg, color-mix(in oklch, var(--card) 92%, white 8%), color-mix(in oklch, var(--card) 94%, black 6%));
+  --card: oklch(0.17 0.035 165);
+  --card-foreground: oklch(0.97 0.015 155);
+  --popover: oklch(0.15 0.035 165);
+  --popover-foreground: oklch(0.97 0.015 155);
+  --primary: oklch(0.72 0.16 158);
+  --primary-foreground: oklch(0.12 0.035 165);
+  --secondary: oklch(0.23 0.045 160);
+  --secondary-foreground: oklch(0.94 0.025 155);
+  --muted: oklch(0.21 0.035 160);
+  --muted-foreground: oklch(0.76 0.045 155);
+  --accent: oklch(0.27 0.07 155);
+  --accent-foreground: oklch(0.96 0.03 150);
+  --border: oklch(0.32 0.05 160);
+  --input: oklch(0.28 0.045 160);
+  --ring: oklch(0.66 0.15 158);
+  --sidebar: oklch(0.16 0.03 165);
+  --sidebar-primary: oklch(0.72 0.16 158);
+  --sidebar-primary-foreground: oklch(0.12 0.035 165);
+  --sidebar-accent: oklch(0.25 0.055 158);
+  --sidebar-accent-foreground: oklch(0.96 0.03 150);
+  --sidebar-border: oklch(0.32 0.05 160);
+  --sidebar-ring: oklch(0.58 0.13 158);
   --pos-shell-background:
     radial-gradient(ellipse at top left, rgba(16, 185, 129, 0.24) 0%, transparent 48%),
     radial-gradient(ellipse at top right, rgba(21, 128, 61, 0.2) 0%, transparent 50%),
@@ -146,6 +170,30 @@ html[data-pos-palette="violet"] {
 }
 
 html.dark[data-pos-palette="violet"] {
+  --palette-surface-gradient:
+    linear-gradient(180deg, color-mix(in oklch, var(--card) 92%, white 8%), color-mix(in oklch, var(--card) 94%, black 6%));
+  --card: oklch(0.18 0.045 305);
+  --card-foreground: oklch(0.98 0.012 310);
+  --popover: oklch(0.15 0.05 305);
+  --popover-foreground: oklch(0.98 0.012 310);
+  --primary: oklch(0.72 0.19 310);
+  --primary-foreground: oklch(0.14 0.05 305);
+  --secondary: oklch(0.24 0.055 300);
+  --secondary-foreground: oklch(0.96 0.02 310);
+  --muted: oklch(0.22 0.045 300);
+  --muted-foreground: oklch(0.78 0.055 305);
+  --accent: oklch(0.29 0.085 302);
+  --accent-foreground: oklch(0.98 0.015 310);
+  --border: oklch(0.34 0.065 300);
+  --input: oklch(0.29 0.06 300);
+  --ring: oklch(0.68 0.18 310);
+  --sidebar: oklch(0.16 0.04 305);
+  --sidebar-primary: oklch(0.72 0.19 310);
+  --sidebar-primary-foreground: oklch(0.14 0.05 305);
+  --sidebar-accent: oklch(0.27 0.075 302);
+  --sidebar-accent-foreground: oklch(0.98 0.015 310);
+  --sidebar-border: oklch(0.34 0.065 300);
+  --sidebar-ring: oklch(0.62 0.16 310);
   --pos-shell-background:
     radial-gradient(ellipse at top left, rgba(217, 70, 239, 0.26) 0%, transparent 46%),
     radial-gradient(ellipse at top right, rgba(109, 40, 217, 0.24) 0%, transparent 52%),
@@ -168,6 +216,30 @@ html[data-pos-palette="lava"] {
 }
 
 html.dark[data-pos-palette="lava"] {
+  --palette-surface-gradient:
+    linear-gradient(180deg, color-mix(in oklch, var(--card) 92%, white 8%), color-mix(in oklch, var(--card) 94%, black 6%));
+  --card: oklch(0.17 0.045 32);
+  --card-foreground: oklch(0.98 0.014 55);
+  --popover: oklch(0.145 0.045 32);
+  --popover-foreground: oklch(0.98 0.014 55);
+  --primary: oklch(0.72 0.18 35);
+  --primary-foreground: oklch(0.14 0.045 28);
+  --secondary: oklch(0.24 0.055 35);
+  --secondary-foreground: oklch(0.97 0.02 55);
+  --muted: oklch(0.22 0.045 35);
+  --muted-foreground: oklch(0.78 0.055 50);
+  --accent: oklch(0.29 0.08 35);
+  --accent-foreground: oklch(0.98 0.02 55);
+  --border: oklch(0.34 0.065 35);
+  --input: oklch(0.29 0.055 35);
+  --ring: oklch(0.67 0.17 35);
+  --sidebar: oklch(0.155 0.04 32);
+  --sidebar-primary: oklch(0.72 0.18 35);
+  --sidebar-primary-foreground: oklch(0.14 0.045 28);
+  --sidebar-accent: oklch(0.27 0.07 35);
+  --sidebar-accent-foreground: oklch(0.98 0.02 55);
+  --sidebar-border: oklch(0.34 0.065 35);
+  --sidebar-ring: oklch(0.61 0.15 35);
   --pos-shell-background:
     radial-gradient(ellipse at top left, rgba(239, 68, 68, 0.28) 0%, transparent 46%),
     radial-gradient(ellipse at top right, rgba(249, 115, 22, 0.22) 0%, transparent 50%),
@@ -238,6 +310,49 @@ html.dark[data-pos-palette="lava"] {
 @layer components {
   .pos-shell-background {
     background-image: var(--pos-shell-background);
+  }
+
+  html.dark:is(
+      [data-pos-palette="green"],
+      [data-pos-palette="violet"],
+      [data-pos-palette="lava"]
+    ) :is(
+      [data-slot="card"],
+      [data-slot="dialog-content"],
+      [data-slot="sheet-content"],
+      [data-slot="dropdown-menu-content"],
+      [data-slot="dropdown-menu-sub-content"],
+      [data-slot="popover-content"],
+      [data-slot="select-content"]
+    ) {
+    background: var(--palette-surface-gradient) !important;
+    border-color: color-mix(in oklch, var(--border) 78%, white 22%) !important;
+    color: var(--card-foreground);
+  }
+
+  html.dark:is(
+      [data-pos-palette="green"],
+      [data-pos-palette="violet"],
+      [data-pos-palette="lava"]
+    ) :is(
+      [data-slot="input"],
+      [data-slot="textarea"],
+      [data-slot="select-trigger"]
+    ) {
+    background-color: color-mix(in oklch, var(--input) 76%, transparent) !important;
+    border-color: color-mix(in oklch, var(--border) 82%, white 18%) !important;
+  }
+
+  html.dark:is(
+      [data-pos-palette="green"],
+      [data-pos-palette="violet"],
+      [data-pos-palette="lava"]
+    ) :is(
+      [data-slot="table-row"],
+      [data-slot="dropdown-menu-item"],
+      [data-slot="select-item"]
+    ):hover {
+    background-color: color-mix(in oklch, var(--accent) 62%, transparent) !important;
   }
 }
 

@@ -209,28 +209,38 @@ export function renderReceiptHtml(data: ReceiptPrintData, isGift = false): strin
                 <title>Boleta ${data.ticketNumber}</title>
                 <style>
                     @page {
-                        size: 80mm auto;
                         margin: 0;
                     }
 
-                    html, body {
+                    * {
                         margin: 0;
                         padding: 0;
-                        background: #fff;
+                        box-sizing: border-box;
+                    }
+
+                    html {
+                        margin: 0;
+                        padding: 0;
+                        background: white;
+                        width: 100%;
+                        height: max-content;
                     }
 
                     body {
-                        font-family: "Courier New", monospace;
-                        color: #000;
+                        font-family: monospace;
+                        color: black;
+                        font-size: 11px;
+                        line-height: 1.2;
+                        width: 100%;
+                        max-width: 72mm;
+                        height: max-content;
+                        margin: 0;
+                        padding: 3mm 3mm 6mm 3mm;
                     }
 
                     .receipt {
-                        box-sizing: border-box;
-                        width: 72mm;
-                        margin: 0 auto;
-                        padding: 3mm 3mm 6mm;
-                        font-size: 11px;
-                        line-height: 1.25;
+                        width: 100%;
+                        height: max-content;
                     }
 
                     .center {

@@ -1,10 +1,16 @@
 {
   "name": "pos-ropa",
   "version": "0.1.0",
+  "main": "electron/main.cjs",
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "dev:web": "next dev",
+    "dev:desktop": "concurrently -k \"npm:dev:web\" \"npm:desktop\"",
+    "desktop": "wait-on http://localhost:3000 && cross-env ELECTRON_RENDERER_URL=http://localhost:3000 electron .",
+    "build": "next build --webpack",
+    "prisma:generate": "prisma generate",
+    "build:desktop": "npm run prisma:generate && npm run build && node scripts/prepare-desktop-build.cjs && electron-builder --win nsis",
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate",
@@ -18,7 +24,7 @@
     "lucide-react": "^0.577.0",
     "next": "16.1.6",
     "next-themes": "^0.4.6",
-    "qz-tray": "^2.2.5",
+    "pdf-to-printer": "^5.7.0",
     "radix-ui": "^1.4.3",
     "react": "19.2.3",
     "react-barcode": "^1.6.1",
@@ -32,6 +38,10 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^37.3.1",
+    "electron-builder": "^26.0.12",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "prisma": "^6.19.2",
@@ -39,6 +49,30 @@
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "tw-animate-css": "^1.4.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wait-on": "^9.0.3"
+  },
+  "build": {
+    "appId": "com.posropa.desktop",
+    "productName": "POS Ropa",
+    "asar": true,
+    "asarUnpack": [
+      ".next/standalone/**/*",
+      "prisma/**/*",
+      "node_modules/pdf-to-printer/**/*"
+    ],
+    "files": [
+      "electron/**/*",
+      ".next/standalone/**/*",
+      ".next/standalone/.next/**/*",
+      ".next/standalone/.env",
+      "prisma/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    }
   }
 }

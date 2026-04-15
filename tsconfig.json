@@ -30,5 +30,13 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "ui", "ui macos", "ui macos/**/*"]
+  "exclude": [
+    "node_modules",
+    ".next",
+    "dist",
+    "build",
+    "ui",
+    "ui macos",
+    "ui macos/**/*"
+  ]
 }

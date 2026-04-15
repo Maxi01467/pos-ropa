@@ -109,10 +109,10 @@ function ShellHeader({
 }) {
     const shellClassName =
         tone === "success"
-            ? "border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.16)_0%,rgba(255,255,255,0.98)_52%,rgba(6,95,70,0.08)_100%)]"
+            ? "border-emerald-900/15 bg-[linear-gradient(135deg,rgba(236,253,245,0.96)_0%,rgba(255,255,255,0.98)_48%,rgba(209,250,229,0.72)_100%)] dark:border-emerald-400/15 dark:bg-[linear-gradient(135deg,rgba(6,78,59,0.58)_0%,rgba(15,23,42,0.94)_52%,rgba(5,150,105,0.18)_100%)]"
             : tone === "warning"
-              ? "border-orange-900/20 bg-[linear-gradient(135deg,rgba(234,88,12,0.18)_0%,rgba(255,255,255,0.98)_52%,rgba(194,65,12,0.08)_100%)]"
-              : "border-border/70 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_48%,#f6f8fb_100%)]";
+              ? "border-amber-900/15 bg-[linear-gradient(135deg,rgba(255,247,237,0.98)_0%,rgba(255,255,255,0.98)_48%,rgba(254,215,170,0.68)_100%)] dark:border-amber-400/15 dark:bg-[linear-gradient(135deg,rgba(120,53,15,0.58)_0%,rgba(15,23,42,0.94)_52%,rgba(245,158,11,0.16)_100%)]"
+              : "border-border/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.96)_48%,rgba(241,245,249,0.92)_100%)] dark:border-white/10 dark:bg-[linear-gradient(135deg,rgba(30,41,59,0.94)_0%,rgba(15,23,42,0.96)_48%,rgba(2,6,23,0.98)_100%)]";
 
     return (
         <div className={cn("rounded-[1.5rem] border px-4 py-4 shadow-sm sm:px-5", shellClassName)}>
@@ -150,21 +150,21 @@ function MetricCard({
 }) {
     const toneClassName =
         tone === "success"
-            ? "border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.14),rgba(6,95,70,0.04))]"
+            ? "border-emerald-900/15 bg-[linear-gradient(135deg,rgba(236,253,245,0.96),rgba(209,250,229,0.72))] dark:border-emerald-400/15 dark:bg-[linear-gradient(135deg,rgba(6,78,59,0.48),rgba(5,150,105,0.16))]"
             : tone === "danger"
-              ? "border-rose-900/20 bg-[linear-gradient(135deg,rgba(225,29,72,0.14),rgba(159,18,57,0.04))]"
-              : tone === "dark"
-                ? "border-slate-800/90 bg-slate-950 text-white"
-                : "border-border/70 bg-card/90";
+              ? "border-rose-900/15 bg-[linear-gradient(135deg,rgba(255,241,242,0.98),rgba(255,228,230,0.78))] dark:border-rose-400/15 dark:bg-[linear-gradient(135deg,rgba(76,5,25,0.54),rgba(190,24,93,0.14))]"
+            : tone === "dark"
+                ? "border-slate-800/80 bg-[linear-gradient(135deg,rgba(15,23,42,0.98),rgba(30,41,59,0.96))] text-white dark:border-slate-700/70 dark:bg-[linear-gradient(135deg,rgba(2,6,23,0.98),rgba(15,23,42,0.96))]"
+                : "border-border/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] dark:border-white/10 dark:bg-[linear-gradient(135deg,rgba(30,41,59,0.9),rgba(15,23,42,0.96))]";
 
     const iconClassName =
         tone === "success"
-            ? "bg-emerald-900 text-emerald-100"
+            ? "bg-emerald-900 text-emerald-100 dark:bg-emerald-400/15 dark:text-emerald-100"
             : tone === "danger"
-              ? "bg-rose-900 text-rose-100"
+              ? "bg-rose-900 text-rose-100 dark:bg-rose-400/15 dark:text-rose-100"
               : tone === "dark"
                 ? "bg-white/10 text-white"
-                : "bg-muted text-foreground";
+                : "bg-slate-900 text-slate-100 dark:bg-white/10 dark:text-white";
 
     const labelClassName = tone === "dark" ? "text-white/65" : "text-muted-foreground";
     const valueClassName = tone === "dark" ? "text-white" : "text-foreground";
@@ -233,13 +233,13 @@ function AbrirCajaView({
                     description=""
                     tone="warning"
                     aside={
-                        <div className="rounded-[1.25rem] border border-orange-900/20 bg-[linear-gradient(135deg,rgba(234,88,12,0.12),rgba(255,255,255,0.92))] p-4 shadow-sm">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-orange-800/80 dark:text-orange-100/80">
+                        <div className="rounded-[1.25rem] border border-amber-900/15 bg-[linear-gradient(135deg,rgba(255,247,237,0.98),rgba(255,255,255,0.94))] p-4 shadow-sm dark:border-amber-400/15 dark:bg-[linear-gradient(135deg,rgba(120,53,15,0.52),rgba(15,23,42,0.88))]">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-800/80 dark:text-amber-100/80">
                                 Estado actual
                             </p>
                             <div className="mt-3 flex items-center gap-3">
-                                <div className="rounded-2xl bg-orange-900 p-2.5">
-                                    <LockKeyhole className="size-5 text-orange-100" />
+                                <div className="rounded-2xl bg-amber-900 p-2.5 dark:bg-amber-400/15">
+                                    <LockKeyhole className="size-5 text-amber-100 dark:text-amber-100" />
                                 </div>
                                 <div>
                                     <p className="text-lg font-semibold text-foreground">Caja cerrada</p>
@@ -259,7 +259,7 @@ function AbrirCajaView({
                         ].map(([step, title, description]) => (
                             <Card
                                 key={step}
-                                className="rounded-[1.55rem] border-border/70 bg-card/90 shadow-sm"
+                                className="rounded-[1.55rem] border-border/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-sm dark:border-white/10 dark:bg-[linear-gradient(135deg,rgba(30,41,59,0.9),rgba(15,23,42,0.96))]"
                             >
                                 <CardContent className="p-5">
                                     <div className="text-3xl font-semibold tracking-[-0.08em] text-muted-foreground/40">
@@ -272,7 +272,7 @@ function AbrirCajaView({
                         ))}
                     </div>
 
-                    <Card className="rounded-[1.75rem] border-border/70 bg-card/92 shadow-sm">
+                    <Card className="rounded-[1.75rem] border-border/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-sm dark:border-white/10 dark:bg-[linear-gradient(135deg,rgba(30,41,59,0.9),rgba(15,23,42,0.96))]">
                         <CardHeader className="pb-2">
                             <CardTitle className="text-2xl tracking-[-0.05em]">
                                 Abrir caja
@@ -378,7 +378,7 @@ function StaffCajaView({
                         description=""
                         tone="success"
                         aside={
-                            <div className="rounded-[1.25rem] border border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.12),rgba(255,255,255,0.92))] p-4 shadow-sm">
+                            <div className="rounded-[1.25rem] border border-emerald-900/15 bg-[linear-gradient(135deg,rgba(236,253,245,0.98),rgba(255,255,255,0.94))] p-4 shadow-sm dark:border-emerald-400/15 dark:bg-[linear-gradient(135deg,rgba(6,78,59,0.52),rgba(15,23,42,0.88))]">
                                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-800/80 dark:text-emerald-100/80">
                                     Apertura
                                 </p>
@@ -426,7 +426,7 @@ function StaffCajaView({
                     </div>
 
                     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-                        <Card className="rounded-[1.75rem] border-border/70 bg-card/92 shadow-sm">
+                        <Card className="rounded-[1.75rem] border-border/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-sm dark:border-white/10 dark:bg-[linear-gradient(135deg,rgba(30,41,59,0.9),rgba(15,23,42,0.96))]">
                             <CardHeader className="pb-2">
                                 <CardTitle className="text-2xl tracking-[-0.05em]">
                                     Resumen del cierre
@@ -437,7 +437,7 @@ function StaffCajaView({
                             </CardHeader>
                             <CardContent>
                                 <div className="grid gap-4 sm:grid-cols-2">
-                                    <div className="rounded-[1.4rem] border border-border/70 bg-muted/35 p-5">
+                                    <div className="rounded-[1.4rem] border border-border/70 bg-muted/35 p-5 dark:border-white/10 dark:bg-white/5">
                                         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                                             Esperado por sistema
                                         </p>
@@ -445,7 +445,7 @@ function StaffCajaView({
                                             {formatCurrency(expectedCash)}
                                         </p>
                                     </div>
-                                    <div className="rounded-[1.4rem] border border-border/70 bg-muted/35 p-5">
+                                    <div className="rounded-[1.4rem] border border-border/70 bg-muted/35 p-5 dark:border-white/10 dark:bg-white/5">
                                         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                                             Fondo inicial
                                         </p>
@@ -456,7 +456,7 @@ function StaffCajaView({
                                 </div>
                             </CardContent>
                         </Card>
-                        <Card className="rounded-[1.75rem] border-border/70 bg-card/92">
+                        <Card className="rounded-[1.75rem] border-border/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-sm dark:border-white/10 dark:bg-[linear-gradient(135deg,rgba(30,41,59,0.9),rgba(15,23,42,0.96))]">
                             <CardHeader className="pb-2">
                                 <CardTitle className="text-2xl tracking-[-0.05em]">
                                     Cierre de turno
@@ -481,7 +481,7 @@ function StaffCajaView({
                                         </SelectContent>
                                     </Select>
                                 </div>
-                                <div className="rounded-2xl bg-muted/55 p-4 text-sm text-muted-foreground">
+                                <div className="rounded-2xl bg-muted/55 p-4 text-sm text-muted-foreground dark:bg-white/5">
                                     El sistema espera {formatCurrency(expectedCash)} en efectivo.
                                 </div>
                                 <Button
@@ -633,7 +633,7 @@ function AdminCajaView({
                         description=""
                         tone="success"
                         aside={
-                            <div className="rounded-[1.25rem] border border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.12),rgba(255,255,255,0.92))] p-4 shadow-sm">
+                            <div className="rounded-[1.25rem] border border-emerald-900/15 bg-[linear-gradient(135deg,rgba(236,253,245,0.98),rgba(255,255,255,0.94))] p-4 shadow-sm dark:border-emerald-400/15 dark:bg-[linear-gradient(135deg,rgba(6,78,59,0.52),rgba(15,23,42,0.88))]">
                                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-800/80 dark:text-emerald-100/80">
                                     Apertura
                                 </p>
@@ -655,7 +655,7 @@ function AdminCajaView({
                         }
                     />
 
-                    <Card className="rounded-[1.75rem] border-emerald-800/20 bg-[linear-gradient(90deg,rgba(5,150,105,0.16),rgba(255,255,255,0.95),rgba(225,29,72,0.08))] shadow-sm">
+                    <Card className="rounded-[1.75rem] border-border/70 bg-[linear-gradient(135deg,rgba(240,253,250,0.98),rgba(255,255,255,0.96),rgba(255,241,242,0.9))] shadow-sm dark:border-white/10 dark:bg-[linear-gradient(135deg,rgba(6,78,59,0.28),rgba(15,23,42,0.96),rgba(76,5,25,0.26))]">
                         <CardContent className="p-4 sm:p-5">
                             <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                                 <div>
@@ -666,7 +666,7 @@ function AdminCajaView({
                                         Ingreso y retiro al alcance, sin perderlos de vista.
                                     </p>
                                 </div>
-                                <div className="rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow-sm">
+                                <div className="rounded-full bg-white/90 px-4 py-2 text-sm font-medium text-slate-700 shadow-sm dark:bg-white/10 dark:text-slate-100">
                                     Efectivo esperado:{" "}
                                     <span className="font-bold text-emerald-800 dark:text-emerald-100">{formatCurrency(expectedCash)}</span>
                                 </div>
@@ -674,34 +674,34 @@ function AdminCajaView({
                             <div className="grid gap-3 md:grid-cols-2">
                                 <Button
                                     variant="outline"
-                                    className="h-20 justify-start gap-4 border-rose-900/20 bg-white text-left text-rose-700 shadow-sm hover:bg-rose-950/6"
+                                    className="h-20 justify-start gap-4 border-rose-900/15 bg-[linear-gradient(135deg,rgba(255,241,242,0.98),rgba(255,255,255,0.96))] text-left text-rose-700 shadow-sm hover:bg-rose-950/6 dark:border-rose-400/15 dark:bg-[linear-gradient(135deg,rgba(76,5,25,0.54),rgba(15,23,42,0.9))] dark:text-rose-100"
                                     onClick={() => {
                                         setMovementType("EGRESO");
                                         setMovementDialogOpen(true);
                                     }}
                                 >
-                                    <div className="rounded-full bg-rose-900 p-2.5">
-                                        <ArrowDownCircle className="size-6 text-rose-100" />
-                                    </div>
+                                        <div className="rounded-full bg-rose-900 p-2.5 dark:bg-rose-400/15">
+                                            <ArrowDownCircle className="size-6 text-rose-100 dark:text-rose-100" />
+                                        </div>
                                     <div className="flex flex-col items-start">
                                         <span className="text-base font-bold">Retirar dinero</span>
-                                        <span className="text-xs text-rose-700/80">Pagos, gastos o retiros de caja</span>
+                                        <span className="text-xs text-rose-700/80 dark:text-rose-100/80">Pagos, gastos o retiros de caja</span>
                                     </div>
                                 </Button>
                                 <Button
                                     variant="outline"
-                                    className="h-20 justify-start gap-4 border-emerald-800/20 bg-white text-left text-emerald-700 shadow-sm hover:bg-emerald-950/6"
+                                    className="h-20 justify-start gap-4 border-emerald-900/15 bg-[linear-gradient(135deg,rgba(236,253,245,0.98),rgba(255,255,255,0.96))] text-left text-emerald-700 shadow-sm hover:bg-emerald-950/6 dark:border-emerald-400/15 dark:bg-[linear-gradient(135deg,rgba(6,78,59,0.54),rgba(15,23,42,0.9))] dark:text-emerald-100"
                                     onClick={() => {
                                         setMovementType("INGRESO");
                                         setMovementDialogOpen(true);
                                     }}
                                 >
-                                    <div className="rounded-full bg-emerald-900 p-2.5">
-                                        <ArrowUpCircle className="size-6 text-emerald-100" />
-                                    </div>
+                                        <div className="rounded-full bg-emerald-900 p-2.5 dark:bg-emerald-400/15">
+                                            <ArrowUpCircle className="size-6 text-emerald-100 dark:text-emerald-100" />
+                                        </div>
                                     <div className="flex flex-col items-start">
                                         <span className="text-base font-bold">Ingresar dinero</span>
-                                        <span className="text-xs text-emerald-700/80">
+                                        <span className="text-xs text-emerald-700/80 dark:text-emerald-100/80">
                                             Cambio extra, reposiciones o ingresos
                                         </span>
                                     </div>
@@ -741,7 +741,7 @@ function AdminCajaView({
                     </div>
 
                     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-                        <Card className="rounded-[1.75rem] border-border/70 bg-card/92 shadow-sm">
+                        <Card className="rounded-[1.75rem] border-border/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-sm dark:border-white/10 dark:bg-[linear-gradient(135deg,rgba(30,41,59,0.9),rgba(15,23,42,0.96))]">
                             <CardHeader>
                                 <CardTitle className="flex items-center gap-2">
                                     <History className="size-5 text-muted-foreground" />
@@ -762,7 +762,7 @@ function AdminCajaView({
                                         {session.movements.map((mov) => (
                                             <div
                                                 key={mov.id}
-                                                className="flex items-center justify-between rounded-2xl border border-border/70 bg-background/75 p-4"
+                                                className="flex items-center justify-between rounded-2xl border border-border/70 bg-background/85 p-4 dark:border-white/10 dark:bg-white/5"
                                             >
                                                 <div className="flex items-center gap-3">
                                                     {mov.type === "INGRESO" ? (
@@ -795,7 +795,7 @@ function AdminCajaView({
                             </CardContent>
                         </Card>
 
-                        <Card className="h-fit rounded-[1.75rem] border-slate-200 bg-slate-50 shadow-sm">
+                        <Card className="h-fit rounded-[1.75rem] border-border/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-sm dark:border-white/10 dark:bg-[linear-gradient(135deg,rgba(30,41,59,0.9),rgba(15,23,42,0.96))]">
                             <CardHeader>
                                 <CardTitle>Cierre de turno</CardTitle>
                                 <CardDescription>
@@ -803,7 +803,7 @@ function AdminCajaView({
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
-                                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                                <div className="rounded-xl border border-border/70 bg-white/90 p-4 dark:border-white/10 dark:bg-white/5">
                                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                                         Resumen previo
                                     </p>

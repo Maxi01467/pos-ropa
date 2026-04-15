@@ -38,8 +38,16 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname === "/login") {
+    if (session.role === "STAFF" && session.clientType !== "desktop") {
+      return NextResponse.next();
+    }
+
     const destination = session.role === "ADMIN" ? "/" : "/nueva-venta";
     return NextResponse.redirect(new URL(destination, request.url));
+  }
+
+  if (session.role === "STAFF" && session.clientType !== "desktop") {
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 
   if (session.role === "STAFF" && pathname === "/") {

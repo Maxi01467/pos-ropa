@@ -6,9 +6,12 @@ import {
     getInventoryData, 
     createProduct, 
     updateProduct, 
-    deleteProduct 
+    deleteProduct,
+    markProductReviewed,
 } from "@/app/actions/inventory-actions";
 import {
+    AlertCircle,
+    CheckCheck,
     Package,
     Plus,
     Search,
@@ -24,6 +27,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     Dialog,
     DialogContent,
@@ -41,6 +45,13 @@ export interface DBProduct {
     id: string;
     code: string;
     name: string;
+    quickCreated: boolean;
+    pendingReview: boolean;
+    quickCreatedAt?: string;
+    quickCreatedByName?: string;
+    quickCreatedByRole?: string;
+    reviewedAt?: string;
+    reviewedByName?: string;
     price: number;
     wholesalePrice: number;
     costPrice?: number;
@@ -59,6 +70,8 @@ function formatCurrency(amount: number): string {
     }).format(amount);
 }
 
+const CATALOG_ITEMS_PER_PAGE = 6;
+
 export default function InventarioPage() {
     // Estados de base de datos
     const [products, setProducts] = useState<DBProduct[]>([]);
@@ -66,6 +79,8 @@ export default function InventarioPage() {
     const [isSaving, setIsSaving] = useState(false);
 
     const [searchQuery, setSearchQuery] = useState("");
+    const [activeTab, setActiveTab] = useState("catalogo");
+    const [currentPage, setCurrentPage] = useState(1);
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<DBProduct | null>(null);
 
@@ -92,7 +107,10 @@ export default function InventarioPage() {
         void loadData();
     }, [loadData]);
 
-    useDataRefresh([CACHE_TAGS.inventory, CACHE_TAGS.stock, CACHE_TAGS.posProducts], loadData);
+    useDataRefresh(
+        [CACHE_TAGS.inventory, CACHE_TAGS.stock, CACHE_TAGS.posProducts, CACHE_TAGS.quickCreations],
+        loadData
+    );
 
     const resetForm = () => {
         setFormName("");
@@ -161,6 +179,9 @@ export default function InventarioPage() {
                                 ? {
                                       ...product,
                                       name: updatedProduct.name,
+                                      pendingReview: updatedProduct.pendingReview,
+                                      reviewedAt: updatedProduct.reviewedAt?.toISOString(),
+                                      reviewedByName: updatedProduct.reviewedByName ?? undefined,
                                       price: Number(updatedProduct.priceNormal),
                                       wholesalePrice: Number(updatedProduct.priceWholesale),
                                       costPrice: updatedProduct.costPrice
@@ -180,6 +201,8 @@ export default function InventarioPage() {
                             id: createdProduct.id,
                             code: createdProduct.id.slice(-6).toUpperCase(),
                             name: createdProduct.name,
+                            quickCreated: false,
+                            pendingReview: false,
                             price: Number(createdProduct.priceNormal),
                             wholesalePrice: Number(createdProduct.priceWholesale),
                             costPrice: createdProduct.costPrice
@@ -195,12 +218,42 @@ export default function InventarioPage() {
 
             setDialogOpen(false);
             resetForm();
-            notifyDataUpdated([CACHE_TAGS.inventory, CACHE_TAGS.stock, CACHE_TAGS.posProducts]);
+            notifyDataUpdated([
+                CACHE_TAGS.inventory,
+                CACHE_TAGS.stock,
+                CACHE_TAGS.posProducts,
+                CACHE_TAGS.quickCreations,
+            ]);
         } catch (error) {
             toast.error("Hubo un error al guardar");
             console.error(error);
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const handleMarkReviewed = async (product: DBProduct) => {
+        try {
+            const reviewedProduct = await markProductReviewed(product.id);
+            setProducts((current) =>
+                sortProducts(
+                    current.map((item) =>
+                        item.id === reviewedProduct.id
+                            ? {
+                                  ...item,
+                                  pendingReview: reviewedProduct.pendingReview,
+                                  reviewedAt: reviewedProduct.reviewedAt?.toISOString(),
+                                  reviewedByName: reviewedProduct.reviewedByName ?? undefined,
+                              }
+                            : item
+                    )
+                )
+            );
+            notifyDataUpdated([CACHE_TAGS.inventory, CACHE_TAGS.quickCreations]);
+            toast.success("Producto marcado como revisado");
+        } catch (error) {
+            toast.error("No se pudo marcar como revisado");
+            console.error(error);
         }
     };
 
@@ -210,7 +263,12 @@ export default function InventarioPage() {
         try {
             await deleteProduct(product.id);
             setProducts((prev) => prev.filter((p) => p.id !== product.id));
-            notifyDataUpdated([CACHE_TAGS.inventory, CACHE_TAGS.stock, CACHE_TAGS.posProducts]);
+            notifyDataUpdated([
+                CACHE_TAGS.inventory,
+                CACHE_TAGS.stock,
+                CACHE_TAGS.posProducts,
+                CACHE_TAGS.quickCreations,
+            ]);
             toast.success("Producto eliminado", { description: product.name });
         } catch {
             toast.error("Error al eliminar el producto");
@@ -228,8 +286,32 @@ export default function InventarioPage() {
         });
     }, [products, searchQuery]);
 
+    const pendingProducts = useMemo(
+        () => filteredProducts.filter((product) => product.pendingReview),
+        [filteredProducts]
+    );
+    const totalCatalogPages = Math.max(
+        1,
+        Math.ceil(filteredProducts.length / CATALOG_ITEMS_PER_PAGE)
+    );
+    const paginatedProducts = useMemo(() => {
+        const start = (currentPage - 1) * CATALOG_ITEMS_PER_PAGE;
+        return filteredProducts.slice(start, start + CATALOG_ITEMS_PER_PAGE);
+    }, [currentPage, filteredProducts]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [activeTab, searchQuery]);
+
+    useEffect(() => {
+        if (currentPage > totalCatalogPages) {
+            setCurrentPage(totalCatalogPages);
+        }
+    }, [currentPage, totalCatalogPages]);
+
     // Stats
     const totalProducts = products.length;
+    const pendingCount = products.filter((product) => product.pendingReview).length;
     const avgPrice =
         products.length > 0
             ? products.reduce((s, p) => s + p.price, 0) / products.length
@@ -328,115 +410,270 @@ export default function InventarioPage() {
             </div>
 
             {/* Filters */}
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row">
-                <div className="relative flex-1 max-w-md">
-                    <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                        placeholder="Buscar por nombre o código..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="h-11 pl-10"
-                    />
-                </div>
-            </div>
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
+                <TabsList className="w-full justify-start sm:w-fit">
+                    <TabsTrigger value="catalogo">Catálogo</TabsTrigger>
+                    <TabsTrigger value="pendientes">
+                        Pendientes
+                        {pendingCount > 0 && (
+                            <Badge className="ml-1 rounded-full bg-amber-600 px-2 py-0 text-[10px] text-white">
+                                {pendingCount}
+                            </Badge>
+                        )}
+                    </TabsTrigger>
+                </TabsList>
 
-            {/* Product List */}
-            {filteredProducts.length === 0 ? (
-                <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed py-20 text-center">
-                    <Package className="mb-4 size-16 text-muted-foreground/30" />
-                    <p className="text-xl font-medium text-muted-foreground">
-                        {searchQuery
-                            ? "No se encontraron productos"
-                            : "Sin productos aún"}
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground/70">
-                        {searchQuery
-                            ? "Probá con otros filtros"
-                            : "Creá tu primer producto para empezar"}
-                    </p>
-                    {!searchQuery && (
-                        <Button className="mt-6 gap-2" size="lg" onClick={handleOpenNew}>
-                            <Plus className="size-5" />
-                            Nuevo Producto
-                        </Button>
+                <div className="mb-4 mt-4 flex flex-col gap-3 sm:flex-row">
+                    <div className="relative flex-1 max-w-md">
+                        <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                            placeholder={
+                                activeTab === "pendientes"
+                                    ? "Buscar pendiente por nombre o código..."
+                                    : "Buscar por nombre o código..."
+                            }
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="h-11 pl-10"
+                        />
+                    </div>
+                </div>
+
+                <TabsContent value="catalogo">
+                    {filteredProducts.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed py-20 text-center">
+                            <Package className="mb-4 size-16 text-muted-foreground/30" />
+                            <p className="text-xl font-medium text-muted-foreground">
+                                {searchQuery
+                                    ? "No se encontraron productos"
+                                    : "Sin productos aún"}
+                            </p>
+                            <p className="mt-1 text-sm text-muted-foreground/70">
+                                {searchQuery
+                                    ? "Probá con otros filtros"
+                                    : "Creá tu primer producto para empezar"}
+                            </p>
+                            {!searchQuery && (
+                                <Button className="mt-6 gap-2" size="lg" onClick={handleOpenNew}>
+                                    <Plus className="size-5" />
+                                    Nuevo Producto
+                                </Button>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                                {paginatedProducts.map((product) => (
+                                    <Card
+                                        key={product.id}
+                                        className="group rounded-[1.5rem] border-border/70 bg-card/92 transition-all duration-200 hover:shadow-md"
+                                    >
+                                        <CardContent className="p-4">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="truncate text-base font-semibold">
+                                                        {product.name}
+                                                    </p>
+                                                    <p className="mt-0.5 text-xs text-muted-foreground">
+                                                        {product.code}
+                                                    </p>
+                                                </div>
+                                                <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon-sm"
+                                                        onClick={() => handleOpenEdit(product)}
+                                                        className="text-muted-foreground hover:text-foreground"
+                                                    >
+                                                        <Pencil className="size-3.5" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon-sm"
+                                                        onClick={() => handleDelete(product)}
+                                                        className="text-muted-foreground hover:text-destructive"
+                                                    >
+                                                        <Trash2 className="size-3.5" />
+                                                    </Button>
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-3 flex items-baseline justify-between">
+                                                <div className="space-y-1">
+                                                    <span className="block text-lg font-bold">
+                                                        Venta: {formatCurrency(product.price)}
+                                                    </span>
+                                                    <span className="block text-sm font-medium text-blue-600">
+                                                        Mayorista:{" "}
+                                                        {formatCurrency(product.wholesalePrice)}
+                                                    </span>
+                                                </div>
+                                                <span className="text-sm text-muted-foreground">
+                                                    {product.costPrice
+                                                        ? `Costo: ${formatCurrency(product.costPrice)}`
+                                                        : "Costo sin definir"}
+                                                </span>
+                                            </div>
+
+                                            {product.costPrice && (
+                                                <p className="mt-1 text-xs font-medium text-emerald-600">
+                                                    Margen:{" "}
+                                                    {(
+                                                        ((product.price - product.costPrice) /
+                                                            product.costPrice) *
+                                                        100
+                                                    ).toFixed(0)}
+                                                    %
+                                                </p>
+                                            )}
+
+                                            <div className="mt-3 flex flex-wrap gap-1.5">
+                                                <Badge variant="outline" className="text-xs">
+                                                    Stock: {product.stock}
+                                                </Badge>
+                                                {product.pendingReview && (
+                                                    <Badge className="text-xs bg-amber-600 text-white">
+                                                        Pendiente
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                ))}
+                            </div>
+
+                            <div className="flex flex-col gap-3 rounded-[1.25rem] border border-border/70 bg-card/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                <p className="text-sm text-muted-foreground">
+                                    Página {currentPage} de {totalCatalogPages} · {filteredProducts.length} producto(s)
+                                </p>
+                                <div className="flex gap-2">
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                                        disabled={currentPage === 1}
+                                    >
+                                        Anterior
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        onClick={() =>
+                                            setCurrentPage((page) => Math.min(totalCatalogPages, page + 1))
+                                        }
+                                        disabled={currentPage === totalCatalogPages}
+                                    >
+                                        Siguiente
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
                     )}
-                </div>
-            ) : (
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {filteredProducts.map((product) => (
-                        <Card
-                            key={product.id}
-                            className="group rounded-[1.5rem] border-border/70 bg-card/92 transition-all duration-200 hover:shadow-md"
-                        >
-                            <CardContent className="p-4">
-                                <div className="flex items-start justify-between gap-2">
-                                    <div className="min-w-0 flex-1">
-                                        <p className="truncate text-base font-semibold">
-                                            {product.name}
-                                        </p>
-                                        <p className="mt-0.5 text-xs text-muted-foreground">
-                                            {product.code}
-                                        </p>
-                                    </div>
-                                    <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                                        <Button
-                                            variant="ghost"
-                                            size="icon-sm"
-                                            onClick={() => handleOpenEdit(product)}
-                                            className="text-muted-foreground hover:text-foreground"
-                                        >
-                                            <Pencil className="size-3.5" />
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon-sm"
-                                            onClick={() => handleDelete(product)}
-                                            className="text-muted-foreground hover:text-destructive"
-                                        >
-                                            <Trash2 className="size-3.5" />
-                                        </Button>
-                                    </div>
-                                </div>
+                </TabsContent>
 
-                                <div className="mt-3 flex items-baseline justify-between">
-                                    <div className="space-y-1">
-                                        <span className="block text-lg font-bold">
-                                            Venta: {formatCurrency(product.price)}
-                                        </span>
-                                        <span className="block text-sm font-medium text-blue-600">
-                                            Mayorista:{" "}
-                                            {formatCurrency(product.wholesalePrice)}
-                                        </span>
-                                    </div>
-                                    <span className="text-sm text-muted-foreground">
-                                        {product.costPrice
-                                            ? `Costo: ${formatCurrency(product.costPrice)}`
-                                            : "Costo sin definir"}
-                                    </span>
-                                </div>
+                <TabsContent value="pendientes">
+                    {pendingProducts.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed py-20 text-center">
+                            <CheckCheck className="mb-4 size-16 text-muted-foreground/30" />
+                            <p className="text-xl font-medium text-muted-foreground">
+                                {searchQuery
+                                    ? "No hay pendientes con esa búsqueda"
+                                    : "No hay productos pendientes de revisión"}
+                            </p>
+                            <p className="mt-1 text-sm text-muted-foreground/70">
+                                Todo lo creado rápido por staff ya fue revisado.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="grid gap-3 xl:grid-cols-2">
+                            {pendingProducts.map((product) => (
+                                <Card
+                                    key={product.id}
+                                    className="rounded-[1.5rem] border-amber-900/20 bg-[linear-gradient(135deg,rgba(245,158,11,0.12),rgba(120,53,15,0.04))] shadow-sm"
+                                >
+                                    <CardContent className="p-5">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                    <AlertCircle className="size-4 text-amber-700" />
+                                                    <p className="truncate text-base font-semibold">
+                                                        {product.name}
+                                                    </p>
+                                                </div>
+                                                <p className="mt-1 text-xs text-muted-foreground">
+                                                    Código: {product.code}
+                                                </p>
+                                            </div>
+                                            <Badge className="bg-amber-600 text-white">
+                                                Pendiente
+                                            </Badge>
+                                        </div>
 
-                                {product.costPrice && (
-                                    <p className="mt-1 text-xs font-medium text-emerald-600">
-                                        Margen:{" "}
-                                        {(
-                                            ((product.price - product.costPrice) /
-                                                product.costPrice) *
-                                            100
-                                        ).toFixed(0)}
-                                        %
-                                    </p>
-                                )}
+                                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                            <div>
+                                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                                    Creado por
+                                                </p>
+                                                <p className="mt-1 text-sm font-medium text-foreground">
+                                                    {product.quickCreatedByName ?? "Sistema"}
+                                                </p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {product.quickCreatedByRole ?? "STAFF"}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                                    Fecha
+                                                </p>
+                                                <p className="mt-1 text-sm font-medium text-foreground">
+                                                    {product.quickCreatedAt
+                                                        ? new Date(product.quickCreatedAt).toLocaleString("es-AR")
+                                                        : "—"}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                                    Precios
+                                                </p>
+                                                <p className="mt-1 text-sm font-medium text-foreground">
+                                                    Venta: {formatCurrency(product.price)}
+                                                </p>
+                                                <p className="text-xs text-blue-600">
+                                                    Mayorista: {formatCurrency(product.wholesalePrice)}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                                    Stock inicial
+                                                </p>
+                                                <p className="mt-1 text-sm font-medium text-foreground">
+                                                    {product.stock} unidad(es)
+                                                </p>
+                                            </div>
+                                        </div>
 
-                                <div className="mt-3 flex flex-wrap gap-1.5">
-                                    <Badge variant="outline" className="text-xs">
-                                        Stock: {product.stock}
-                                    </Badge>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ))}
-                </div>
-            )}
+                                        <div className="mt-4 flex flex-wrap gap-2">
+                                            <Button
+                                                variant="outline"
+                                                className="gap-2"
+                                                onClick={() => handleOpenEdit(product)}
+                                            >
+                                                <Pencil className="size-4" />
+                                                Revisar y editar
+                                            </Button>
+                                            <Button
+                                                className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+                                                onClick={() => handleMarkReviewed(product)}
+                                            >
+                                                <CheckCheck className="size-4" />
+                                                Marcar revisado
+                                            </Button>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </div>
+                    )}
+                </TabsContent>
+            </Tabs>
 
             {/* Create/Edit Dialog */}
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

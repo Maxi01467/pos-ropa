@@ -2,7 +2,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Store, Loader2, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,14 +14,22 @@ export default function LoginPage() {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [isLoading, setIsLoading] = useState(false);
-    const router = useRouter();
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
 
         try {
-            const user = await authenticateUser(username, password);
+            const result = await authenticateUser(username, password);
+
+            if (!result.success || !result.user) {
+                toast.error(result.error || "No se pudo iniciar sesión");
+                setIsLoading(false);
+                return;
+            }
+
+            const user = result.user;
+            const destination = user.role === "ADMIN" ? "/" : "/nueva-venta";
 
             localStorage.setItem("pos_session", "true");
             localStorage.setItem("pos_user", user.name);
@@ -30,7 +37,7 @@ export default function LoginPage() {
             localStorage.setItem("pos_role", user.role);
 
             toast.success("¡Acceso concedido!");
-            router.push(user.role === "ADMIN" ? "/" : "/nueva-venta");
+            window.location.assign(destination);
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : "No se pudo iniciar sesión";

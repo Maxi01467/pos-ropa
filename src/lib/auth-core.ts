@@ -7,6 +7,7 @@ export type AuthSession = {
   userId: string;
   userName: string;
   role: SessionRole;
+  clientType: "desktop" | "web";
 };
 
 type AuthTokenPayload = AuthSession & {
@@ -85,6 +86,7 @@ export async function verifySessionToken(token: string | undefined) {
       !payload.userId ||
       !payload.userName ||
       (payload.role !== "ADMIN" && payload.role !== "STAFF") ||
+      (payload.clientType !== "desktop" && payload.clientType !== "web") ||
       payload.exp <= Date.now()
     ) {
       return null;
@@ -94,6 +96,7 @@ export async function verifySessionToken(token: string | undefined) {
       userId: payload.userId,
       userName: payload.userName,
       role: payload.role,
+      clientType: payload.clientType,
     } satisfies AuthSession;
   } catch {
     return null;

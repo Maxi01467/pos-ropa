@@ -5,6 +5,7 @@ export const CACHE_TAGS = {
   inventory: "inventory",
   posProducts: "pos-products",
   posSellers: "pos-sellers",
+  quickCreations: "quick-creations",
   sales: "sales",
   stock: "stock",
   suppliers: "suppliers",

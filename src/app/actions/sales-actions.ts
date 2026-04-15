@@ -4,6 +4,20 @@ import { revalidateTag, unstable_cache } from "next/cache";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { prisma } from "@/lib/prisma";
 
+const SHOULD_REVALIDATE_SERVER_CACHE = process.env.POS_DESKTOP !== "1";
+
+function revalidateSalesRelatedTags() {
+    if (!SHOULD_REVALIDATE_SERVER_CACHE) {
+        return;
+    }
+
+    revalidateTag(CACHE_TAGS.sales, "max");
+    revalidateTag(CACHE_TAGS.cash, "max");
+    revalidateTag(CACHE_TAGS.posProducts, "max");
+    revalidateTag(CACHE_TAGS.inventory, "max");
+    revalidateTag(CACHE_TAGS.stock, "max");
+}
+
 type CreateSaleItemInput = {
     variantId: string;
     quantity: number;
@@ -180,11 +194,7 @@ export async function createSale(input: CreateSaleInput) {
         return sale;
     });
 
-    revalidateTag(CACHE_TAGS.sales, "max");
-    revalidateTag(CACHE_TAGS.cash, "max");
-    revalidateTag(CACHE_TAGS.posProducts, "max");
-    revalidateTag(CACHE_TAGS.inventory, "max");
-    revalidateTag(CACHE_TAGS.stock, "max");
+    revalidateSalesRelatedTags();
 
     return sale;
 }
@@ -334,11 +344,7 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
         return sale;
     });
 
-    revalidateTag(CACHE_TAGS.sales, "max");
-    revalidateTag(CACHE_TAGS.cash, "max");
-    revalidateTag(CACHE_TAGS.posProducts, "max");
-    revalidateTag(CACHE_TAGS.inventory, "max");
-    revalidateTag(CACHE_TAGS.stock, "max");
+    revalidateSalesRelatedTags();
 
     return sale;
 }

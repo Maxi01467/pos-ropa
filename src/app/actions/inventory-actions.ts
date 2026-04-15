@@ -3,6 +3,7 @@
 
 import { revalidateTag, unstable_cache } from "next/cache";
 import { CACHE_TAGS } from "@/lib/cache-tags";
+import { getServerSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 type QuickProductInput = {
@@ -26,6 +27,13 @@ const getInventoryDataCached = unstable_cache(
             select: {
                 id: true,
                 name: true,
+                quickCreated: true,
+                pendingReview: true,
+                quickCreatedAt: true,
+                quickCreatedByName: true,
+                quickCreatedByRole: true,
+                reviewedAt: true,
+                reviewedByName: true,
                 priceNormal: true,
                 priceWholesale: true,
                 costPrice: true,
@@ -43,6 +51,13 @@ const getInventoryDataCached = unstable_cache(
                 id: p.id,
                 code: p.id.slice(-6).toUpperCase(),
                 name: p.name,
+                quickCreated: p.quickCreated,
+                pendingReview: p.pendingReview,
+                quickCreatedAt: p.quickCreatedAt?.toISOString(),
+                quickCreatedByName: p.quickCreatedByName ?? undefined,
+                quickCreatedByRole: p.quickCreatedByRole ?? undefined,
+                reviewedAt: p.reviewedAt?.toISOString(),
+                reviewedByName: p.reviewedByName ?? undefined,
                 price: Number(p.priceNormal),
                 wholesalePrice: Number(p.priceWholesale),
                 costPrice: p.costPrice ? Number(p.costPrice) : undefined,
@@ -77,6 +92,7 @@ export async function createProduct(data: InventoryProductInput) {
 }
 
 export async function createQuickProductWithStock(data: QuickProductInput) {
+    const session = await getServerSession();
     const name = data.name.trim();
     const price = Number(data.price);
     const wholesalePrice = Number(data.wholesalePrice);
@@ -99,9 +115,16 @@ export async function createQuickProductWithStock(data: QuickProductInput) {
     }
 
     const result = await prisma.$transaction(async (tx) => {
+        const pendingReview = session?.role === "STAFF";
         const product = await tx.product.create({
             data: {
                 name,
+                quickCreated: true,
+                pendingReview,
+                quickCreatedAt: new Date(),
+                quickCreatedByName: session?.userName ?? "Sistema",
+                quickCreatedByRole: session?.role ?? "STAFF",
+                quickNotificationSeen: false,
                 priceNormal: price,
                 priceWholesale: wholesalePrice,
             },
@@ -135,18 +158,21 @@ export async function createQuickProductWithStock(data: QuickProductInput) {
             id: product.id,
             variantId: variant.id,
             sku,
+            pendingReview,
         };
     });
 
     revalidateTag(CACHE_TAGS.inventory, "max");
     revalidateTag(CACHE_TAGS.posProducts, "max");
     revalidateTag(CACHE_TAGS.stock, "max");
+    revalidateTag(CACHE_TAGS.quickCreations, "max");
 
     return result;
 }
 
 // 3. Actualizar un producto existente
 export async function updateProduct(id: string, data: InventoryProductInput) {
+    const session = await getServerSession();
     const product = await prisma.product.update({
         where: { id },
         data: {
@@ -154,12 +180,16 @@ export async function updateProduct(id: string, data: InventoryProductInput) {
             priceNormal: data.price,
             priceWholesale: data.wholesalePrice,
             costPrice: data.costPrice,
+            pendingReview: false,
+            reviewedAt: new Date(),
+            reviewedByName: session?.userName ?? "Sistema",
         }
     });
 
     revalidateTag(CACHE_TAGS.inventory, "max");
     revalidateTag(CACHE_TAGS.posProducts, "max");
     revalidateTag(CACHE_TAGS.stock, "max");
+    revalidateTag(CACHE_TAGS.quickCreations, "max");
 
     return product;
 }
@@ -173,6 +203,78 @@ export async function deleteProduct(id: string) {
     revalidateTag(CACHE_TAGS.inventory, "max");
     revalidateTag(CACHE_TAGS.posProducts, "max");
     revalidateTag(CACHE_TAGS.stock, "max");
+    revalidateTag(CACHE_TAGS.quickCreations, "max");
 
     return deleted;
+}
+
+export async function markProductReviewed(id: string) {
+    const session = await getServerSession();
+
+    const product = await prisma.product.update({
+        where: { id },
+        data: {
+            pendingReview: false,
+            reviewedAt: new Date(),
+            reviewedByName: session?.userName ?? "Sistema",
+        },
+    });
+
+    revalidateTag(CACHE_TAGS.inventory, "max");
+    revalidateTag(CACHE_TAGS.quickCreations, "max");
+
+    return product;
+}
+
+const getQuickCreationNotificationsCached = unstable_cache(
+    async () => {
+        const products = await prisma.product.findMany({
+            where: {
+                quickCreated: true,
+                quickNotificationSeen: false,
+            },
+            select: {
+                id: true,
+                name: true,
+                quickCreatedAt: true,
+                quickCreatedByName: true,
+                quickCreatedByRole: true,
+                pendingReview: true,
+            },
+            orderBy: {
+                quickCreatedAt: "desc",
+            },
+            take: 20,
+        });
+
+        return products.map((product) => ({
+            id: product.id,
+            name: product.name,
+            quickCreatedAt: product.quickCreatedAt?.toISOString() ?? null,
+            quickCreatedByName: product.quickCreatedByName ?? "Sistema",
+            quickCreatedByRole: product.quickCreatedByRole ?? "STAFF",
+            pendingReview: product.pendingReview,
+        }));
+    },
+    ["quick-creation-notifications"],
+    { revalidate: 120, tags: [CACHE_TAGS.quickCreations] }
+);
+
+export async function getQuickCreationNotifications() {
+    return getQuickCreationNotificationsCached();
+}
+
+export async function markQuickCreationNotificationsSeen(productIds: string[]) {
+    if (productIds.length === 0) return;
+
+    await prisma.product.updateMany({
+        where: {
+            id: { in: productIds },
+        },
+        data: {
+            quickNotificationSeen: true,
+        },
+    });
+
+    revalidateTag(CACHE_TAGS.quickCreations, "max");
 }

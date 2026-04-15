@@ -46,10 +46,21 @@ export function BarcodeLabels({ items }: BarcodeLabelsProps) {
                         padding: 0 !important;
                         background: #fff !important;
                     }
+
+                    .barcode-labels-print-root {
+                        position: absolute;
+                        top: 0;
+                        left: 0;
+                        z-index: 9999;
+                        width: ${LABEL_WIDTH_MM}mm;
+                        margin: 0;
+                        padding: 0;
+                        background: #fff;
+                    }
                 }
             `}</style>
 
-            <div className="fixed inset-0 z-[9999] bg-white text-black">
+            <div className="barcode-labels-print-root bg-white text-black">
             {items.map((item: LabelItem, index: number) => {
                 const barcodeValue = barcodeFromSku(item.sku);
 
@@ -64,6 +75,10 @@ export function BarcodeLabels({ items }: BarcodeLabelsProps) {
                         display: "flex",
                         flexDirection: "column",
                         justifyContent: "space-between",
+                        boxSizing: "border-box",
+                        overflow: "hidden",
+                        pageBreakInside: "avoid",
+                        breakInside: "avoid-page",
                         pageBreakAfter: index === items.length - 1 ? "auto" : "always",
                         breakAfter: index === items.length - 1 ? "auto" : "page",
                     }}
@@ -81,13 +96,6 @@ export function BarcodeLabels({ items }: BarcodeLabelsProps) {
                         {item.productName}
                     </p>
 
-                    <p
-                        className="text-center font-medium"
-                        style={{ fontSize: "4.6px", lineHeight: 1 }}
-                    >
-                        T: {item.size} | {item.color}
-                    </p>
-
                     <div
                         className="grid w-full grid-cols-2 gap-[0.7mm]"
                         style={{
@@ -102,13 +110,13 @@ export function BarcodeLabels({ items }: BarcodeLabelsProps) {
                         >
                             <span
                                 className="font-bold uppercase"
-                                style={{ fontSize: "4px", lineHeight: 1, letterSpacing: "0.08em" }}
+                                style={{ fontSize: "4px", lineHeight: 1, letterSpacing: "0.08em", color: "#000000" }}
                             >
                                 Venta
                             </span>
                             <span
                                 className="font-black"
-                                style={{ fontSize: "7.8px", lineHeight: 1.02 }}
+                                style={{ fontSize: "7.8px", lineHeight: 1.02, color: "#000000" }}
                             >
                                 {formatCurrency(item.retailPrice)}
                             </span>
@@ -133,7 +141,10 @@ export function BarcodeLabels({ items }: BarcodeLabelsProps) {
                         </div>
                     </div>
 
-                    <div className="flex w-full flex-1 flex-col items-center justify-end">
+                    <div
+                        className="flex w-full flex-1 flex-col items-center justify-end"
+                        style={{ marginTop: "-2.2mm" }}
+                    >
                         <Barcode 
                             value={barcodeValue}
                             format="EAN13"
@@ -150,7 +161,7 @@ export function BarcodeLabels({ items }: BarcodeLabelsProps) {
                         <p
                             className="mt-[0.4mm] w-full text-center font-semibold"
                             style={{
-                                fontSize: "4.6px",
+                                fontSize: "6.9px",
                                 lineHeight: 1,
                                 letterSpacing: "0.02em",
                                 whiteSpace: "nowrap",

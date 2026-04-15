@@ -1,7 +1,8 @@
 // prisma/schema.prisma
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "windows"]
 }
 
 datasource db {
@@ -103,6 +104,14 @@ model Supplier {
 model Product {
   id             String   @id @default(cuid())
   name           String
+  quickCreated   Boolean  @default(false)
+  pendingReview  Boolean  @default(false)
+  quickCreatedAt DateTime?
+  quickCreatedByName String?
+  quickCreatedByRole String?
+  quickNotificationSeen Boolean @default(true)
+  reviewedAt     DateTime?
+  reviewedByName String?
   
   // Los dos precios que maneja el local
   priceNormal    Decimal  // Transferencia / Tarjeta

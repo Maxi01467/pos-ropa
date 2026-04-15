@@ -46,8 +46,8 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { barcodeFromSku, barcodeFromTicketNumber } from "@/lib/barcodes";
-import { renderReceiptHtml, type ReceiptPrintData } from "@/lib/receipt-printing";
-import { printHtmlWithQzTray } from "@/lib/qz-tray";
+import type { ReceiptPrintData } from "@/lib/receipt-printing";
+import { printSaleReceipt } from "@/lib/printing";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
 
@@ -151,6 +151,7 @@ export default function NuevaVentaPage() {
     const [exchangeQuantities, setExchangeQuantities] = useState<Record<string, string>>({});
     const [appliedExchange, setAppliedExchange] = useState<AppliedExchange | null>(null);
     const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+    const [hasLoadedCatalogOnce, setHasLoadedCatalogOnce] = useState(false);
     const [productsError, setProductsError] = useState<string | null>(null);
     const [sellers, setSellers] = useState<Seller[]>([]);
     const [selectedSellerId, setSelectedSellerId] = useState("");
@@ -182,61 +183,78 @@ export default function NuevaVentaPage() {
         let regularReceiptPrinted = false;
 
         try {
-            const ticketLabel = currentReceipt.ticketNumber.toString().padStart(5, "0");
-            const printerName = await printHtmlWithQzTray(
-                renderReceiptHtml(currentReceipt, false),
-                `Boleta ${ticketLabel}`
-            );
+            const { printerName } = await printSaleReceipt(currentReceipt);
             regularReceiptPrinted = true;
-
-            if (hasGiftCopy) {
-                await printHtmlWithQzTray(
-                    renderReceiptHtml(currentReceipt, true),
-                    `Ticket cambio ${ticketLabel}`
-                );
-            }
 
             setPrintGiftCopy(false);
             setActivePrintIsGift(false);
             setReceiptData(null);
 
-            toast.success("Boleta enviada a QZ Tray", {
+            toast.success("Boleta enviada a la app de escritorio", {
                 description: hasGiftCopy
                     ? `${printerName} · cliente + regalo`
                     : printerName,
             });
         } catch (error) {
-            console.error("QZ Tray printing failed:", error);
+            console.error("Printing failed:", error);
 
             if (regularReceiptPrinted && hasGiftCopy) {
-                toast.error("Falló la copia de regalo en QZ Tray. Se abrirá esa copia en el navegador.");
+                toast.error("Falló la copia de regalo. Se abrirá esa copia en el navegador.");
                 startBrowserPrint({ hasGiftCopy: false, initialGiftCopy: true });
                 return;
             }
 
-            toast.error("No se pudo imprimir con QZ Tray. Se abrirá la impresión del navegador.");
+            toast.error("No se pudo imprimir automáticamente. Se abrirá la impresión del navegador.");
             startBrowserPrint({ hasGiftCopy });
         }
     };
 
-    const loadCatalog = useCallback(async () => {
+    const loadCatalog = useCallback(async (options?: { background?: boolean; reason?: string }) => {
         let cancelled = false;
+        const isBackgroundRefresh = options?.background ?? false;
+        const reason = options?.reason ?? "unknown";
 
-        setIsLoadingProducts(true);
+        console.log(
+            `[nueva-venta] loadCatalog start background=${isBackgroundRefresh} reason=${reason}`
+        );
+
+        if (!isBackgroundRefresh && !hasLoadedCatalogOnce) {
+            setIsLoadingProducts(true);
+        }
         setProductsError(null);
 
         try {
-            const [products, featuredProductsData, sellersData] = await Promise.all([
+            const [productsResult, featuredResult, sellersResult] = await Promise.allSettled([
                 getProductsForPOS(),
                 getFeaturedProductsForPOS(),
                 getSellers(),
             ]);
+
+            if (productsResult.status === "rejected") {
+                console.error("Error loading products for POS:", productsResult.reason);
+                throw productsResult.reason;
+            }
+
+            if (featuredResult.status === "rejected") {
+                console.error("Error loading featured products for POS:", featuredResult.reason);
+                throw featuredResult.reason;
+            }
+
+            if (sellersResult.status === "rejected") {
+                console.error("Error loading sellers for POS:", sellersResult.reason);
+                throw sellersResult.reason;
+            }
+
+            const products = productsResult.value;
+            const featuredProductsData = featuredResult.value;
+            const sellersData = sellersResult.value;
 
             if (cancelled) return;
 
             setAllProducts(products);
             setFeaturedProducts(featuredProductsData);
             setSellers(sellersData);
+            setHasLoadedCatalogOnce(true);
             if (sellersData.length > 0) {
                 setSelectedSellerId((currentSelectedSellerId) => {
                     if (currentSelectedSellerId && sellersData.some((seller) => seller.id === currentSelectedSellerId)) {
@@ -246,6 +264,9 @@ export default function NuevaVentaPage() {
                     return sellersData[0].id;
                 });
             }
+            console.log(
+                `[nueva-venta] loadCatalog success products=${products.length} featured=${featuredProductsData.length} sellers=${sellersData.length} reason=${reason}`
+            );
         } catch (error) {
             if (cancelled) return;
             console.error("Error loading initial data:", error);
@@ -260,11 +281,11 @@ export default function NuevaVentaPage() {
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [hasLoadedCatalogOnce]);
 
     useEffect(() => {
         let cleanup: (() => void) | undefined;
-        void loadCatalog().then((nextCleanup) => {
+        void loadCatalog({ reason: "initial-mount" }).then((nextCleanup) => {
             cleanup = nextCleanup;
         });
 
@@ -283,7 +304,8 @@ export default function NuevaVentaPage() {
     }, []);
 
     const refreshSalesData = useCallback(async () => {
-        await loadCatalog();
+        console.log("[nueva-venta] refreshSalesData");
+        await loadCatalog({ background: true, reason: "data-sync" });
         if (exchangeDialogOpen) {
             await loadExchangeSales();
         }
@@ -298,7 +320,8 @@ export default function NuevaVentaPage() {
             CACHE_TAGS.sales,
             CACHE_TAGS.cash,
         ],
-        refreshSalesData
+        refreshSalesData,
+        { refreshOnFocus: false, debugLabel: "nueva-venta" }
     );
 
     useEffect(() => {
@@ -477,6 +500,7 @@ export default function NuevaVentaPage() {
 
     const clearCart = () => {
         setCart([]);
+        setAppliedExchange(null);
     };
 
     const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -501,6 +525,7 @@ export default function NuevaVentaPage() {
     };
 
     const finalizeSale = async (payment?: PaymentBreakdown) => {
+        console.log("[nueva-venta] finalizeSale start");
         const paymentMethod: "EFECTIVO" | "TRANSFERENCIA" | "MIXTO" | "CAMBIO" =
             payment?.paymentMethod
                 ? paymentMethodMap[payment.paymentMethod]
@@ -540,6 +565,7 @@ export default function NuevaVentaPage() {
                 ...exchangePayload,
                 paymentMethod: paymentMethodMap[payment!.paymentMethod],
             });
+        console.log(`[nueva-venta] finalizeSale success ticket=${sale.ticketNumber}`);
 
         const nextReceiptData: ReceiptPrintData = {
             ticketNumber: sale.ticketNumber,
@@ -571,6 +597,7 @@ export default function NuevaVentaPage() {
         setAllProducts(updatedProducts);
         setAppliedExchange(null);
         setReceiptData(nextReceiptData);
+        console.log("[nueva-venta] notifyDataUpdated after sale");
         notifyDataUpdated([
             CACHE_TAGS.sales,
             CACHE_TAGS.cash,
@@ -728,7 +755,7 @@ export default function NuevaVentaPage() {
 
         setIsQuickCreating(true);
         try {
-            await createQuickProductWithStock({
+            const createdProduct = await createQuickProductWithStock({
                 name: normalizedName,
                 price,
                 wholesalePrice,
@@ -740,10 +767,15 @@ export default function NuevaVentaPage() {
                 CACHE_TAGS.inventory,
                 CACHE_TAGS.stock,
                 CACHE_TAGS.posProducts,
+                CACHE_TAGS.quickCreations,
             ]);
             setSearchQuery(normalizedName);
             setQuickCreateOpen(false);
-            toast.success("Producto creado con éxito");
+            toast.success(
+                createdProduct.pendingReview
+                    ? "Producto creado y enviado a revisión"
+                    : "Producto creado con éxito"
+            );
             setTimeout(() => searchInputRef.current?.focus(), 10);
         } catch (error) {
             console.error("Quick create product failed:", error);
@@ -781,12 +813,12 @@ export default function NuevaVentaPage() {
                         </div>
                     </div>
 
-                    <div className="items-start gap-5 xl:grid xl:grid-cols-[minmax(0,1fr)_360px]">
+                    <div className="items-start gap-5 min-[1400px]:grid min-[1400px]:grid-cols-[minmax(0,1fr)_380px]">
                         <div className="min-w-0">
-                            <Card className="rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)]">
-                                <CardContent className="flex flex-col p-5 sm:p-6">
+                            <Card className="overflow-hidden rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)]">
+                                <CardContent className="flex min-w-0 flex-col p-5 sm:p-6">
                                     <div className="mb-5 flex flex-col gap-3 xl:flex-row">
-                                        <div className="relative flex-1">
+                                        <div className="relative min-w-0 flex-1">
                                             <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4.5 -translate-y-1/2 text-muted-foreground" />
                                             <Input
                                                 ref={searchInputRef}
@@ -800,7 +832,7 @@ export default function NuevaVentaPage() {
                                             />
                                         </div>
 
-                                        <div className="flex gap-2">
+                                        <div className="flex flex-wrap gap-2">
                                             <Button
                                                 variant="outline"
                                                 className="h-12 rounded-2xl border-border/70 bg-background/85 px-4"
@@ -840,7 +872,7 @@ export default function NuevaVentaPage() {
                                         </div>
                                     )}
 
-                                    <ScrollArea className="max-h-[calc(100vh-16rem)]">
+                                    <ScrollArea className="max-w-full overflow-hidden min-[1400px]:max-h-[calc(100vh-16rem)]">
                                         {isLoadingProducts ? (
                                             <div className="flex flex-col items-center justify-center py-24 text-center">
                                                 <Loader2 className="mb-3 size-10 animate-spin text-muted-foreground" />
@@ -873,7 +905,7 @@ export default function NuevaVentaPage() {
                                                 </p>
                                             </div>
                                         ) : (
-                                            <div className="grid grid-cols-1 gap-3 pr-2 sm:grid-cols-2 2xl:grid-cols-3">
+                                            <div className="grid grid-cols-1 gap-3 pr-2 sm:grid-cols-2 xl:grid-cols-3">
                                                 {visibleProducts.map((product) => {
                                                     const inCart = cart.find(
                                                         (item) => item.product.id === product.id
@@ -884,7 +916,7 @@ export default function NuevaVentaPage() {
                                                             key={product.id}
                                                             onClick={() => addToCart(product)}
                                                             className={cn(
-                                                                "group relative rounded-[1.5rem] border border-border/70 bg-background/85 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-foreground/15 hover:shadow-[0_18px_30px_-24px_rgba(0,0,0,0.35)]",
+                                                                "group relative w-full min-w-0 cursor-pointer overflow-hidden rounded-[1.5rem] border border-border/70 bg-background/85 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-foreground/15 hover:shadow-[0_18px_30px_-24px_rgba(0,0,0,0.35)]",
                                                                 inCart && "border-violet-900/20 bg-violet-950/8 dark:border-violet-500/35 dark:bg-violet-500/12"
                                                             )}
                                                         >
@@ -899,7 +931,7 @@ export default function NuevaVentaPage() {
                                                                     <p className="truncate text-base font-semibold">
                                                                         {product.name}
                                                                     </p>
-                                                                    <p className="mt-1 text-xs text-muted-foreground">
+                                                                    <p className="mt-1 truncate text-xs text-muted-foreground">
                                                                         {product.code}
                                                                         {product.color && ` · ${product.color}`}
                                                                     </p>
@@ -909,9 +941,9 @@ export default function NuevaVentaPage() {
                                                                 </div>
                                                             </div>
 
-                                                            <div className="space-y-3">
-                                                                <div className="flex items-end justify-between gap-3">
-                                                                    <div>
+                                                            <div className="min-w-0 space-y-3">
+                                                                <div className="flex flex-wrap items-end justify-between gap-2">
+                                                                    <div className="min-w-0">
                                                                         <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
                                                                             Venta
                                                                         </p>
@@ -921,7 +953,7 @@ export default function NuevaVentaPage() {
                                                                     </div>
                                                                     <span
                                                                         className={cn(
-                                                                            "text-xs font-medium",
+                                                                            "shrink-0 whitespace-nowrap text-xs font-medium",
                                                                             product.stock <= 3
                                                                                 ? "text-rose-500"
                                                                                 : "text-muted-foreground"
@@ -931,8 +963,8 @@ export default function NuevaVentaPage() {
                                                                     </span>
                                                                 </div>
 
-                                                                <div className="flex items-end justify-between gap-3">
-                                                                    <div>
+                                                                <div className="flex flex-wrap items-end justify-between gap-2">
+                                                                    <div className="min-w-0">
                                                                         <p className="text-xs uppercase tracking-[0.18em] text-blue-600">
                                                                             Mayorista
                                                                         </p>
@@ -941,12 +973,12 @@ export default function NuevaVentaPage() {
                                                                         </p>
                                                                     </div>
                                                                     {product.sizes.length > 0 && (
-                                                                        <div className="flex flex-wrap justify-end gap-1">
+                                                                        <div className="flex min-w-0 max-w-full flex-wrap justify-end gap-1">
                                                                             {product.sizes.map((size) => (
                                                                                 <Badge
                                                                                     key={size}
                                                                                     variant="outline"
-                                                                                    className="rounded-full text-[11px] font-normal"
+                                                                                    className="max-w-full rounded-full text-[11px] font-normal"
                                                                                 >
                                                                                     {size}
                                                                                 </Badge>
@@ -965,9 +997,9 @@ export default function NuevaVentaPage() {
                             </Card>
                         </div>
 
-                        <div className="min-w-0 xl:sticky xl:top-5">
-                            <Card className="rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)] xl:h-[calc(100vh-6rem)]">
-                                <CardContent className="flex flex-col p-5 sm:p-6 xl:h-[calc(100vh-6rem)] xl:overflow-hidden">
+                        <div className="min-w-0 min-[1400px]:sticky min-[1400px]:top-5">
+                            <Card className="rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)] min-[1400px]:h-[calc(100vh-6rem)]">
+                                <CardContent className="flex flex-col p-5 sm:p-6 min-[1400px]:h-[calc(100vh-6rem)] min-[1400px]:overflow-hidden">
                                     <div className="mb-4 flex items-center justify-between">
                                         <div className="flex items-center gap-2">
                                             <ShoppingBag className="size-5 text-muted-foreground" />
@@ -995,7 +1027,7 @@ export default function NuevaVentaPage() {
                                             type="button"
                                             onClick={() => setPriceMode("retail")}
                                             className={cn(
-                                                "rounded-2xl px-3 py-3 text-sm font-medium transition-all",
+                                                "cursor-pointer rounded-2xl px-3 py-3 text-sm font-medium transition-all",
                                                 priceMode === "retail"
                                                     ? "bg-[linear-gradient(135deg,#1c1c28_0%,#3f3f50_100%)] text-white"
                                                     : "bg-muted text-muted-foreground"
@@ -1007,7 +1039,7 @@ export default function NuevaVentaPage() {
                                             type="button"
                                             onClick={() => setPriceMode("wholesale")}
                                             className={cn(
-                                                "rounded-2xl px-3 py-3 text-sm font-medium transition-all",
+                                                "cursor-pointer rounded-2xl px-3 py-3 text-sm font-medium transition-all",
                                                 priceMode === "wholesale"
                                                     ? "bg-[linear-gradient(135deg,#2563eb_0%,#93c5fd_100%)] text-white"
                                                     : "bg-muted text-muted-foreground"
@@ -1017,7 +1049,7 @@ export default function NuevaVentaPage() {
                                         </button>
                                     </div>
 
-                                    <ScrollArea className="min-h-0 xl:flex-1 xl:overflow-hidden">
+                                    <ScrollArea className="min-h-0 max-w-full min-[1400px]:flex-1 min-[1400px]:overflow-hidden">
                                         {cart.length === 0 && !appliedExchange ? (
                                             <div className="flex h-full min-h-56 flex-col items-center justify-center gap-3 text-center">
                                                 <div className="flex size-14 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#f5f5f7_0%,#ebebf0_100%)] text-2xl dark:bg-[linear-gradient(135deg,#232328_0%,#18181d_100%)]">
@@ -1438,6 +1470,27 @@ function ExchangeDialog({
     onConfirm: () => void;
     searchInputRef: React.RefObject<HTMLInputElement | null>;
 }) {
+    const [referenceNow] = useState(() => new Date().toISOString());
+
+    const formatDaysSinceSale = (saleDate: string) => {
+        const saleTime = new Date(saleDate).getTime();
+        const diffMs = new Date(referenceNow).getTime() - saleTime;
+        const diffDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+
+        if (diffDays === 0) return "Hoy";
+        if (diffDays === 1) return "Hace 1 día";
+        return `Hace ${diffDays} días`;
+    };
+
+    const clampExchangeQuantity = (rawValue: string, max: number) => {
+        if (rawValue.trim() === "") return "";
+
+        const parsed = Number.parseInt(rawValue, 10);
+        if (Number.isNaN(parsed)) return "";
+
+        return String(Math.max(0, Math.min(parsed, max)));
+    };
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-h-[85vh] overflow-hidden border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.98))] shadow-[0_28px_90px_-40px_rgba(15,23,42,0.45)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.98),rgba(17,24,39,0.98))] dark:shadow-[0_32px_100px_-36px_rgba(0,0,0,0.8)] sm:max-w-4xl">
@@ -1513,9 +1566,19 @@ function ExchangeDialog({
                         ) : (
                             <div className="flex h-full flex-col">
                                 <div className="border-b border-border/70 p-4 dark:border-white/10">
-                                    <p className="font-semibold">
-                                        Boleta #{selectedSale.ticketNumber.toString().padStart(5, "0")}
-                                    </p>
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <p className="font-semibold">
+                                            Boleta #{selectedSale.ticketNumber.toString().padStart(5, "0")}
+                                        </p>
+                                        <div className="rounded-2xl border border-amber-300/80 bg-[linear-gradient(135deg,rgba(254,243,199,0.98),rgba(253,230,138,0.72))] px-3 py-2 text-right text-amber-900 shadow-[0_18px_32px_-24px_rgba(217,119,6,0.5)] dark:border-amber-300/45 dark:bg-[linear-gradient(135deg,rgba(120,53,15,0.82),rgba(245,158,11,0.24))] dark:text-amber-100 dark:shadow-[0_20px_36px_-24px_rgba(251,191,36,0.4)]">
+                                            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] opacity-80">
+                                                Antigüedad
+                                            </p>
+                                            <p className="text-sm font-bold leading-none">
+                                                {formatDaysSinceSale(selectedSale.date)}
+                                            </p>
+                                        </div>
+                                    </div>
                                     <p className="text-sm text-muted-foreground dark:text-slate-300">
                                         {selectedSale.sellerName} · {new Date(selectedSale.date).toLocaleString("es-AR")}
                                     </p>
@@ -1537,14 +1600,43 @@ function ExchangeDialog({
                                                 className="grid gap-3 rounded-xl border border-border/70 bg-background/85 p-3 dark:border-white/10 dark:bg-slate-900/55 sm:grid-cols-[minmax(0,1fr)_100px]"
                                             >
                                                 <div>
-                                                    <p className="font-medium">{item.productName}</p>
+                                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                                        <div className="min-w-0">
+                                                            <p className="font-medium">{item.productName}</p>
                                                     <p className="text-xs text-muted-foreground dark:text-slate-300">
                                                         {item.size !== "Único" ? `Talle ${item.size} · ` : ""}
                                                         {item.color}
                                                     </p>
-                                                    <p className="text-xs text-muted-foreground dark:text-slate-300">
-                                                        Disponible para cambio: {availableQuantity} · {formatCurrency(item.priceAtTime)} c/u
-                                                    </p>
+                                                        </div>
+                                                        <div
+                                                            className={cn(
+                                                                "shrink-0 rounded-2xl px-3 py-2 shadow-sm",
+                                                                availableQuantity > 0
+                                                                    ? "border border-emerald-300/60 bg-[linear-gradient(135deg,rgba(236,253,245,0.98),rgba(209,250,229,0.82))] text-emerald-900 dark:border-emerald-400/25 dark:bg-[linear-gradient(135deg,rgba(6,78,59,0.72),rgba(5,150,105,0.18))] dark:text-emerald-50"
+                                                                    : "border border-rose-300/60 bg-[linear-gradient(135deg,rgba(255,241,242,0.98),rgba(255,228,230,0.82))] text-rose-900 dark:border-rose-400/25 dark:bg-[linear-gradient(135deg,rgba(76,5,25,0.72),rgba(190,24,93,0.16))] dark:text-rose-100"
+                                                            )}
+                                                        >
+                                                            <div className="flex items-center gap-4">
+                                                                <div className="text-right">
+                                                                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] opacity-80">
+                                                                        Máximo
+                                                                    </p>
+                                                                    <p className="text-xl font-bold leading-none">
+                                                                        {availableQuantity}
+                                                                    </p>
+                                                                </div>
+                                                                <div className="h-8 w-px bg-current/15" />
+                                                                <div className="text-right">
+                                                                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] opacity-80">
+                                                                        Precio c/u
+                                                                    </p>
+                                                                    <p className="text-sm font-semibold leading-none">
+                                                                        {formatCurrency(item.priceAtTime)}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                                 <Input
                                                     type="number"
@@ -1554,7 +1646,13 @@ function ExchangeDialog({
                                                     value={value}
                                                     className="border-border/70 bg-background/90 dark:border-white/10 dark:bg-slate-950/70 dark:text-slate-100"
                                                     onChange={(event) =>
-                                                        onQuantityChange(item.id, event.target.value)
+                                                        onQuantityChange(
+                                                            item.id,
+                                                            clampExchangeQuantity(
+                                                                event.target.value,
+                                                                availableQuantity
+                                                            )
+                                                        )
                                                     }
                                                 />
                                             </div>

@@ -5,10 +5,12 @@ import {
     getStockPageData,
     registerStockEntries,
     reduceStockEntries,
+    adjustStockEntries,
 } from "@/app/actions/stock-actions";
 import {
     Barcode,
     CalendarDays,
+    ClipboardList,
     Eye,
     Filter,
     Minus,
@@ -71,6 +73,8 @@ export type StockEntry = {
     productId: string;
     providerId?: string;
     quantity: number;
+    type: string;
+    notes?: string;
     color: string;
     size: string;
     sku: string;
@@ -89,6 +93,15 @@ type StockProduct = {
 type StockSupplier = {
     id: string;
     name: string;
+};
+
+type StockVariant = {
+    id: string;
+    productId: string;
+    color: string;
+    size: string;
+    sku: string;
+    stock: number;
 };
 
 type RegisterStockEntry = {
@@ -174,6 +187,7 @@ export default function StockPage() {
     const [entries, setEntries] = useState<StockEntry[]>([]);
     const [products, setProducts] = useState<StockProduct[]>([]);
     const [providers, setProviders] = useState<StockSupplier[]>([]);
+    const [variants, setVariants] = useState<StockVariant[]>([]);
     const [labelsToPrint, setLabelsToPrint] = useState<LabelPrintItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
@@ -185,7 +199,7 @@ export default function StockPage() {
     const [filterDateTo, setFilterDateTo] = useState("");
     const [showFilters, setShowFilters] = useState(false);
     const [stockDialogOpen, setStockDialogOpen] = useState(false);
-    const [stockAction, setStockAction] = useState<"add" | "remove">("add");
+    const [stockAction, setStockAction] = useState<"add" | "remove" | "adjust">("add");
     const [advancedMode, setAdvancedMode] = useState(false);
     const [selectedProductId, setSelectedProductId] = useState("");
     const [selectedProviderId, setSelectedProviderId] = useState("");
@@ -206,6 +220,7 @@ export default function StockPage() {
             setProducts(data.products);
             setProviders(data.suppliers);
             setEntries(data.entries);
+            setVariants(data.variants);
         } catch (error) {
             toast.error("Error al cargar el stock");
             console.error(error);
@@ -289,6 +304,43 @@ export default function StockPage() {
 
     const getProductName = (id: string) => products.find((product) => product.id === id)?.name ?? "Desconocido";
     const getProviderName = (id?: string) => providers.find((provider) => provider.id === id)?.name ?? "—";
+    const getProductTotalStock = (productId: string) =>
+        variants
+            .filter((variant) => variant.productId === productId)
+            .reduce((sum, variant) => sum + variant.stock, 0);
+    const getVariantCurrentStock = useCallback(
+        (productId: string, color: string, size: string) =>
+            variants.find(
+                (variant) =>
+                    variant.productId === productId &&
+                    variant.color === color &&
+                    variant.size === size
+            )?.stock ?? 0,
+        [variants]
+    );
+
+    const selectedProduct = useMemo(
+        () => products.find((product) => product.id === selectedProductId) ?? null,
+        [products, selectedProductId]
+    );
+    const selectedProductCurrentStock = selectedProductId ? getProductTotalStock(selectedProductId) : 0;
+    const currentSimpleVariantStock = selectedProduct
+        ? getVariantCurrentStock(selectedProduct.id, "Único", "Único")
+        : 0;
+    const selectedVariantStocks = useMemo(
+        () =>
+            selectedSizes.map((size) => ({
+                size,
+                stock: selectedProductId
+                    ? getVariantCurrentStock(
+                          selectedProductId,
+                          advancedColor.trim() || "Único",
+                          size
+                      )
+                    : 0,
+            })),
+        [advancedColor, getVariantCurrentStock, selectedProductId, selectedSizes]
+    );
 
     const clearFilters = () => {
         setFilterProduct("all");
@@ -319,6 +371,12 @@ export default function StockPage() {
     const handleOpenReduceStock = () => {
         resetStockForm();
         setStockAction("remove");
+        setStockDialogOpen(true);
+    };
+
+    const handleOpenAdjustStock = () => {
+        resetStockForm();
+        setStockAction("adjust");
         setStockDialogOpen(true);
     };
 
@@ -376,7 +434,11 @@ export default function StockPage() {
 
             for (const size of selectedSizes) {
                 const quantity = Number.parseInt(sizeQuantities[size] ?? "0", 10);
-                if (Number.isNaN(quantity) || quantity <= 0) {
+                if (Number.isNaN(quantity) || quantity < 0) {
+                    toast.error(`Ingresá una cantidad válida para el talle ${size}`);
+                    return;
+                }
+                if (stockAction !== "adjust" && quantity <= 0) {
                     toast.error(`Ingresá una cantidad válida para el talle ${size}`);
                     return;
                 }
@@ -391,7 +453,11 @@ export default function StockPage() {
             }
         } else {
             const quantity = Number.parseInt(simpleQuantity, 10);
-            if (Number.isNaN(quantity) || quantity <= 0) {
+            if (Number.isNaN(quantity) || quantity < 0) {
+                toast.error("Ingresá una cantidad válida");
+                return;
+            }
+            if (stockAction !== "adjust" && quantity <= 0) {
                 toast.error("Ingresá una cantidad válida");
                 return;
             }
@@ -409,8 +475,10 @@ export default function StockPage() {
         try {
             if (stockAction === "add") {
                 await registerStockEntries(newEntries);
-            } else {
+            } else if (stockAction === "remove") {
                 await reduceStockEntries(newEntries);
+            } else {
+                await adjustStockEntries(newEntries);
             }
             await loadData();
             notifyDataUpdated([CACHE_TAGS.stock, CACHE_TAGS.inventory, CACHE_TAGS.posProducts]);
@@ -418,9 +486,16 @@ export default function StockPage() {
             setStockDialogOpen(false);
             resetStockForm();
             toast.success(
-                stockAction === "add" ? "Ingreso de stock registrado" : "Stock reducido",
+                stockAction === "add"
+                    ? "Ingreso de stock registrado"
+                    : stockAction === "remove"
+                      ? "Stock reducido"
+                      : "Stock ajustado",
                 {
-                description: `${product.name} · ${newEntries.reduce((sum, entry) => sum + entry.quantity, 0)} unidad(es)`,
+                description:
+                    stockAction === "adjust"
+                        ? `${product.name} · nuevo stock actualizado`
+                        : `${product.name} · ${newEntries.reduce((sum, entry) => sum + entry.quantity, 0)} unidad(es)`,
                 }
             );
         } catch (error) {
@@ -429,7 +504,9 @@ export default function StockPage() {
                     ? error.message
                     : stockAction === "add"
                       ? "Error al guardar el ingreso en la base de datos"
-                      : "Error al reducir stock";
+                      : stockAction === "remove"
+                        ? "Error al reducir stock"
+                        : "Error al ajustar stock";
             toast.error(message);
             console.error(error);
         } finally {
@@ -489,6 +566,30 @@ export default function StockPage() {
         }, 300);
     };
 
+    const getMovementTone = (movement: StockMovement) => {
+        if (movement.variants.some((variant) => variant.type === "AJUSTE")) {
+            return movement.totalQuantity >= 0
+                ? "bg-amber-900 text-sm font-bold text-amber-100"
+                : "bg-orange-900 text-sm font-bold text-orange-100";
+        }
+
+        return movement.totalQuantity >= 0
+            ? "bg-emerald-900 text-sm font-bold text-emerald-100"
+            : "bg-rose-900 text-sm font-bold text-rose-100";
+    };
+
+    const getMovementLabel = (movement: StockMovement) => {
+        const primaryType = movement.variants[0]?.type;
+        const signedQuantity =
+            movement.totalQuantity > 0
+                ? `+${movement.totalQuantity}`
+                : `${movement.totalQuantity}`;
+
+        if (primaryType === "INGRESO") return `Ingreso ${signedQuantity}`;
+        if (primaryType === "SALIDA") return `Salida ${signedQuantity}`;
+        return `Ajuste ${signedQuantity}`;
+    };
+
     if (isLoading) {
         return (
             <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-6">
@@ -540,6 +641,15 @@ export default function StockPage() {
                         >
                             <Barcode className="size-5" />
                             Imprimir etiquetas
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="lg"
+                            className="h-12 gap-2 rounded-2xl border-amber-900/20 bg-white text-base text-amber-700 hover:bg-amber-950/6 hover:text-amber-800"
+                            onClick={handleOpenAdjustStock}
+                        >
+                            <ClipboardList className="size-5" />
+                            Ajustar stock
                         </Button>
                         <Button
                             variant="outline"
@@ -763,14 +873,9 @@ export default function StockPage() {
                                     </TableCell>
                                     <TableCell>
                                         <Badge
-                                            className={
-                                                movement.totalQuantity >= 0
-                                                    ? "bg-emerald-900 text-sm font-bold text-emerald-100"
-                                                    : "bg-rose-900 text-sm font-bold text-rose-100"
-                                            }
+                                            className={getMovementTone(movement)}
                                         >
-                                            {movement.totalQuantity > 0 ? "+" : ""}
-                                            {movement.totalQuantity}
+                                            {getMovementLabel(movement)}
                                         </Badge>
                                     </TableCell>
                                     <TableCell className="text-sm text-muted-foreground">
@@ -885,15 +990,21 @@ export default function StockPage() {
             </Dialog>
 
             <Dialog open={stockDialogOpen} onOpenChange={setStockDialogOpen}>
-                <DialogContent className="sm:max-w-2xl">
+                <DialogContent className="print:hidden sm:max-w-2xl">
                     <DialogHeader>
                         <DialogTitle className="text-xl">
-                            {stockAction === "add" ? "Ingresar Stock" : "Reducir Stock"}
+                            {stockAction === "add"
+                                ? "Ingresar Stock"
+                                : stockAction === "remove"
+                                  ? "Reducir Stock"
+                                  : "Ajustar Stock"}
                         </DialogTitle>
                         <DialogDescription>
                             {stockAction === "add"
                                 ? "Registrá un ingreso simple o cargá varias variantes del mismo producto en un solo movimiento."
-                                : "Descontá stock simple o por variantes del producto seleccionado."}
+                                : stockAction === "remove"
+                                  ? "Descontá stock simple o por variantes del producto seleccionado."
+                                  : "Definí el stock final real y el sistema calculará automáticamente si el ajuste sube o baja."}
                         </DialogDescription>
                     </DialogHeader>
 
@@ -996,6 +1107,20 @@ export default function StockPage() {
                             )}
                         </div>
 
+                        {selectedProduct && (
+                            <div className="rounded-[1.2rem] border border-border/70 bg-muted/20 p-4">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                    Stock actual del producto
+                                </p>
+                                <p className="mt-1 text-2xl font-semibold tracking-[-0.05em] text-foreground">
+                                    {selectedProductCurrentStock}
+                                </p>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                    {selectedProduct.name}
+                                </p>
+                            </div>
+                        )}
+
                         <div className="flex rounded-[1.15rem] border border-border/70 bg-muted/20 p-1">
                             <Button
                                 type="button"
@@ -1052,7 +1177,18 @@ export default function StockPage() {
                                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                         {selectedSizes.map((size) => (
                                             <div key={size} className="space-y-2">
-                                                <Label htmlFor={`qty-${size}`}>Cantidad talle {size}</Label>
+                                                <Label htmlFor={`qty-${size}`}>
+                                                    {stockAction === "adjust"
+                                                        ? `Nuevo stock talle ${size}`
+                                                        : `Cantidad talle ${size}`}
+                                                </Label>
+                                                {stockAction === "adjust" && (
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Actual: {
+                                                            selectedVariantStocks.find((variant) => variant.size === size)?.stock ?? 0
+                                                        }
+                                                    </p>
+                                                )}
                                                 <Input
                                                     id={`qty-${size}`}
                                                     type="number"
@@ -1073,7 +1209,14 @@ export default function StockPage() {
                             </div>
                         ) : (
                             <div className="space-y-2">
-                                <Label htmlFor="simple-quantity">Cantidad</Label>
+                                <Label htmlFor="simple-quantity">
+                                    {stockAction === "adjust" ? "Nuevo stock final" : "Cantidad"}
+                                </Label>
+                                {stockAction === "adjust" && (
+                                    <p className="text-xs text-muted-foreground">
+                                        Variante simple actual: {currentSimpleVariantStock}
+                                    </p>
+                                )}
                                 <Input
                                     id="simple-quantity"
                                     type="number"
@@ -1095,20 +1238,26 @@ export default function StockPage() {
                             className={
                                 stockAction === "add"
                                     ? "bg-emerald-600 hover:bg-emerald-700 gap-2"
-                                    : "bg-rose-600 hover:bg-rose-700 gap-2"
+                                    : stockAction === "remove"
+                                      ? "bg-rose-600 hover:bg-rose-700 gap-2"
+                                      : "bg-amber-600 hover:bg-amber-700 gap-2"
                             }
                             onClick={handleSaveStock}
                             disabled={isSaving || !selectedProductId}
                         >
                             {isSaving && <Loader2 className="size-4 animate-spin" />}
-                            {stockAction === "add" ? "Guardar ingreso" : "Confirmar baja"}
+                            {stockAction === "add"
+                                ? "Guardar ingreso"
+                                : stockAction === "remove"
+                                  ? "Confirmar baja"
+                                  : "Confirmar ajuste"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
 
             <Dialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
-                <DialogContent className="max-w-5xl">
+                <DialogContent className="print:hidden max-w-5xl">
                     <DialogHeader>
                         <DialogTitle>Imprimir etiquetas</DialogTitle>
                         <DialogDescription>

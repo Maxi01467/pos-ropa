@@ -209,7 +209,7 @@ export function CheckoutDialog({
                                 key={method.value}
                                 onClick={() => setSelectedMethod(method.value)}
                                 className={cn(
-                                    "flex flex-col items-start gap-2 rounded-[1.25rem] border p-4 text-left transition-all",
+                                    "flex cursor-pointer flex-col items-start gap-2 rounded-[1.25rem] border p-4 text-left transition-all",
                                     isSelected
                                         ? "border-emerald-700/60 bg-[linear-gradient(135deg,rgba(6,95,70,0.16),rgba(2,6,23,0.04))] shadow-sm"
                                         : "border-border/70 bg-card/90 hover:border-foreground/15"

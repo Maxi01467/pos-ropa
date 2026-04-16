@@ -82,6 +82,10 @@ export const BarcodeLabels = React.memo(function BarcodeLabels({ items }: Barcod
                         background: #fff;
                         overflow: visible;
                     }
+
+                    .barcode-labels-print-root svg {
+                        shape-rendering: crispEdges !important;
+                    }
                 }
             `}</style>
 
@@ -163,10 +167,10 @@ export const BarcodeLabels = React.memo(function BarcodeLabels({ items }: Barcod
                             value={barcodeFromSku(item.sku)}
                             format="EAN13"
                             renderer="svg"
-                            width={1.5}
-                            height={18}
+                            width={1}
+                            height={22}
                             fontSize={5}
-                            margin={5}
+                            margin={0}
                             textMargin={0}
                             displayValue={false}
                             background="transparent"

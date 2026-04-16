@@ -177,16 +177,14 @@ export default function InventarioPage() {
                         current.map((product) =>
                             product.id === updatedProduct.id
                                 ? {
-                                      ...product,
+                              ...product,
                                       name: updatedProduct.name,
                                       pendingReview: updatedProduct.pendingReview,
-                                      reviewedAt: updatedProduct.reviewedAt?.toISOString(),
+                                      reviewedAt: updatedProduct.reviewedAt,
                                       reviewedByName: updatedProduct.reviewedByName ?? undefined,
-                                      price: Number(updatedProduct.priceNormal),
-                                      wholesalePrice: Number(updatedProduct.priceWholesale),
-                                      costPrice: updatedProduct.costPrice
-                                          ? Number(updatedProduct.costPrice)
-                                          : undefined,
+                                      price: updatedProduct.priceNormal,
+                                      wholesalePrice: updatedProduct.priceWholesale,
+                                      costPrice: updatedProduct.costPrice,
                                   }
                                 : product
                         )
@@ -201,13 +199,16 @@ export default function InventarioPage() {
                             id: createdProduct.id,
                             code: createdProduct.id.slice(-6).toUpperCase(),
                             name: createdProduct.name,
-                            quickCreated: false,
-                            pendingReview: false,
-                            price: Number(createdProduct.priceNormal),
-                            wholesalePrice: Number(createdProduct.priceWholesale),
-                            costPrice: createdProduct.costPrice
-                                ? Number(createdProduct.costPrice)
-                                : undefined,
+                            quickCreated: createdProduct.quickCreated,
+                            pendingReview: createdProduct.pendingReview,
+                            quickCreatedAt: createdProduct.quickCreatedAt,
+                            quickCreatedByName: createdProduct.quickCreatedByName,
+                            quickCreatedByRole: createdProduct.quickCreatedByRole,
+                            reviewedAt: createdProduct.reviewedAt,
+                            reviewedByName: createdProduct.reviewedByName,
+                            price: createdProduct.priceNormal,
+                            wholesalePrice: createdProduct.priceWholesale,
+                            costPrice: createdProduct.costPrice,
                             stock: 0,
                         },
                         ...current,
@@ -242,7 +243,7 @@ export default function InventarioPage() {
                             ? {
                                   ...item,
                                   pendingReview: reviewedProduct.pendingReview,
-                                  reviewedAt: reviewedProduct.reviewedAt?.toISOString(),
+                                  reviewedAt: reviewedProduct.reviewedAt,
                                   reviewedByName: reviewedProduct.reviewedByName ?? undefined,
                               }
                             : item

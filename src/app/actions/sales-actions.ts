@@ -231,9 +231,9 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
 
     if (
         input.paymentMethod === "CAMBIO" &&
-        (cashAmount !== 0 || transferAmount !== 0 || input.total !== 0)
+        (cashAmount !== 0 || transferAmount !== 0 || input.total > 0)
     ) {
-        throw new Error("Un cambio sin diferencia debe registrarse con total 0");
+        throw new Error("Un cambio con saldo a favor no puede registrar cobros");
     }
 
     const user = input.userId

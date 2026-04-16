@@ -20,6 +20,60 @@ type InventoryProductInput = {
     costPrice?: number;
 };
 
+type ProductForClient = {
+    id: string;
+    name: string;
+    quickCreated: boolean;
+    pendingReview: boolean;
+    quickCreatedAt?: string;
+    quickCreatedByName?: string;
+    quickCreatedByRole?: string;
+    quickNotificationSeen: boolean;
+    reviewedAt?: string;
+    reviewedByName?: string;
+    priceNormal: number;
+    priceWholesale: number;
+    costPrice?: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+function serializeProductForClient(product: {
+    id: string;
+    name: string;
+    quickCreated: boolean;
+    pendingReview: boolean;
+    quickCreatedAt: Date | null;
+    quickCreatedByName: string | null;
+    quickCreatedByRole: string | null;
+    quickNotificationSeen: boolean;
+    reviewedAt: Date | null;
+    reviewedByName: string | null;
+    priceNormal: { toNumber(): number };
+    priceWholesale: { toNumber(): number };
+    costPrice: { toNumber(): number } | null;
+    createdAt: Date;
+    updatedAt: Date;
+}): ProductForClient {
+    return {
+        id: product.id,
+        name: product.name,
+        quickCreated: product.quickCreated,
+        pendingReview: product.pendingReview,
+        quickCreatedAt: product.quickCreatedAt?.toISOString(),
+        quickCreatedByName: product.quickCreatedByName ?? undefined,
+        quickCreatedByRole: product.quickCreatedByRole ?? undefined,
+        quickNotificationSeen: product.quickNotificationSeen,
+        reviewedAt: product.reviewedAt?.toISOString(),
+        reviewedByName: product.reviewedByName ?? undefined,
+        priceNormal: product.priceNormal.toNumber(),
+        priceWholesale: product.priceWholesale.toNumber(),
+        costPrice: product.costPrice?.toNumber(),
+        createdAt: product.createdAt.toISOString(),
+        updatedAt: product.updatedAt.toISOString(),
+    };
+}
+
 // 1. Traer todos los productos (sin proveedores ni categorías)
 const getInventoryDataCached = unstable_cache(
     async () => {
@@ -88,7 +142,7 @@ export async function createProduct(data: InventoryProductInput) {
     revalidateTag(CACHE_TAGS.posProducts, "max");
     revalidateTag(CACHE_TAGS.stock, "max");
 
-    return product;
+    return serializeProductForClient(product);
 }
 
 export async function createQuickProductWithStock(data: QuickProductInput) {
@@ -191,7 +245,7 @@ export async function updateProduct(id: string, data: InventoryProductInput) {
     revalidateTag(CACHE_TAGS.stock, "max");
     revalidateTag(CACHE_TAGS.quickCreations, "max");
 
-    return product;
+    return serializeProductForClient(product);
 }
 
 // 4. Eliminar un producto
@@ -223,7 +277,7 @@ export async function markProductReviewed(id: string) {
     revalidateTag(CACHE_TAGS.inventory, "max");
     revalidateTag(CACHE_TAGS.quickCreations, "max");
 
-    return product;
+    return serializeProductForClient(product);
 }
 
 const getQuickCreationNotificationsCached = unstable_cache(

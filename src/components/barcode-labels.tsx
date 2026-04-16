@@ -59,22 +59,16 @@ export const BarcodeLabels = React.memo(function BarcodeLabels({ items }: Barcod
                         margin: 0;
                     }
 
-                    html {
-                        width: ${LABEL_WIDTH_MM}mm !important;
-                        height: ${LABEL_HEIGHT_MM}mm !important;
-                        overflow: hidden !important;
-                    }
-
                     html,
                     body {
                         margin: 0 !important;
                         padding: 0 !important;
                         width: ${LABEL_WIDTH_MM}mm !important;
                         min-width: ${LABEL_WIDTH_MM}mm !important;
-                        height: ${LABEL_HEIGHT_MM}mm !important;
-                        min-height: ${LABEL_HEIGHT_MM}mm !important;
                         background: #fff !important;
-                        overflow: hidden !important;
+                        height: auto !important;
+                        min-height: auto !important;
+                        overflow: visible !important;
                     }
 
                     body > :not(.barcode-labels-print-shell) {
@@ -82,15 +76,11 @@ export const BarcodeLabels = React.memo(function BarcodeLabels({ items }: Barcod
                     }
 
                     .barcode-labels-print-root {
-                        position: fixed;
-                        inset: 0;
-                        z-index: 9999;
                         width: ${LABEL_WIDTH_MM}mm;
-                        height: ${LABEL_HEIGHT_MM}mm;
                         margin: 0;
                         padding: 0;
                         background: #fff;
-                        overflow: hidden;
+                        overflow: visible;
                     }
                 }
             `}</style>

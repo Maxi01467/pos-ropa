@@ -531,6 +531,7 @@ export default function NuevaVentaPage() {
     const balanceAmount = totalAmount - exchangeCredit;
     const payableAmount = Math.max(balanceAmount, 0);
     const hasExchangeOverage = balanceAmount < 0;
+    const shouldFinalizeExchangeDirectly = Boolean(appliedExchange) && balanceAmount <= 0;
 
     const paymentMethodMap: Record<
         PaymentMethod,
@@ -561,7 +562,7 @@ export default function NuevaVentaPage() {
         }));
 
         const exchangePayload = {
-            total: payableAmount,
+            total: appliedExchange ? balanceAmount : payableAmount,
             paymentMethod,
             cashAmount: payment?.cashAmount ?? 0,
             transferAmount: payment?.transferAmount ?? 0,
@@ -603,7 +604,7 @@ export default function NuevaVentaPage() {
                     price: getUnitPrice(item.product),
                     subtotal: getUnitPrice(item.product) * item.quantity,
                 })),
-            total: payableAmount,
+            total: appliedExchange ? balanceAmount : payableAmount,
             paymentMethod,
             exchangeCredit: appliedExchange?.credit,
             exchangedTicketNumber: appliedExchange?.ticketNumber,
@@ -635,7 +636,10 @@ export default function NuevaVentaPage() {
         try {
             const sale = await finalizeSale();
             toast.success("¡Cambio registrado!", {
-                description: `Boleta #${sale.ticketNumber.toString().padStart(4, "0")} · saldo $0`,
+                description:
+                    balanceAmount < 0
+                        ? `Boleta #${sale.ticketNumber.toString().padStart(4, "0")} · saldo a favor ${formatCurrency(Math.abs(balanceAmount))}`
+                        : `Boleta #${sale.ticketNumber.toString().padStart(4, "0")} · saldo $0`,
                 duration: 4000,
             });
         } catch (error) {
@@ -1187,7 +1191,7 @@ export default function NuevaVentaPage() {
                                                     </div>
                                                 </div>
                                                 <span className="text-3xl font-bold tracking-tight">
-                                                    {formatCurrency(payableAmount)}
+                                                    {formatCurrency(appliedExchange ? balanceAmount : payableAmount)}
                                                 </span>
                                             </div>
                                         </div>
@@ -1195,14 +1199,14 @@ export default function NuevaVentaPage() {
                                         <Button
                                             size="lg"
                                             className="h-14 w-full rounded-2xl bg-[linear-gradient(135deg,#1c1c28_0%,#3f3f50_100%)] text-base font-semibold text-white shadow-[0_20px_36px_-22px_rgba(0,0,0,0.8)] hover:opacity-95 dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.98),rgba(30,41,59,0.98))] dark:text-slate-50 dark:shadow-[0_24px_40px_-24px_rgba(0,0,0,0.88)]"
-                                            disabled={cart.length === 0 || !selectedSellerId || hasExchangeOverage}
+                                            disabled={cart.length === 0 || !selectedSellerId}
                                             onClick={() =>
-                                                payableAmount === 0 && appliedExchange
+                                                shouldFinalizeExchangeDirectly
                                                     ? void handleDirectExchangeCheckout()
                                                     : setCheckoutOpen(true)
                                             }
                                         >
-                                            {payableAmount === 0 && appliedExchange
+                                            {shouldFinalizeExchangeDirectly
                                                 ? "Finalizar cambio"
                                                 : `Cobrar ${formatCurrency(payableAmount)}`}
                                         </Button>

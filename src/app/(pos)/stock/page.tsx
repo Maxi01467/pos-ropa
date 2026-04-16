@@ -280,9 +280,21 @@ export default function StockPage() {
         });
     }, [movements, filterProduct, filterProvider, filterDateFrom, filterDateTo]);
 
+    const isMovementSelectable = useCallback(
+        (movement: StockMovement) =>
+            !movement.variants.some(
+                (variant) => variant.type === "AJUSTE" || variant.type === "SALIDA"
+            ),
+        []
+    );
+
     const selectedMovements = useMemo(
-        () => filteredMovements.filter((movement) => selectedMovementIds.includes(movement.id)),
-        [filteredMovements, selectedMovementIds]
+        () =>
+            filteredMovements.filter(
+                (movement) =>
+                    selectedMovementIds.includes(movement.id) && isMovementSelectable(movement)
+            ),
+        [filteredMovements, isMovementSelectable, selectedMovementIds]
     );
 
     const totalMovementPages = Math.max(1, Math.ceil(filteredMovements.length / STOCK_MOVEMENTS_PER_PAGE));
@@ -321,6 +333,17 @@ export default function StockPage() {
             setCurrentPage(totalMovementPages);
         }
     }, [currentPage, totalMovementPages]);
+
+    useEffect(() => {
+        setSelectedMovementIds((current) =>
+            current.filter((movementId) =>
+                movements.some(
+                    (movement) =>
+                        movement.id === movementId && isMovementSelectable(movement)
+                )
+            )
+        );
+    }, [isMovementSelectable, movements]);
 
     const searchedProducts = useMemo(() => {
         const query = productSearchQuery.trim().toLowerCase();
@@ -382,9 +405,8 @@ export default function StockPage() {
     const clearFilters = () => {
         setFilterProduct("all");
         setFilterProvider("all");
-        const today = getTodayInputDate();
-        setFilterDateFrom(today);
-        setFilterDateTo(today);
+        setFilterDateFrom("");
+        setFilterDateTo("");
     };
 
     const resetStockForm = () => {
@@ -480,6 +502,19 @@ export default function StockPage() {
                     toast.error(`Ingresá una cantidad válida para el talle ${size}`);
                     return;
                 }
+                if (stockAction === "remove") {
+                    const currentStock = getVariantCurrentStock(
+                        selectedProductId,
+                        advancedColor.trim(),
+                        size
+                    );
+                    if (quantity > currentStock) {
+                        toast.error(
+                            `No podés descontar ${quantity} del talle ${size}; stock actual: ${currentStock}`
+                        );
+                        return;
+                    }
+                }
                 newEntries.push({
                     productId: selectedProductId,
                     quantity,
@@ -497,6 +532,12 @@ export default function StockPage() {
             }
             if (stockAction !== "adjust" && quantity <= 0) {
                 toast.error("Ingresá una cantidad válida");
+                return;
+            }
+            if (stockAction === "remove" && quantity > currentSimpleVariantStock) {
+                toast.error(
+                    `No podés descontar ${quantity}; stock actual de la variante simple: ${currentSimpleVariantStock}`
+                );
                 return;
             }
             newEntries.push({
@@ -553,6 +594,11 @@ export default function StockPage() {
     };
 
     const toggleMovementSelection = (movementId: string, checked: boolean) => {
+        const movement = movements.find((item) => item.id === movementId);
+        if (!movement || !isMovementSelectable(movement)) {
+            return;
+        }
+
         setSelectedMovementIds((current) =>
             checked ? [...current, movementId] : current.filter((id) => id !== movementId)
         );
@@ -894,6 +940,7 @@ export default function StockPage() {
                         ) : (
                             paginatedMovements.map((movement) => {
                                 const isSelected = selectedMovementIds.includes(movement.id);
+                                const isSelectable = isMovementSelectable(movement);
 
                                 return (
                                 <TableRow
@@ -907,14 +954,24 @@ export default function StockPage() {
                                     <TableCell className="text-center">
                                         <Checkbox
                                             checked={isSelected}
+                                            disabled={!isSelectable}
                                             onCheckedChange={(checked) =>
                                                 toggleMovementSelection(
                                                     movement.id,
                                                     checked === true
                                                 )
                                             }
-                                            aria-label={`Seleccionar ingreso de ${getProductName(movement.productId)}`}
-                                            className="size-5 cursor-pointer rounded-lg border-2 border-muted-foreground/35 transition-all hover:border-emerald-500 hover:bg-emerald-500/10 hover:shadow-[0_0_0_4px_rgba(16,185,129,0.12)] data-[state=checked]:border-emerald-600 data-[state=checked]:bg-emerald-600 data-[state=checked]:text-white data-[state=checked]:shadow-[0_0_0_4px_rgba(16,185,129,0.22)] dark:border-white/30 dark:hover:border-emerald-300 dark:hover:bg-emerald-300/12 dark:data-[state=checked]:border-emerald-300 dark:data-[state=checked]:bg-emerald-500 dark:data-[state=checked]:shadow-[0_0_0_4px_rgba(52,211,153,0.28)]"
+                                            aria-label={
+                                                isSelectable
+                                                    ? `Seleccionar ingreso de ${getProductName(movement.productId)}`
+                                                    : `Movimiento no seleccionable de ${getProductName(movement.productId)}`
+                                            }
+                                            className={cn(
+                                                "size-5 rounded-lg border-2 border-muted-foreground/35 transition-all dark:border-white/30",
+                                                isSelectable
+                                                    ? "cursor-pointer hover:border-emerald-500 hover:bg-emerald-500/10 hover:shadow-[0_0_0_4px_rgba(16,185,129,0.12)] data-[state=checked]:border-emerald-600 data-[state=checked]:bg-emerald-600 data-[state=checked]:text-white data-[state=checked]:shadow-[0_0_0_4px_rgba(16,185,129,0.22)] dark:hover:border-emerald-300 dark:hover:bg-emerald-300/12 dark:data-[state=checked]:border-emerald-300 dark:data-[state=checked]:bg-emerald-500 dark:data-[state=checked]:shadow-[0_0_0_4px_rgba(52,211,153,0.28)]"
+                                                    : "cursor-not-allowed opacity-45"
+                                            )}
                                         />
                                     </TableCell>
                                     <TableCell className="text-sm">
@@ -1261,9 +1318,11 @@ export default function StockPage() {
                                                 <Label htmlFor={`qty-${size}`}>
                                                     {stockAction === "adjust"
                                                         ? `Nuevo stock talle ${size}`
-                                                        : `Cantidad talle ${size}`}
+                                                        : stockAction === "remove"
+                                                          ? `Cantidad a descontar talle ${size}`
+                                                          : `Cantidad talle ${size}`}
                                                 </Label>
-                                                {stockAction === "adjust" && (
+                                                {(stockAction === "adjust" || stockAction === "remove") && (
                                                     <p className="text-xs text-muted-foreground">
                                                         Actual: {
                                                             selectedVariantStocks.find((variant) => variant.size === size)?.stock ?? 0
@@ -1291,9 +1350,13 @@ export default function StockPage() {
                         ) : (
                             <div className="space-y-2">
                                 <Label htmlFor="simple-quantity">
-                                    {stockAction === "adjust" ? "Nuevo stock final" : "Cantidad"}
+                                    {stockAction === "adjust"
+                                        ? "Nuevo stock final"
+                                        : stockAction === "remove"
+                                          ? "Cantidad a descontar"
+                                          : "Cantidad"}
                                 </Label>
-                                {stockAction === "adjust" && (
+                                {(stockAction === "adjust" || stockAction === "remove") && (
                                     <p className="text-xs text-muted-foreground">
                                         Variante simple actual: {currentSimpleVariantStock}
                                     </p>

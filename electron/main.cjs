@@ -1,4 +1,5 @@
 const { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const fs = require("fs");
 const net = require("net");
 const path = require("path");
@@ -15,6 +16,8 @@ const THERMAL_TICKET_HEIGHT_MICRONS = 200000;
 
 let localServerPromise;
 let loggingHooksInstalled = false;
+let updateReadyDialogShown = false;
+let updateCheckScheduled = false;
 
 function getLogPath() {
     return path.join(app.getPath("userData"), LOG_FILENAME);
@@ -63,6 +66,87 @@ function installProcessLoggingHooks() {
         }
         return originalStderrWrite(chunk, encoding, callback);
     };
+}
+
+// ---------------------------------------------------------------------------
+// Auto-updates
+// ---------------------------------------------------------------------------
+
+function scheduleAutoUpdateCheck(mainWindow) {
+    if (!app.isPackaged || updateCheckScheduled) return;
+
+    updateCheckScheduled = true;
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on("checking-for-update", () => {
+        appendDesktopLog("auto-update: checking for updates");
+    });
+
+    autoUpdater.on("update-available", (info) => {
+        appendDesktopLog(`auto-update: update available version=${info?.version || "unknown"}`);
+    });
+
+    autoUpdater.on("update-not-available", (info) => {
+        appendDesktopLog(`auto-update: no updates available current=${app.getVersion()} latest=${info?.version || "unknown"}`);
+    });
+
+    autoUpdater.on("download-progress", (progress) => {
+        appendDesktopLog(
+            `auto-update: download progress percent=${progress.percent?.toFixed?.(1) || "0.0"} transferred=${progress.transferred} total=${progress.total}`
+        );
+    });
+
+    autoUpdater.on("error", (error) => {
+        appendDesktopLog(
+            `auto-update: error ${error instanceof Error ? error.stack || error.message : String(error)}`
+        );
+    });
+
+    autoUpdater.on("update-downloaded", async (info) => {
+        appendDesktopLog(`auto-update: update downloaded version=${info?.version || "unknown"}`);
+
+        if (updateReadyDialogShown) return;
+        updateReadyDialogShown = true;
+
+        try {
+            const targetWindow =
+                mainWindow && !mainWindow.isDestroyed()
+                    ? mainWindow
+                    : BrowserWindow.getAllWindows()[0];
+
+            const { response } = await dialog.showMessageBox(targetWindow, {
+                type: "info",
+                buttons: ["Reiniciar ahora", "Más tarde"],
+                defaultId: 0,
+                cancelId: 1,
+                title: "Actualización lista",
+                message: "Hay una nueva versión de POS Ropa lista para instalar.",
+                detail: `Versión descargada: ${info?.version || "nueva versión"}. La aplicación se reiniciará para completar la instalación.`,
+            });
+
+            if (response === 0) {
+                appendDesktopLog("auto-update: user accepted restart");
+                setImmediate(() => autoUpdater.quitAndInstall());
+                return;
+            }
+
+            appendDesktopLog("auto-update: user postponed installation");
+        } catch (error) {
+            appendDesktopLog(
+                `auto-update: failed to show update dialog ${error instanceof Error ? error.stack || error.message : String(error)}`
+            );
+        }
+    });
+
+    setTimeout(() => {
+        appendDesktopLog("auto-update: starting initial check");
+        void autoUpdater.checkForUpdatesAndNotify().catch((error) => {
+            appendDesktopLog(
+                `auto-update: check failed ${error instanceof Error ? error.stack || error.message : String(error)}`
+            );
+        });
+    }, 10000);
 }
 
 // ---------------------------------------------------------------------------
@@ -691,11 +775,15 @@ app.whenReady().then(() => {
     ipcMain.handle("pos-desktop:is-available", () => true);
     ipcMain.handle("pos-desktop:print-html", (_event, payload) => printHtmlSilently(payload));
 
-    void createMainWindow();
+    void createMainWindow().then((mainWindow) => {
+        scheduleAutoUpdateCheck(mainWindow);
+    });
 
     app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) {
-            void createMainWindow();
+            void createMainWindow().then((mainWindow) => {
+                scheduleAutoUpdateCheck(mainWindow);
+            });
         }
     });
 });

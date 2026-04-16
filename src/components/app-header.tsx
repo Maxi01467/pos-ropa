@@ -68,19 +68,22 @@ export function AppHeader({
     const { theme, setTheme } = useTheme();
     const [notifications, setNotifications] = useState<QuickCreationNotification[]>([]);
     const [seenNotificationIds, setSeenNotificationIds] = useState<Set<string>>(new Set());
-    const [palette, setPalette] = useState<PosPalette>(() => {
-        if (typeof window === "undefined") {
-            return "current";
-        }
-
-        const savedPalette = window.localStorage.getItem(POS_PALETTE_STORAGE_KEY);
-        return isPosPalette(savedPalette) ? savedPalette : "current";
-    });
+    const [palette, setPalette] = useState<PosPalette>("current");
+    const [isMounted, setIsMounted] = useState(false);
 
     useEffect(() => {
+        setIsMounted(true);
+        const savedPalette = window.localStorage.getItem(POS_PALETTE_STORAGE_KEY);
+        if (isPosPalette(savedPalette)) {
+            setPalette(savedPalette);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!isMounted) return;
         document.documentElement.dataset.posPalette = palette;
         window.localStorage.setItem(POS_PALETTE_STORAGE_KEY, palette);
-    }, [palette]);
+    }, [palette, isMounted]);
 
     const loadNotifications = useCallback(async () => {
         if (role !== "ADMIN") return;

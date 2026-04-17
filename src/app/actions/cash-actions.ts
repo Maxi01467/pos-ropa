@@ -288,6 +288,16 @@ const getCashSessionsHistoryCached = unstable_cache(
                 countedBy: {
                     select: { id: true, name: true, role: true },
                 },
+                movements: {
+                    orderBy: { createdAt: "desc" },
+                    select: {
+                        id: true,
+                        amount: true,
+                        type: true,
+                        reason: true,
+                        createdAt: true,
+                    },
+                },
                 sales: {
                     orderBy: { createdAt: "desc" },
                     include: {
@@ -318,6 +328,13 @@ const getCashSessionsHistoryCached = unstable_cache(
             countedBy: session.countedBy
                 ? { id: session.countedBy.id, name: session.countedBy.name, role: session.countedBy.role }
                 : null,
+            movements: session.movements.map((movement) => ({
+                id: movement.id,
+                amount: Number(movement.amount),
+                type: movement.type,
+                reason: movement.reason,
+                createdAt: movement.createdAt.toISOString(),
+            })),
             sales: session.sales.map((sale) => ({
                 id: sale.id,
                 ticketNumber: sale.ticketNumber,

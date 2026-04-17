@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
     ArrowRight,
     CalendarCheck,
+    ChartColumn,
     Clock3,
     Package,
     ReceiptText,
@@ -80,6 +81,13 @@ const boardColumns = [
                 href: "/empleados",
                 gradient: "linear-gradient(135deg, #334155 0%, #0f172a 100%)",
             },
+            {
+                title: "Reportes",
+                description: "Ventas y medios de pago del local.",
+                icon: ChartColumn,
+                href: "/reportes",
+                gradient: "linear-gradient(135deg, #0f766e 0%, #155e75 100%)",
+            },
         ],
     },
 ];
@@ -128,6 +136,13 @@ const quickLinks = [
         description: "Cierres y diferencias",
         icon: CalendarCheck,
         gradient: "linear-gradient(135deg, #ea580c 0%, #c2410c 100%)",
+    },
+    {
+        href: "/reportes",
+        label: "Reportes",
+        description: "Ventas y medios de pago",
+        icon: ChartColumn,
+        gradient: "linear-gradient(135deg, #0f766e 0%, #155e75 100%)",
     },
 ];
 

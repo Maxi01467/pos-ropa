@@ -50,6 +50,13 @@ type CashSessionHistory = {
     openedBy: { id: string; name: string; role: string } | null;
     closedBy: { id: string; name: string; role: string } | null;
     countedBy: { id: string; name: string; role: string } | null;
+    movements: Array<{
+        id: string;
+        amount: number;
+        type: string;
+        reason: string;
+        createdAt: string;
+    }>;
     sales: Array<{
         id: string;
         ticketNumber: number;
@@ -85,7 +92,8 @@ function formatDate(dateStr: string | null): string {
 export default function HistorialCajaPage() {
     const [sessions, setSessions] = useState<CashSessionHistory[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [selectedSession, setSelectedSession] = useState<CashSessionHistory | null>(null);
+    const [selectedTicketsSession, setSelectedTicketsSession] = useState<CashSessionHistory | null>(null);
+    const [selectedCashSession, setSelectedCashSession] = useState<CashSessionHistory | null>(null);
 
     const loadHistory = useCallback(async () => {
         try {
@@ -118,6 +126,26 @@ export default function HistorialCajaPage() {
             totalTickets,
         };
     }, [sessions]);
+
+    const getSessionAmounts = (session: CashSessionHistory) => {
+        const salesCash = session.sales.reduce((sum, sale) => sum + Number(sale.cashAmount || 0), 0);
+        const salesTransfer = session.sales.reduce((sum, sale) => sum + Number(sale.transferAmount || 0), 0);
+        const manualIn = session.movements
+            .filter((movement) => movement.type === "INGRESO")
+            .reduce((sum, movement) => sum + movement.amount, 0);
+        const manualOut = session.movements
+            .filter((movement) => movement.type === "EGRESO")
+            .reduce((sum, movement) => sum + movement.amount, 0);
+        const expectedCash = session.initialAmount + salesCash + manualIn - manualOut;
+
+        return {
+            salesCash,
+            salesTransfer,
+            manualIn,
+            manualOut,
+            expectedCash,
+        };
+    };
 
     if (isLoading) {
         return (
@@ -276,15 +304,26 @@ export default function HistorialCajaPage() {
                                         {session.sales.length}
                                     </TableCell>
                                     <TableCell className="text-right">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="gap-2"
-                                            onClick={() => setSelectedSession(session)}
-                                        >
-                                            <Eye className="size-4" />
-                                            Ver boletas
-                                        </Button>
+                                        <div className="flex justify-end gap-2">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="gap-2"
+                                                onClick={() => setSelectedCashSession(session)}
+                                            >
+                                                <Wallet className="size-4" />
+                                                Ver caja
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="gap-2"
+                                                onClick={() => setSelectedTicketsSession(session)}
+                                            >
+                                                <Eye className="size-4" />
+                                                Ver boletas
+                                            </Button>
+                                        </div>
                                     </TableCell>
                                 </TableRow>
                             ))
@@ -294,34 +333,116 @@ export default function HistorialCajaPage() {
             </div>
 
             <Dialog
-                open={Boolean(selectedSession)}
-                onOpenChange={(open) => !open && setSelectedSession(null)}
+                open={Boolean(selectedCashSession)}
+                onOpenChange={(open) => !open && setSelectedCashSession(null)}
             >
                 <DialogContent className="sm:max-w-4xl">
-                    {selectedSession && (
+                    {selectedCashSession && (
+                        <>
+                            {(() => {
+                                const amounts = getSessionAmounts(selectedCashSession);
+
+                                return (
+                                    <>
+                                        <DialogHeader>
+                                            <DialogTitle className="flex items-center gap-2 text-xl">
+                                                <Wallet className="size-5 text-muted-foreground" />
+                                                Detalle de caja
+                                            </DialogTitle>
+                                            <DialogDescription>
+                                                Apertura: {formatDate(selectedCashSession.openingDate)} · Cierre: {formatDate(selectedCashSession.closingDate)}
+                                            </DialogDescription>
+                                        </DialogHeader>
+
+                                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                            <div className="rounded-[1.25rem] border border-border/70 bg-muted/30 p-4">
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Estado</p>
+                                                <p className="mt-2 text-lg font-bold">
+                                                    {selectedCashSession.status === "PENDING_COUNT" ? "PENDIENTE" : selectedCashSession.status}
+                                                </p>
+                                            </div>
+                                            <div className="rounded-[1.25rem] border border-border/70 bg-muted/30 p-4">
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Fondo inicial</p>
+                                                <p className="mt-2 text-lg font-bold">{formatCurrency(selectedCashSession.initialAmount)}</p>
+                                            </div>
+                                            <div className="rounded-[1.25rem] border border-border/70 bg-muted/30 p-4">
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Efectivo en ventas</p>
+                                                <p className="mt-2 text-lg font-bold">{formatCurrency(amounts.salesCash)}</p>
+                                            </div>
+                                            <div className="rounded-[1.25rem] border border-border/70 bg-muted/30 p-4">
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Transferencias</p>
+                                                <p className="mt-2 text-lg font-bold">{formatCurrency(amounts.salesTransfer)}</p>
+                                            </div>
+                                            <div className="rounded-[1.25rem] border border-border/70 bg-muted/30 p-4">
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ingresos manuales</p>
+                                                <p className="mt-2 text-lg font-bold">{formatCurrency(amounts.manualIn)}</p>
+                                            </div>
+                                            <div className="rounded-[1.25rem] border border-border/70 bg-muted/30 p-4">
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Egresos manuales</p>
+                                                <p className="mt-2 text-lg font-bold">{formatCurrency(amounts.manualOut)}</p>
+                                            </div>
+                                            <div className="rounded-[1.25rem] border border-border/70 bg-muted/30 p-4">
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Monto esperado</p>
+                                                <p className="mt-2 text-lg font-bold">{formatCurrency(selectedCashSession.expectedAmount ?? amounts.expectedCash)}</p>
+                                            </div>
+                                            <div className="rounded-[1.25rem] border border-border/70 bg-muted/30 p-4">
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Monto contado</p>
+                                                <p className="mt-2 text-lg font-bold">{formatCurrency(selectedCashSession.actualAmount)}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid gap-3 sm:grid-cols-2">
+                                            <div className="rounded-[1.25rem] border border-border/70 bg-muted/30 p-4">
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Diferencia</p>
+                                                <p className="mt-2 text-lg font-bold">{formatCurrency(selectedCashSession.difference)}</p>
+                                                <p className="mt-1 text-sm text-muted-foreground">
+                                                    Arqueada por {selectedCashSession.countedBy?.name ?? "—"} el {formatDate(selectedCashSession.countingDate)}
+                                                </p>
+                                            </div>
+                                            <div className="rounded-[1.25rem] border border-border/70 bg-muted/30 p-4">
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Responsables</p>
+                                                <p className="mt-2 text-sm font-medium text-foreground">Apertura: {selectedCashSession.openedBy?.name ?? "—"}</p>
+                                                <p className="mt-1 text-sm text-muted-foreground">Cierre: {selectedCashSession.closedBy?.name ?? "—"}</p>
+                                                <p className="mt-1 text-sm text-muted-foreground">Boletas: {selectedCashSession.sales.length}</p>
+                                            </div>
+                                        </div>
+                                    </>
+                                );
+                            })()}
+                        </>
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            <Dialog
+                open={Boolean(selectedTicketsSession)}
+                onOpenChange={(open) => !open && setSelectedTicketsSession(null)}
+            >
+                <DialogContent className="sm:max-w-4xl">
+                    {selectedTicketsSession && (
                         <>
                             <DialogHeader>
                                 <DialogTitle className="flex items-center gap-2 text-xl">
-                                    <Wallet className="size-5 text-muted-foreground" />
-                                    Detalle de caja
+                                    <Eye className="size-5 text-muted-foreground" />
+                                    Boletas de la caja
                                 </DialogTitle>
                                 <DialogDescription>
-                                    Apertura: {formatDate(selectedSession.openingDate)} · Cierre: {formatDate(selectedSession.closingDate)}
+                                    Apertura: {formatDate(selectedTicketsSession.openingDate)} · Cierre: {formatDate(selectedTicketsSession.closingDate)}
                                 </DialogDescription>
                             </DialogHeader>
 
                             <div className="grid gap-3 sm:grid-cols-3">
                                 <div className="rounded-[1.25rem] border border-border/70 bg-muted/30 p-4">
                                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Estado</p>
-                                    <p className="mt-2 text-lg font-bold">{selectedSession.status === "PENDING_COUNT" ? "PENDIENTE" : selectedSession.status}</p>
+                                    <p className="mt-2 text-lg font-bold">{selectedTicketsSession.status === "PENDING_COUNT" ? "PENDIENTE" : selectedTicketsSession.status}</p>
                                 </div>
                                 <div className="rounded-[1.25rem] border border-border/70 bg-muted/30 p-4">
                                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Fondo inicial</p>
-                                    <p className="mt-2 text-lg font-bold">{formatCurrency(selectedSession.initialAmount)}</p>
+                                    <p className="mt-2 text-lg font-bold">{formatCurrency(selectedTicketsSession.initialAmount)}</p>
                                 </div>
                                 <div className="rounded-[1.25rem] border border-border/70 bg-muted/30 p-4">
                                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Boletas</p>
-                                    <p className="mt-2 text-lg font-bold">{selectedSession.sales.length}</p>
+                                    <p className="mt-2 text-lg font-bold">{selectedTicketsSession.sales.length}</p>
                                 </div>
                             </div>
 
@@ -337,14 +458,14 @@ export default function HistorialCajaPage() {
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {selectedSession.sales.length === 0 ? (
+                                        {selectedTicketsSession.sales.length === 0 ? (
                                             <TableRow>
                                                 <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
                                                     Esta caja todavía no tiene boletas registradas.
                                                 </TableCell>
                                             </TableRow>
                                         ) : (
-                                            selectedSession.sales.map((sale) => (
+                                            selectedTicketsSession.sales.map((sale) => (
                                                 <TableRow key={sale.id}>
                                                     <TableCell>
                                                         <Badge variant="outline" className="font-mono text-sm bg-background">

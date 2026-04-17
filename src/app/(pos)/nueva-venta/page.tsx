@@ -246,15 +246,16 @@ export default function NuevaVentaPage() {
             setAllProducts(products);
             setSellers(sellersData);
             setHasLoadedCatalogOnce(true);
-            if (sellersData.length > 0) {
-                setSelectedSellerId((currentSelectedSellerId) => {
-                    if (currentSelectedSellerId && sellersData.some((seller) => seller.id === currentSelectedSellerId)) {
-                        return currentSelectedSellerId;
-                    }
+            setSelectedSellerId((currentSelectedSellerId) => {
+                if (
+                    currentSelectedSellerId &&
+                    sellersData.some((seller) => seller.id === currentSelectedSellerId)
+                ) {
+                    return currentSelectedSellerId;
+                }
 
-                    return sellersData[0].id;
-                });
-            }
+                return "";
+            });
             console.log(
                 `[nueva-venta] loadCatalog success products=${products.length} sellers=${sellersData.length} reason=${reason}`
             );
@@ -544,6 +545,10 @@ export default function NuevaVentaPage() {
 
     const finalizeSale = async (payment?: PaymentBreakdown) => {
         console.log("[nueva-venta] finalizeSale start");
+        if (!selectedSellerId) {
+            throw new Error("Seleccioná un vendedor antes de cobrar");
+        }
+
         const paymentMethod: "EFECTIVO" | "TRANSFERENCIA" | "MIXTO" | "CAMBIO" =
             payment?.paymentMethod
                 ? paymentMethodMap[payment.paymentMethod]

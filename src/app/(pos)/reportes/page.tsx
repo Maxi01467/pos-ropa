@@ -1,0 +1,515 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { getSalesHistory } from "@/app/actions/sales-actions";
+import {
+    ArrowDownLeft,
+    ArrowUpRight,
+    Banknote,
+    CreditCard,
+    Layers,
+    Loader2,
+    ReceiptText,
+    TrendingUp,
+    User,
+    Wallet,
+} from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { CACHE_TAGS } from "@/lib/cache-tags";
+import { useDataRefresh } from "@/lib/data-sync-client";
+
+type SaleHistoryItem = {
+    id: string;
+    ticketNumber: number;
+    total: number;
+    paymentMethod: string;
+    cashAmount?: number;
+    transferAmount?: number;
+    date: string;
+    sellerName: string;
+};
+
+function formatCurrency(amount: number | null | undefined): string {
+    return new Intl.NumberFormat("es-AR", {
+        style: "currency",
+        currency: "ARS",
+        minimumFractionDigits: 0,
+    }).format(Number(amount) || 0);
+}
+
+function formatDate(dateStr: string): string {
+    return new Date(dateStr).toLocaleDateString("es-AR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+}
+
+function formatShortDate(dateStr: string): string {
+    return new Date(dateStr).toLocaleDateString("es-AR", {
+        day: "2-digit",
+        month: "2-digit",
+    });
+}
+
+export default function ReportesPage() {
+    const [sales, setSales] = useState<SaleHistoryItem[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    const loadReports = useCallback(async () => {
+        try {
+            const data = await getSalesHistory();
+            setSales(data as SaleHistoryItem[]);
+        } catch (error) {
+            console.error(error);
+            toast.error("No se pudieron cargar los reportes");
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        void loadReports();
+    }, [loadReports]);
+
+    useDataRefresh([CACHE_TAGS.sales, CACHE_TAGS.cash], loadReports);
+
+    const reportData = useMemo(() => {
+        const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);
+        const totalCash = sales.reduce((sum, sale) => sum + Number(sale.cashAmount || 0), 0);
+        const totalTransfer = sales.reduce((sum, sale) => sum + Number(sale.transferAmount || 0), 0);
+        const ticketAverage = sales.length > 0 ? totalSales / sales.length : 0;
+
+        const bySellerMap = new Map<string, { sellerName: string; tickets: number; total: number }>();
+        const byDayMap = new Map<string, { day: string; tickets: number; total: number }>();
+
+        sales.forEach((sale) => {
+            const sellerCurrent = bySellerMap.get(sale.sellerName) ?? {
+                sellerName: sale.sellerName,
+                tickets: 0,
+                total: 0,
+            };
+
+            sellerCurrent.tickets += 1;
+            sellerCurrent.total += sale.total;
+            bySellerMap.set(sale.sellerName, sellerCurrent);
+
+            const dayKey = sale.date.slice(0, 10);
+            const dayCurrent = byDayMap.get(dayKey) ?? {
+                day: dayKey,
+                tickets: 0,
+                total: 0,
+            };
+
+            dayCurrent.tickets += 1;
+            dayCurrent.total += sale.total;
+            byDayMap.set(dayKey, dayCurrent);
+        });
+
+        const sellerRows = Array.from(bySellerMap.values()).sort((a, b) => b.total - a.total);
+        const dayRows = Array.from(byDayMap.values())
+            .sort((a, b) => a.day.localeCompare(b.day))
+            .slice(-7);
+
+        const paymentRows = [
+            {
+                key: "cash",
+                label: "Efectivo",
+                amount: totalCash,
+                count: sales.filter((sale) => Number(sale.cashAmount || 0) > 0).length,
+                icon: Banknote,
+                tone: "bg-emerald-900 text-emerald-100",
+            },
+            {
+                key: "transfer",
+                label: "Transferencia",
+                amount: totalTransfer,
+                count: sales.filter((sale) => Number(sale.transferAmount || 0) > 0).length,
+                icon: CreditCard,
+                tone: "bg-blue-900 text-blue-100",
+            },
+        ];
+
+        const totalCollected = totalCash + totalTransfer;
+        const topSeller = sellerRows[0] ?? null;
+
+        return {
+            totalSales,
+            totalCash,
+            totalTransfer,
+            ticketAverage,
+            totalCollected,
+            paymentRows,
+            sellerRows,
+            dayRows,
+            topSeller,
+            recentSales: sales.slice(0, 10),
+            cashOnlyCount: sales.filter((sale) => sale.paymentMethod === "EFECTIVO").length,
+            transferOnlyCount: sales.filter((sale) => sale.paymentMethod === "TRANSFERENCIA").length,
+            mixedCount: sales.filter((sale) => sale.paymentMethod === "MIXTO").length,
+        };
+    }, [sales]);
+
+    if (isLoading) {
+        return (
+            <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-6">
+                <div className="rounded-[1.75rem] border border-border/70 bg-card/90 px-10 py-8 shadow-sm">
+                    <div className="flex items-center gap-4">
+                        <div className="rounded-2xl bg-slate-100 p-3">
+                            <Loader2 className="size-6 animate-spin text-slate-700" />
+                        </div>
+                        <div>
+                            <p className="text-base font-semibold text-foreground">Cargando reportes</p>
+                            <p className="text-sm text-muted-foreground">
+                                Estamos consolidando ventas y medios de pago.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="p-4 sm:p-5 lg:p-6">
+            <div className="flex flex-col gap-5">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                    <div>
+                        <div className="inline-flex items-center gap-2 rounded-full border border-cyan-900/25 bg-[linear-gradient(135deg,rgba(8,145,178,0.18),rgba(14,116,144,0.08))] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-800 dark:text-cyan-100">
+                            <TrendingUp className="size-3.5" />
+                            Reportes
+                        </div>
+                        <h1 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-foreground sm:text-3xl">
+                            Ventas y medios de pago
+                        </h1>
+                    </div>
+                    <div className="inline-flex items-center gap-3 rounded-[1.25rem] border border-border/70 bg-card/90 px-4 py-3 shadow-sm">
+                        <div className="rounded-xl bg-muted px-3 py-2 text-center">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                                Ventas
+                            </p>
+                            <p className="mt-1 text-xl font-semibold text-foreground">{sales.length}</p>
+                        </div>
+                        <div className="rounded-xl bg-muted px-3 py-2 text-center">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                                Facturado
+                            </p>
+                            <p className="mt-1 text-xl font-semibold text-foreground">{formatCurrency(reportData.totalSales)}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <Card className="rounded-[1.5rem] border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.14),rgba(6,95,70,0.04))] shadow-sm">
+                        <CardContent className="flex items-center gap-4 p-4">
+                            <div className="flex size-10 items-center justify-center rounded-lg bg-emerald-900 text-emerald-100">
+                                <Wallet className="size-5" />
+                            </div>
+                            <div>
+                                <p className="text-sm text-muted-foreground">Total vendido</p>
+                                <p className="text-2xl font-bold">{formatCurrency(reportData.totalSales)}</p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card className="rounded-[1.5rem] border-blue-800/20 bg-[linear-gradient(135deg,rgba(37,99,235,0.14),rgba(30,64,175,0.04))] shadow-sm">
+                        <CardContent className="flex items-center gap-4 p-4">
+                            <div className="flex size-10 items-center justify-center rounded-lg bg-blue-900 text-blue-100">
+                                <ReceiptText className="size-5" />
+                            </div>
+                            <div>
+                                <p className="text-sm text-muted-foreground">Ticket promedio</p>
+                                <p className="text-2xl font-bold">{formatCurrency(reportData.ticketAverage)}</p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card className="rounded-[1.5rem] border-orange-800/20 bg-[linear-gradient(135deg,rgba(234,88,12,0.14),rgba(194,65,12,0.04))] shadow-sm">
+                        <CardContent className="flex items-center gap-4 p-4">
+                            <div className="flex size-10 items-center justify-center rounded-lg bg-orange-900 text-orange-100">
+                                <Banknote className="size-5" />
+                            </div>
+                            <div>
+                                <p className="text-sm text-muted-foreground">Efectivo</p>
+                                <p className="text-2xl font-bold">{formatCurrency(reportData.totalCash)}</p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card className="rounded-[1.5rem] border-violet-800/20 bg-[linear-gradient(135deg,rgba(109,40,217,0.14),rgba(67,56,202,0.04))] shadow-sm">
+                        <CardContent className="flex items-center gap-4 p-4">
+                            <div className="flex size-10 items-center justify-center rounded-lg bg-violet-900 text-violet-100">
+                                <CreditCard className="size-5" />
+                            </div>
+                            <div>
+                                <p className="text-sm text-muted-foreground">Transferencias</p>
+                                <p className="text-2xl font-bold">{formatCurrency(reportData.totalTransfer)}</p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+
+                <Tabs defaultValue="ventas" className="mt-1">
+                    <TabsList className="w-full justify-start sm:w-fit">
+                        <TabsTrigger value="ventas">Reporte de ventas</TabsTrigger>
+                        <TabsTrigger value="medios">Transferencias vs efectivo</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="ventas" className="mt-4 space-y-4">
+                        <div className="grid gap-4 xl:grid-cols-[1.3fr_1fr]">
+                            <Card className="rounded-[1.5rem] border-border/70 bg-card/90 shadow-sm">
+                                <CardHeader>
+                                    <CardTitle>Resumen por vendedor</CardTitle>
+                                    <CardDescription>Ventas acumuladas y cantidad de boletas registradas.</CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="overflow-hidden rounded-[1.25rem] border border-border/70">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow className="hover:bg-transparent">
+                                                    <TableHead>Vendedor</TableHead>
+                                                    <TableHead className="text-right">Boletas</TableHead>
+                                                    <TableHead className="text-right">Total</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {reportData.sellerRows.length === 0 ? (
+                                                    <TableRow>
+                                                        <TableCell colSpan={3} className="py-12 text-center text-muted-foreground">
+                                                            Todavía no hay ventas registradas.
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ) : (
+                                                    reportData.sellerRows.map((seller) => (
+                                                        <TableRow key={seller.sellerName}>
+                                                            <TableCell className="font-medium">{seller.sellerName}</TableCell>
+                                                            <TableCell className="text-right">{seller.tickets}</TableCell>
+                                                            <TableCell className="text-right font-bold">{formatCurrency(seller.total)}</TableCell>
+                                                        </TableRow>
+                                                    ))
+                                                )}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card className="rounded-[1.5rem] border-border/70 bg-card/90 shadow-sm">
+                                <CardHeader>
+                                    <CardTitle>Ritmo de ventas</CardTitle>
+                                    <CardDescription>Últimos días con ventas registradas.</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    {reportData.dayRows.length === 0 ? (
+                                        <div className="rounded-[1.25rem] border border-dashed border-border/80 px-4 py-10 text-center text-sm text-muted-foreground">
+                                            Sin días para mostrar todavía.
+                                        </div>
+                                    ) : (
+                                        reportData.dayRows.map((day) => {
+                                            const width = reportData.totalSales > 0 ? (day.total / reportData.totalSales) * 100 : 0;
+
+                                            return (
+                                                <div key={day.day} className="rounded-[1.25rem] border border-border/70 bg-muted/25 p-4">
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <div>
+                                                            <p className="text-sm font-semibold text-foreground">{formatShortDate(day.day)}</p>
+                                                            <p className="text-xs text-muted-foreground">{day.tickets} boleta{day.tickets !== 1 ? "s" : ""}</p>
+                                                        </div>
+                                                        <p className="text-sm font-bold">{formatCurrency(day.total)}</p>
+                                                    </div>
+                                                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+                                                        <div
+                                                            className="h-full rounded-full bg-[linear-gradient(90deg,#0f766e_0%,#06b6d4_100%)]"
+                                                            style={{ width: `${Math.max(width, 6)}%` }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </div>
+
+                        <Card className="rounded-[1.5rem] border-border/70 bg-card/90 shadow-sm">
+                            <CardHeader>
+                                <CardTitle>Últimas ventas</CardTitle>
+                                <CardDescription>Boletas recientes con vendedor y medio de pago.</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="overflow-hidden rounded-[1.25rem] border border-border/70">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow className="hover:bg-transparent">
+                                                <TableHead>Boleta</TableHead>
+                                                <TableHead>Fecha</TableHead>
+                                                <TableHead>Vendedor</TableHead>
+                                                <TableHead>Medio</TableHead>
+                                                <TableHead className="text-right">Total</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {reportData.recentSales.length === 0 ? (
+                                                <TableRow>
+                                                    <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
+                                                        Todavía no hay ventas registradas.
+                                                    </TableCell>
+                                                </TableRow>
+                                            ) : (
+                                                reportData.recentSales.map((sale) => (
+                                                    <TableRow key={sale.id}>
+                                                        <TableCell>
+                                                            <Badge variant="outline" className="bg-background font-mono text-sm">
+                                                                #{sale.ticketNumber.toString().padStart(4, "0")}
+                                                            </Badge>
+                                                        </TableCell>
+                                                        <TableCell className="text-sm text-muted-foreground">
+                                                            {formatDate(sale.date)}
+                                                        </TableCell>
+                                                        <TableCell className="font-medium">{sale.sellerName}</TableCell>
+                                                        <TableCell>
+                                                            <Badge
+                                                                className={cn(
+                                                                    "gap-1",
+                                                                    sale.paymentMethod === "EFECTIVO" && "bg-emerald-900 text-emerald-100 hover:bg-emerald-800",
+                                                                    sale.paymentMethod === "TRANSFERENCIA" && "bg-blue-900 text-blue-100 hover:bg-blue-800",
+                                                                    sale.paymentMethod === "MIXTO" && "bg-violet-900 text-violet-100 hover:bg-violet-800",
+                                                                    sale.paymentMethod === "CAMBIO" && "bg-orange-900 text-orange-100 hover:bg-orange-800",
+                                                                )}
+                                                            >
+                                                                {sale.paymentMethod === "EFECTIVO" && <Banknote className="size-3" />}
+                                                                {sale.paymentMethod === "TRANSFERENCIA" && <CreditCard className="size-3" />}
+                                                                {sale.paymentMethod === "MIXTO" && <Layers className="size-3" />}
+                                                                {sale.paymentMethod}
+                                                            </Badge>
+                                                        </TableCell>
+                                                        <TableCell className="text-right font-bold">{formatCurrency(sale.total)}</TableCell>
+                                                    </TableRow>
+                                                ))
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
+
+                    <TabsContent value="medios" className="mt-4 space-y-4">
+                        <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]">
+                            <Card className="rounded-[1.5rem] border-border/70 bg-card/90 shadow-sm">
+                                <CardHeader>
+                                    <CardTitle>Transferencias vs efectivo</CardTitle>
+                                    <CardDescription>Comparación del dinero ingresado por cada medio de pago.</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    {reportData.paymentRows.map((payment) => {
+                                        const Icon = payment.icon;
+                                        const percentage = reportData.totalCollected > 0 ? (payment.amount / reportData.totalCollected) * 100 : 0;
+
+                                        return (
+                                            <div key={payment.key} className="rounded-[1.25rem] border border-border/70 bg-muted/25 p-4">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={cn("flex size-10 items-center justify-center rounded-lg", payment.tone)}>
+                                                            <Icon className="size-5" />
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-semibold text-foreground">{payment.label}</p>
+                                                            <p className="text-sm text-muted-foreground">
+                                                                {payment.count} venta{payment.count !== 1 ? "s" : ""} con participación
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-lg font-bold">{formatCurrency(payment.amount)}</p>
+                                                        <p className="text-sm text-muted-foreground">{percentage.toFixed(1)}%</p>
+                                                    </div>
+                                                </div>
+                                                <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+                                                    <div
+                                                        className={cn(
+                                                            "h-full rounded-full",
+                                                            payment.key === "cash"
+                                                                ? "bg-[linear-gradient(90deg,#059669_0%,#22c55e_100%)]"
+                                                                : "bg-[linear-gradient(90deg,#2563eb_0%,#06b6d4_100%)]",
+                                                        )}
+                                                        style={{ width: `${Math.max(percentage, 6)}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </CardContent>
+                            </Card>
+
+                            <Card className="rounded-[1.5rem] border-border/70 bg-card/90 shadow-sm">
+                                <CardHeader>
+                                    <CardTitle>Composición de cobros</CardTitle>
+                                    <CardDescription>Conteo de operaciones por tipo de cobro registrado.</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <div className="rounded-[1.25rem] border border-border/70 bg-muted/25 p-4">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <ArrowDownLeft className="size-4 text-emerald-600" />
+                                                <span className="text-sm font-medium">Solo efectivo</span>
+                                            </div>
+                                            <span className="text-lg font-bold">{reportData.cashOnlyCount}</span>
+                                        </div>
+                                    </div>
+                                    <div className="rounded-[1.25rem] border border-border/70 bg-muted/25 p-4">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <ArrowUpRight className="size-4 text-blue-600" />
+                                                <span className="text-sm font-medium">Solo transferencia</span>
+                                            </div>
+                                            <span className="text-lg font-bold">{reportData.transferOnlyCount}</span>
+                                        </div>
+                                    </div>
+                                    <div className="rounded-[1.25rem] border border-border/70 bg-muted/25 p-4">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <Layers className="size-4 text-violet-600" />
+                                                <span className="text-sm font-medium">Cobro mixto</span>
+                                            </div>
+                                            <span className="text-lg font-bold">{reportData.mixedCount}</span>
+                                        </div>
+                                    </div>
+                                    <div className="rounded-[1.25rem] border border-border/70 bg-[linear-gradient(135deg,rgba(15,118,110,0.12),rgba(8,145,178,0.04))] p-4">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div>
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Vendedora destacada</p>
+                                                <p className="mt-2 text-base font-bold text-foreground">
+                                                    {reportData.topSeller?.sellerName ?? "—"}
+                                                </p>
+                                                <p className="mt-1 text-sm text-muted-foreground">
+                                                    {reportData.topSeller
+                                                        ? `${reportData.topSeller.tickets} boletas · ${formatCurrency(reportData.topSeller.total)}`
+                                                        : "Sin datos todavía"}
+                                                </p>
+                                            </div>
+                                            <div className="flex size-10 items-center justify-center rounded-lg bg-cyan-900 text-cyan-100">
+                                                <User className="size-5" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </TabsContent>
+                </Tabs>
+            </div>
+        </div>
+    );
+}

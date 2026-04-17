@@ -5,6 +5,7 @@ const Link = (props: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string })
 import { usePathname } from "next/navigation";
 import {
     CalendarClock,
+    ChartColumn,
     ChevronDown,
     ChevronLeft,
     ChevronRight,
@@ -69,6 +70,12 @@ const workspaceItems = [
         label: "Arqueos",
         icon: ClipboardList,
         badge: 1,
+    },
+    {
+        href: "/reportes",
+        label: "Reportes",
+        icon: ChartColumn,
+        badge: 2,
     },
     {
         href: "/empleados",

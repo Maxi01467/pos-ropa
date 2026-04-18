@@ -78,6 +78,10 @@ export async function getCurrentSession() {
 
 // 2. Abrir una nueva caja al inicio del día
 export async function openCashSession(initialAmount: number, userId: string) {
+    if (!Number.isFinite(initialAmount) || initialAmount < 0) {
+        throw new Error("El monto inicial debe ser un número mayor o igual a 0");
+    }
+
     const existingSession = await prisma.cashSession.findFirst({
         where: { status: "OPEN" },
     });

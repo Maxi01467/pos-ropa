@@ -2,14 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSalesHistory } from "@/app/actions/sales-actions";
+import { getInventoryData } from "@/app/actions/inventory-actions";
 import {
     ArrowDownLeft,
     ArrowUpRight,
     Banknote,
+    Clock3,
     CreditCard,
+    PackageSearch,
     Layers,
     Loader2,
+    PackageX,
     ReceiptText,
+    ShieldAlert,
+    Star,
     TrendingUp,
     User,
     Wallet,
@@ -39,6 +45,27 @@ type SaleHistoryItem = {
     transferAmount?: number;
     date: string;
     sellerName: string;
+    items?: {
+        id: string;
+        productName: string;
+        size: string;
+        color: string;
+        sku: string;
+        quantity: number;
+        priceAtTime: number;
+        priceType: "NORMAL" | "WHOLESALE";
+        returnedQuantity?: number;
+    }[];
+};
+
+type InventoryProduct = {
+    id: string;
+    code: string;
+    name: string;
+    price: number;
+    wholesalePrice: number;
+    costPrice?: number;
+    stock: number;
 };
 
 function formatCurrency(amount: number | null | undefined): string {
@@ -66,14 +93,22 @@ function formatShortDate(dateStr: string): string {
     });
 }
 
+function formatHourRange(hour: number): string {
+    const start = hour.toString().padStart(2, "0");
+    const end = ((hour + 1) % 24).toString().padStart(2, "0");
+    return `${start}:00 - ${end}:00`;
+}
+
 export default function ReportesPage() {
     const [sales, setSales] = useState<SaleHistoryItem[]>([]);
+    const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     const loadReports = useCallback(async () => {
         try {
-            const data = await getSalesHistory();
-            setSales(data as SaleHistoryItem[]);
+            const [salesData, inventoryData] = await Promise.all([getSalesHistory(), getInventoryData()]);
+            setSales(salesData as SaleHistoryItem[]);
+            setInventoryProducts((inventoryData.products ?? []) as InventoryProduct[]);
         } catch (error) {
             console.error(error);
             toast.error("No se pudieron cargar los reportes");
@@ -86,7 +121,7 @@ export default function ReportesPage() {
         void loadReports();
     }, [loadReports]);
 
-    useDataRefresh([CACHE_TAGS.sales, CACHE_TAGS.cash], loadReports);
+    useDataRefresh([CACHE_TAGS.sales, CACHE_TAGS.cash, CACHE_TAGS.inventory, CACHE_TAGS.stock], loadReports);
 
     const reportData = useMemo(() => {
         const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);
@@ -96,6 +131,16 @@ export default function ReportesPage() {
 
         const bySellerMap = new Map<string, { sellerName: string; tickets: number; total: number }>();
         const byDayMap = new Map<string, { day: string; tickets: number; total: number }>();
+        const byHourMap = new Map<number, { hour: number; tickets: number; total: number }>();
+        const byProductMap = new Map<
+            string,
+            {
+                productName: string;
+                unitsSold: number;
+                tickets: number;
+                total: number;
+            }
+        >();
 
         sales.forEach((sale) => {
             const sellerCurrent = bySellerMap.get(sale.sellerName) ?? {
@@ -118,12 +163,64 @@ export default function ReportesPage() {
             dayCurrent.tickets += 1;
             dayCurrent.total += sale.total;
             byDayMap.set(dayKey, dayCurrent);
+
+            const saleHour = new Date(sale.date).getHours();
+            const hourCurrent = byHourMap.get(saleHour) ?? {
+                hour: saleHour,
+                tickets: 0,
+                total: 0,
+            };
+
+            hourCurrent.tickets += 1;
+            hourCurrent.total += sale.total;
+            byHourMap.set(saleHour, hourCurrent);
+
+            const productsInTicket = new Set<string>();
+            sale.items?.forEach((item) => {
+                const netQuantity = Math.max(item.quantity - Number(item.returnedQuantity || 0), 0);
+                if (netQuantity <= 0) {
+                    return;
+                }
+
+                const productCurrent = byProductMap.get(item.productName) ?? {
+                    productName: item.productName,
+                    unitsSold: 0,
+                    tickets: 0,
+                    total: 0,
+                };
+
+                productCurrent.unitsSold += netQuantity;
+                productCurrent.total += netQuantity * Number(item.priceAtTime || 0);
+
+                if (!productsInTicket.has(item.productName)) {
+                    productCurrent.tickets += 1;
+                    productsInTicket.add(item.productName);
+                }
+
+                byProductMap.set(item.productName, productCurrent);
+            });
         });
 
         const sellerRows = Array.from(bySellerMap.values()).sort((a, b) => b.total - a.total);
         const dayRows = Array.from(byDayMap.values())
             .sort((a, b) => a.day.localeCompare(b.day))
             .slice(-7);
+        const hourRows = Array.from(byHourMap.values()).sort((a, b) => {
+            if (b.tickets !== a.tickets) {
+                return b.tickets - a.tickets;
+            }
+
+            return b.total - a.total;
+        });
+        const topProductRows = Array.from(byProductMap.values())
+            .sort((a, b) => {
+                if (b.unitsSold !== a.unitsSold) {
+                    return b.unitsSold - a.unitsSold;
+                }
+
+                return b.total - a.total;
+            })
+            .slice(0, 10);
 
         const paymentRows = [
             {
@@ -146,6 +243,15 @@ export default function ReportesPage() {
 
         const totalCollected = totalCash + totalTransfer;
         const topSeller = sellerRows[0] ?? null;
+        const topHour = hourRows[0] ?? null;
+        const topProduct = topProductRows[0] ?? null;
+        const soldProductsCount = byProductMap.size;
+        const outOfStockRows = inventoryProducts
+            .filter((product) => product.stock <= 0)
+            .sort((a, b) => a.name.localeCompare(b.name));
+        const criticalStockRows = inventoryProducts
+            .filter((product) => product.stock > 0 && product.stock <= 3)
+            .sort((a, b) => a.stock - b.stock || a.name.localeCompare(b.name));
 
         return {
             totalSales,
@@ -156,13 +262,20 @@ export default function ReportesPage() {
             paymentRows,
             sellerRows,
             dayRows,
+            hourRows,
+            topProductRows,
             topSeller,
+            topHour,
+            topProduct,
+            soldProductsCount,
+            criticalStockRows,
+            outOfStockRows,
             recentSales: sales.slice(0, 10),
             cashOnlyCount: sales.filter((sale) => sale.paymentMethod === "EFECTIVO").length,
             transferOnlyCount: sales.filter((sale) => sale.paymentMethod === "TRANSFERENCIA").length,
             mixedCount: sales.filter((sale) => sale.paymentMethod === "MIXTO").length,
         };
-    }, [sales]);
+    }, [inventoryProducts, sales]);
 
     if (isLoading) {
         return (
@@ -175,7 +288,7 @@ export default function ReportesPage() {
                         <div>
                             <p className="text-base font-semibold text-foreground">Cargando reportes</p>
                             <p className="text-sm text-muted-foreground">
-                                Estamos consolidando ventas y medios de pago.
+                                Estamos consolidando ventas, productos e inventario.
                             </p>
                         </div>
                     </div>
@@ -194,7 +307,7 @@ export default function ReportesPage() {
                             Reportes
                         </div>
                         <h1 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-foreground sm:text-3xl">
-                            Ventas y medios de pago
+                            Ventas, productos e inventario
                         </h1>
                     </div>
                     <div className="inline-flex items-center gap-3 rounded-[1.25rem] border border-border/70 bg-card/90 px-4 py-3 shadow-sm">
@@ -264,6 +377,9 @@ export default function ReportesPage() {
                     <TabsList className="w-full justify-start sm:w-fit">
                         <TabsTrigger value="ventas">Reporte de ventas</TabsTrigger>
                         <TabsTrigger value="medios">Transferencias vs efectivo</TabsTrigger>
+                        <TabsTrigger value="horas">Horas pico</TabsTrigger>
+                        <TabsTrigger value="productos">Productos estrella</TabsTrigger>
+                        <TabsTrigger value="stock">Stock crítico</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="ventas" className="mt-4 space-y-4">
@@ -503,6 +619,301 @@ export default function ReportesPage() {
                                                 <User className="size-5" />
                                             </div>
                                         </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="horas" className="mt-4 space-y-4">
+                        <div className="grid gap-4 xl:grid-cols-[1.15fr_1fr]">
+                            <Card className="rounded-[1.5rem] border-border/70 bg-card/90 shadow-sm">
+                                <CardHeader>
+                                    <CardTitle>Horarios con más ventas</CardTitle>
+                                    <CardDescription>Franja horaria ordenada por cantidad de boletas y facturación.</CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="overflow-hidden rounded-[1.25rem] border border-border/70">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow className="hover:bg-transparent">
+                                                    <TableHead>Horario</TableHead>
+                                                    <TableHead className="text-right">Boletas</TableHead>
+                                                    <TableHead className="text-right">Facturado</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {reportData.hourRows.length === 0 ? (
+                                                    <TableRow>
+                                                        <TableCell colSpan={3} className="py-12 text-center text-muted-foreground">
+                                                            Todavía no hay ventas registradas para analizar horarios.
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ) : (
+                                                    reportData.hourRows.map((hourRow) => (
+                                                        <TableRow key={hourRow.hour}>
+                                                            <TableCell className="font-medium">{formatHourRange(hourRow.hour)}</TableCell>
+                                                            <TableCell className="text-right">{hourRow.tickets}</TableCell>
+                                                            <TableCell className="text-right font-bold">{formatCurrency(hourRow.total)}</TableCell>
+                                                        </TableRow>
+                                                    ))
+                                                )}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card className="rounded-[1.5rem] border-border/70 bg-card/90 shadow-sm">
+                                <CardHeader>
+                                    <CardTitle>Hora pico</CardTitle>
+                                    <CardDescription>La franja con mayor cantidad de operaciones registradas.</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <div className="rounded-[1.25rem] border border-cyan-900/20 bg-[linear-gradient(135deg,rgba(8,145,178,0.14),rgba(14,116,144,0.04))] p-4">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div>
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Franja destacada</p>
+                                                <p className="mt-2 text-base font-bold text-foreground">
+                                                    {reportData.topHour ? formatHourRange(reportData.topHour.hour) : "—"}
+                                                </p>
+                                                <p className="mt-1 text-sm text-muted-foreground">
+                                                    {reportData.topHour
+                                                        ? `${reportData.topHour.tickets} boletas`
+                                                        : "Sin datos todavía"}
+                                                </p>
+                                                <p className="mt-1 text-sm font-medium text-foreground">
+                                                    {reportData.topHour ? formatCurrency(reportData.topHour.total) : ""}
+                                                </p>
+                                            </div>
+                                            <div className="flex size-10 items-center justify-center rounded-lg bg-cyan-900 text-cyan-100">
+                                                <Clock3 className="size-5" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="rounded-[1.25rem] border border-border/70 bg-muted/25 p-4">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <ReceiptText className="size-4 text-blue-700" />
+                                                <span className="text-sm font-medium">Boletas analizadas</span>
+                                            </div>
+                                            <span className="text-lg font-bold">{sales.length}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="rounded-[1.25rem] border border-border/70 bg-muted/25 p-4">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <TrendingUp className="size-4 text-emerald-700" />
+                                                <span className="text-sm font-medium">Franjas con actividad</span>
+                                            </div>
+                                            <span className="text-lg font-bold">{reportData.hourRows.length}</span>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="productos" className="mt-4 space-y-4">
+                        <div className="grid gap-4 xl:grid-cols-[1.15fr_1fr]">
+                            <Card className="rounded-[1.5rem] border-border/70 bg-card/90 shadow-sm">
+                                <CardHeader>
+                                    <CardTitle>Productos más vendidos</CardTitle>
+                                    <CardDescription>Ranking por unidades vendidas netas, descontando devoluciones.</CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="overflow-hidden rounded-[1.25rem] border border-border/70">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow className="hover:bg-transparent">
+                                                    <TableHead>Producto</TableHead>
+                                                    <TableHead className="text-right">Unidades</TableHead>
+                                                    <TableHead className="text-right">Boletas</TableHead>
+                                                    <TableHead className="text-right">Facturado</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {reportData.topProductRows.length === 0 ? (
+                                                    <TableRow>
+                                                        <TableCell colSpan={4} className="py-12 text-center text-muted-foreground">
+                                                            Todavía no hay productos vendidos para analizar.
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ) : (
+                                                    reportData.topProductRows.map((product) => (
+                                                        <TableRow key={product.productName}>
+                                                            <TableCell className="font-medium">{product.productName}</TableCell>
+                                                            <TableCell className="text-right font-semibold">{product.unitsSold}</TableCell>
+                                                            <TableCell className="text-right">{product.tickets}</TableCell>
+                                                            <TableCell className="text-right font-bold">{formatCurrency(product.total)}</TableCell>
+                                                        </TableRow>
+                                                    ))
+                                                )}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card className="rounded-[1.5rem] border-border/70 bg-card/90 shadow-sm">
+                                <CardHeader>
+                                    <CardTitle>Producto estrella</CardTitle>
+                                    <CardDescription>El artículo con mayor salida dentro del historial de ventas.</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    <div className="rounded-[1.25rem] border border-amber-800/20 bg-[linear-gradient(135deg,rgba(245,158,11,0.14),rgba(217,119,6,0.04))] p-4">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div>
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Más vendido</p>
+                                                <p className="mt-2 text-base font-bold text-foreground">
+                                                    {reportData.topProduct?.productName ?? "—"}
+                                                </p>
+                                                <p className="mt-1 text-sm text-muted-foreground">
+                                                    {reportData.topProduct
+                                                        ? `${reportData.topProduct.unitsSold} unidades · ${reportData.topProduct.tickets} boletas`
+                                                        : "Sin datos todavía"}
+                                                </p>
+                                                <p className="mt-1 text-sm font-medium text-foreground">
+                                                    {reportData.topProduct ? formatCurrency(reportData.topProduct.total) : ""}
+                                                </p>
+                                            </div>
+                                            <div className="flex size-10 items-center justify-center rounded-lg bg-amber-900 text-amber-100">
+                                                <Star className="size-5" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="rounded-[1.25rem] border border-border/70 bg-muted/25 p-4">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <PackageSearch className="size-4 text-cyan-700" />
+                                                <span className="text-sm font-medium">Productos con ventas</span>
+                                            </div>
+                                            <span className="text-lg font-bold">{reportData.soldProductsCount}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="rounded-[1.25rem] border border-border/70 bg-muted/25 p-4">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2">
+                                                <ReceiptText className="size-4 text-blue-700" />
+                                                <span className="text-sm font-medium">Boletas analizadas</span>
+                                            </div>
+                                            <span className="text-lg font-bold">{sales.length}</span>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="stock" className="mt-4 space-y-4">
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                            <Card className="rounded-[1.5rem] border-red-800/20 bg-[linear-gradient(135deg,rgba(220,38,38,0.14),rgba(153,27,27,0.04))] shadow-sm">
+                                <CardContent className="flex items-center gap-4 p-4">
+                                    <div className="flex size-10 items-center justify-center rounded-lg bg-red-900 text-red-100">
+                                        <PackageX className="size-5" />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm text-muted-foreground">Sin stock</p>
+                                        <p className="text-2xl font-bold">{reportData.outOfStockRows.length}</p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                            <Card className="rounded-[1.5rem] border-amber-800/20 bg-[linear-gradient(135deg,rgba(245,158,11,0.14),rgba(180,83,9,0.04))] shadow-sm">
+                                <CardContent className="flex items-center gap-4 p-4">
+                                    <div className="flex size-10 items-center justify-center rounded-lg bg-amber-900 text-amber-100">
+                                        <ShieldAlert className="size-5" />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm text-muted-foreground">Stock crítico</p>
+                                        <p className="text-2xl font-bold">{reportData.criticalStockRows.length}</p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+
+                        <div className="grid gap-4 xl:grid-cols-2">
+                            <Card className="rounded-[1.5rem] border-border/70 bg-card/90 shadow-sm">
+                                <CardHeader>
+                                    <CardTitle>Productos faltantes</CardTitle>
+                                    <CardDescription>Artículos con stock total en 0.</CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="overflow-hidden rounded-[1.25rem] border border-border/70">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow className="hover:bg-transparent">
+                                                    <TableHead>Producto</TableHead>
+                                                    <TableHead>Código</TableHead>
+                                                    <TableHead className="text-right">Stock</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {reportData.outOfStockRows.length === 0 ? (
+                                                    <TableRow>
+                                                        <TableCell colSpan={3} className="py-12 text-center text-muted-foreground">
+                                                            No hay productos faltantes.
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ) : (
+                                                    reportData.outOfStockRows.map((product) => (
+                                                        <TableRow key={product.id}>
+                                                            <TableCell className="font-medium">{product.name}</TableCell>
+                                                            <TableCell>
+                                                                <Badge variant="outline" className="bg-background font-mono text-xs">
+                                                                    {product.code}
+                                                                </Badge>
+                                                            </TableCell>
+                                                            <TableCell className="text-right font-bold text-red-700">0</TableCell>
+                                                        </TableRow>
+                                                    ))
+                                                )}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card className="rounded-[1.5rem] border-border/70 bg-card/90 shadow-sm">
+                                <CardHeader>
+                                    <CardTitle>Stock crítico</CardTitle>
+                                    <CardDescription>Productos con entre 1 y 3 unidades disponibles.</CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="overflow-hidden rounded-[1.25rem] border border-border/70">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow className="hover:bg-transparent">
+                                                    <TableHead>Producto</TableHead>
+                                                    <TableHead>Código</TableHead>
+                                                    <TableHead className="text-right">Stock</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {reportData.criticalStockRows.length === 0 ? (
+                                                    <TableRow>
+                                                        <TableCell colSpan={3} className="py-12 text-center text-muted-foreground">
+                                                            No hay productos en nivel crítico.
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ) : (
+                                                    reportData.criticalStockRows.map((product) => (
+                                                        <TableRow key={product.id}>
+                                                            <TableCell className="font-medium">{product.name}</TableCell>
+                                                            <TableCell>
+                                                                <Badge variant="outline" className="bg-background font-mono text-xs">
+                                                                    {product.code}
+                                                                </Badge>
+                                                            </TableCell>
+                                                            <TableCell className="text-right font-bold text-amber-700">{product.stock}</TableCell>
+                                                        </TableRow>
+                                                    ))
+                                                )}
+                                            </TableBody>
+                                        </Table>
                                     </div>
                                 </CardContent>
                             </Card>

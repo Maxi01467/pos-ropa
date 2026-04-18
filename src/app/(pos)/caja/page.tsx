@@ -1054,11 +1054,13 @@ export default function CajaPage() {
     }, [sellers, userId]);
 
     const handleOpenBox = async () => {
-        if (!initialAmount || isNaN(Number(initialAmount)))
+        const parsedInitialAmount = Number(initialAmount);
+
+        if (initialAmount.trim() === "" || Number.isNaN(parsedInitialAmount) || parsedInitialAmount < 0)
             return toast.error("Ingresá un monto inicial válido");
         if (!selectedSellerId) return toast.error("Seleccioná un usuario");
         try {
-            const openedSession = await openCashSession(Number(initialAmount), selectedSellerId);
+            const openedSession = await openCashSession(parsedInitialAmount, selectedSellerId);
             setSession(openedSession as CashSession);
             notifyCashSessionUpdated(true);
             notifyDataUpdated([CACHE_TAGS.cash, CACHE_TAGS.attendance]);

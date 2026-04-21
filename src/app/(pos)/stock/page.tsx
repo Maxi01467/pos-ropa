@@ -54,7 +54,7 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import { CACHE_TAGS } from "@/lib/cache-tags";
-import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
+import { notifyDataUpdated } from "@/lib/data-sync-client";
 import { cn } from "@/lib/utils";
 
 // Reemplazamos mockSizes por un array constante aquí
@@ -232,30 +232,37 @@ export default function StockPage() {
     const [selectedMovementIds, setSelectedMovementIds] = useState<string[]>([]);
     const [printDialogOpen, setPrintDialogOpen] = useState(false);
     const [printQuantities, setPrintQuantities] = useState<Record<string, string>>({});
+    const [totalMovements, setTotalMovements] = useState(0);
+    const [totalMovementPages, setTotalMovementPages] = useState(1);
     
     const loadData = useCallback(async () => {
         try {
-            const data = await getStockPageData();
+            setIsLoading(true);
+            const data = await getStockPageData({
+                movementPage: currentPage,
+                movementPageSize: STOCK_MOVEMENTS_PER_PAGE,
+                productId: filterProduct !== "all" ? filterProduct : undefined,
+                supplierId: filterProvider !== "all" ? filterProvider : undefined,
+                dateFrom: filterDateFrom || undefined,
+                dateTo: filterDateTo || undefined,
+            });
             setProducts(data.products);
             setProviders(data.suppliers);
             setEntries(data.entries);
             setVariants(data.variants);
+            setTotalMovements(data.totalMovements);
+            setTotalMovementPages(data.totalMovementPages);
         } catch (error) {
             toast.error("Error al cargar el stock");
             console.error(error);
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [currentPage, filterDateFrom, filterDateTo, filterProduct, filterProvider]);
 
     useEffect(() => {
         void loadData();
     }, [loadData]);
-
-    useDataRefresh(
-        [CACHE_TAGS.stock, CACHE_TAGS.inventory, CACHE_TAGS.suppliers, CACHE_TAGS.posProducts],
-        loadData
-    );
 
     useEffect(() => {
         const handleAfterPrint = () => {
@@ -270,16 +277,6 @@ export default function StockPage() {
 
     const movements = useMemo(() => buildMovements(entries), [entries]);
 
-    const filteredMovements = useMemo(() => {
-        return movements.filter((movement) => {
-            if (filterProduct !== "all" && movement.productId !== filterProduct) return false;
-            if (filterProvider !== "all" && movement.providerId !== filterProvider) return false;
-            if (filterDateFrom && new Date(movement.date) < new Date(filterDateFrom)) return false;
-            if (filterDateTo && new Date(movement.date) > new Date(`${filterDateTo}T23:59:59`)) return false;
-            return true;
-        });
-    }, [movements, filterProduct, filterProvider, filterDateFrom, filterDateTo]);
-
     const isMovementSelectable = useCallback(
         (movement: StockMovement) =>
             !movement.variants.some(
@@ -290,19 +287,12 @@ export default function StockPage() {
 
     const selectedMovements = useMemo(
         () =>
-            filteredMovements.filter(
+            movements.filter(
                 (movement) =>
                     selectedMovementIds.includes(movement.id) && isMovementSelectable(movement)
             ),
-        [filteredMovements, isMovementSelectable, selectedMovementIds]
+        [isMovementSelectable, movements, selectedMovementIds]
     );
-
-    const totalMovementPages = Math.max(1, Math.ceil(filteredMovements.length / STOCK_MOVEMENTS_PER_PAGE));
-
-    const paginatedMovements = useMemo(() => {
-        const start = (currentPage - 1) * STOCK_MOVEMENTS_PER_PAGE;
-        return filteredMovements.slice(start, start + STOCK_MOVEMENTS_PER_PAGE);
-    }, [currentPage, filteredMovements]);
 
     const printableVariants = useMemo(
         () =>
@@ -840,7 +830,7 @@ export default function StockPage() {
                             </div>
                             <div className="lg:ml-auto">
                                 <span className="text-sm text-muted-foreground">
-                                    {filteredMovements.length} de {movements.length} registros
+                                    {totalMovements} registro(s) en total
                                 </span>
                             </div>
                         </div>
@@ -921,7 +911,7 @@ export default function StockPage() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {filteredMovements.length === 0 ? (
+                        {movements.length === 0 ? (
                             <TableRow>
                                 <TableCell colSpan={6} className="py-16 text-center">
                                     <Package className="mx-auto mb-3 size-12 text-muted-foreground/30" />
@@ -938,7 +928,7 @@ export default function StockPage() {
                                 </TableCell>
                             </TableRow>
                         ) : (
-                            paginatedMovements.map((movement) => {
+                            movements.map((movement) => {
                                 const isSelected = selectedMovementIds.includes(movement.id);
                                 const isSelectable = isMovementSelectable(movement);
 
@@ -1017,7 +1007,7 @@ export default function StockPage() {
             </div>
             <div className="mt-4 flex flex-col gap-3 rounded-[1.25rem] border border-border/70 bg-card/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-muted-foreground">
-                    Página {currentPage} de {totalMovementPages} · {filteredMovements.length} movimiento(s)
+                    Página {currentPage} de {totalMovementPages} · {totalMovements} movimiento(s)
                 </p>
                 <div className="flex gap-2">
                     <Button

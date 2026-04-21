@@ -33,8 +33,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { CACHE_TAGS } from "@/lib/cache-tags";
-import { useDataRefresh } from "@/lib/data-sync-client";
 
 type SaleHistoryItem = {
     id: string;
@@ -107,7 +105,7 @@ export default function ReportesPage() {
     const loadReports = useCallback(async () => {
         try {
             const [salesData, inventoryData] = await Promise.all([getSalesHistory(), getInventoryData()]);
-            setSales(salesData as SaleHistoryItem[]);
+            setSales(salesData.items as SaleHistoryItem[]);
             setInventoryProducts((inventoryData.products ?? []) as InventoryProduct[]);
         } catch (error) {
             console.error(error);
@@ -120,8 +118,6 @@ export default function ReportesPage() {
     useEffect(() => {
         void loadReports();
     }, [loadReports]);
-
-    useDataRefresh([CACHE_TAGS.sales, CACHE_TAGS.cash, CACHE_TAGS.inventory, CACHE_TAGS.stock], loadReports);
 
     const reportData = useMemo(() => {
         const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);

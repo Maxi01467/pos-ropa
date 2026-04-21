@@ -71,6 +71,7 @@ export function useDataRefresh(
     options?: {
         refreshOnFocus?: boolean;
         debugLabel?: string;
+        pollIntervalMs?: number | false;
     }
 ) {
     const refreshRef = useRef(refresh);
@@ -135,7 +136,10 @@ export function useDataRefresh(
         const channel = getBroadcastChannel();
         channel?.addEventListener("message", handleBroadcast);
 
-        const intervalId = setInterval(runRefresh, 30000);
+        const pollIntervalMs =
+            options?.pollIntervalMs === false ? null : (options?.pollIntervalMs ?? 30000);
+        const intervalId =
+            pollIntervalMs == null ? null : window.setInterval(runRefresh, pollIntervalMs);
 
         return () => {
             window.removeEventListener(DATA_SYNC_EVENT, handleEvent as EventListener);
@@ -144,7 +148,9 @@ export function useDataRefresh(
                 window.removeEventListener("focus", runRefresh);
             }
             channel?.removeEventListener("message", handleBroadcast);
-            clearInterval(intervalId);
+            if (intervalId != null) {
+                window.clearInterval(intervalId);
+            }
         };
-    }, [domainsKey, options?.refreshOnFocus]);
+    }, [domainsKey, options?.pollIntervalMs, options?.refreshOnFocus]);
 }

@@ -34,8 +34,6 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { CACHE_TAGS } from "@/lib/cache-tags";
-import { useDataRefresh } from "@/lib/data-sync-client";
 
 type CashSessionHistory = {
     id: string;
@@ -92,26 +90,32 @@ function formatDate(dateStr: string | null): string {
 export default function HistorialCajaPage() {
     const [sessions, setSessions] = useState<CashSessionHistory[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(30);
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalSessions, setTotalSessions] = useState(0);
     const [selectedTicketsSession, setSelectedTicketsSession] = useState<CashSessionHistory | null>(null);
     const [selectedCashSession, setSelectedCashSession] = useState<CashSessionHistory | null>(null);
 
     const loadHistory = useCallback(async () => {
         try {
-            const data = await getCashSessionsHistory();
-            setSessions(data);
+            setIsLoading(true);
+            const data = await getCashSessionsHistory({ page: currentPage, pageSize });
+            setSessions(data.items);
+            setPageSize(data.pageSize);
+            setTotalPages(data.totalPages);
+            setTotalSessions(data.total);
         } catch (error) {
             toast.error("No se pudo cargar el historial de caja");
             console.error(error);
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [currentPage, pageSize]);
 
     useEffect(() => {
         void loadHistory();
     }, [loadHistory]);
-
-    useDataRefresh([CACHE_TAGS.cash, CACHE_TAGS.sales], loadHistory);
 
     const summary = useMemo(() => {
         const openSessions = sessions.filter((session) => session.status === "OPEN").length;
@@ -185,7 +189,7 @@ export default function HistorialCajaPage() {
                             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                                 Sesiones
                             </p>
-                            <p className="mt-1 text-xl font-semibold text-foreground">{sessions.length}</p>
+                            <p className="mt-1 text-xl font-semibold text-foreground">{totalSessions}</p>
                         </div>
                         <div className="rounded-xl bg-muted px-3 py-2 text-center">
                             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
@@ -272,7 +276,7 @@ export default function HistorialCajaPage() {
                                 <TableRow key={session.id}>
                                     <TableCell>
                                         <Badge variant="outline" className="font-mono text-sm bg-background">
-                                            Caja #{sessions.length - index}
+                                            Caja #{Math.max(totalSessions - (currentPage - 1) * pageSize - index, 1)}
                                         </Badge>
                                     </TableCell>
                                     <TableCell>
@@ -331,6 +335,30 @@ export default function HistorialCajaPage() {
                     </TableBody>
                 </Table>
             </div>
+
+            {sessions.length > 0 ? (
+                <div className="mt-4 flex flex-col gap-3 rounded-[1.25rem] border border-border/70 bg-card/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-muted-foreground">
+                        Página {currentPage} de {totalPages} · {totalSessions} sesión(es)
+                    </p>
+                    <div className="flex gap-2">
+                        <Button
+                            variant="outline"
+                            onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                            disabled={currentPage === 1}
+                        >
+                            Anterior
+                        </Button>
+                        <Button
+                            variant="outline"
+                            onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                            disabled={currentPage === totalPages}
+                        >
+                            Siguiente
+                        </Button>
+                    </div>
+                </div>
+            ) : null}
 
             <Dialog
                 open={Boolean(selectedCashSession)}

@@ -20,6 +20,48 @@ type CashSessionWithIncludes = Prisma.CashSessionGetPayload<{
     include: typeof SESSION_INCLUDE;
 }>;
 
+type CashSessionHistoryItem = {
+    id: string;
+    status: string;
+    openingDate: string;
+    closingDate: string | null;
+    countingDate: string | null;
+    initialAmount: number;
+    expectedAmount: number | null;
+    actualAmount: number | null;
+    difference: number | null;
+    openedBy: { id: string; name: string; role: string } | null;
+    closedBy: { id: string; name: string; role: string } | null;
+    countedBy: { id: string; name: string; role: string } | null;
+    movements: Array<{
+        id: string;
+        amount: number;
+        type: string;
+        reason: string;
+        createdAt: string;
+    }>;
+    sales: Array<{
+        id: string;
+        ticketNumber: number;
+        total: number;
+        paymentMethod: string;
+        cashAmount: number | null;
+        transferAmount: number | null;
+        createdAt: string;
+        sellerName: string;
+    }>;
+};
+
+type PaginatedCashSessionsHistory = {
+    items: CashSessionHistoryItem[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+};
+
+const DEFAULT_CASH_SESSIONS_HISTORY_PAGE_SIZE = 30;
+
 function serializeCashSession(session: CashSessionWithIncludes) {
     return {
         id: session.id,
@@ -246,8 +288,14 @@ export async function getClosedSessions(limit = 30) {
     return getClosedSessionsCached(limit);
 }
 
-export async function getCashSessionsHistory() {
-    return getCashSessionsHistoryCached();
+export async function getCashSessionsHistory({
+    page = 1,
+    pageSize = DEFAULT_CASH_SESSIONS_HISTORY_PAGE_SIZE,
+}: {
+    page?: number;
+    pageSize?: number;
+} = {}) {
+    return getCashSessionsHistoryCached(page, pageSize);
 }
 const getPendingCountSessionsCached = unstable_cache(
     async () => {
@@ -279,77 +327,92 @@ const getClosedSessionsCached = unstable_cache(
 );
 
 const getCashSessionsHistoryCached = unstable_cache(
-    async () => {
-        const sessions = await prisma.cashSession.findMany({
-            orderBy: { openingDate: "desc" },
-            include: {
-                openedBy: {
-                    select: { id: true, name: true, role: true },
-                },
-                closedBy: {
-                    select: { id: true, name: true, role: true },
-                },
-                countedBy: {
-                    select: { id: true, name: true, role: true },
-                },
-                movements: {
-                    orderBy: { createdAt: "desc" },
-                    select: {
-                        id: true,
-                        amount: true,
-                        type: true,
-                        reason: true,
-                        createdAt: true,
+    async (page: number, pageSize: number): Promise<PaginatedCashSessionsHistory> => {
+        const safePage = Math.max(1, Math.trunc(page));
+        const safePageSize = Math.max(1, Math.min(100, Math.trunc(pageSize)));
+        const skip = (safePage - 1) * safePageSize;
+
+        const [total, sessions] = await Promise.all([
+            prisma.cashSession.count(),
+            prisma.cashSession.findMany({
+                orderBy: { openingDate: "desc" },
+                skip,
+                take: safePageSize,
+                include: {
+                    openedBy: {
+                        select: { id: true, name: true, role: true },
                     },
-                },
-                sales: {
-                    orderBy: { createdAt: "desc" },
-                    include: {
-                        user: {
-                            select: { name: true },
+                    closedBy: {
+                        select: { id: true, name: true, role: true },
+                    },
+                    countedBy: {
+                        select: { id: true, name: true, role: true },
+                    },
+                    movements: {
+                        orderBy: { createdAt: "desc" },
+                        select: {
+                            id: true,
+                            amount: true,
+                            type: true,
+                            reason: true,
+                            createdAt: true,
+                        },
+                    },
+                    sales: {
+                        orderBy: { createdAt: "desc" },
+                        include: {
+                            user: {
+                                select: { name: true },
+                            },
                         },
                     },
                 },
-            },
-        });
+            }),
+        ]);
 
-        return sessions.map((session) => ({
-            id: session.id,
-            status: session.status,
-            openingDate: session.openingDate.toISOString(),
-            closingDate: session.closingDate?.toISOString() ?? null,
-            countingDate: session.countingDate?.toISOString() ?? null,
-            initialAmount: Number(session.initialAmount),
-            expectedAmount: session.expectedAmount == null ? null : Number(session.expectedAmount),
-            actualAmount: session.actualAmount == null ? null : Number(session.actualAmount),
-            difference: session.difference == null ? null : Number(session.difference),
-            openedBy: session.openedBy
-                ? { id: session.openedBy.id, name: session.openedBy.name, role: session.openedBy.role }
-                : null,
-            closedBy: session.closedBy
-                ? { id: session.closedBy.id, name: session.closedBy.name, role: session.closedBy.role }
-                : null,
-            countedBy: session.countedBy
-                ? { id: session.countedBy.id, name: session.countedBy.name, role: session.countedBy.role }
-                : null,
-            movements: session.movements.map((movement) => ({
-                id: movement.id,
-                amount: Number(movement.amount),
-                type: movement.type,
-                reason: movement.reason,
-                createdAt: movement.createdAt.toISOString(),
+        return {
+            items: sessions.map((session) => ({
+                id: session.id,
+                status: session.status,
+                openingDate: session.openingDate.toISOString(),
+                closingDate: session.closingDate?.toISOString() ?? null,
+                countingDate: session.countingDate?.toISOString() ?? null,
+                initialAmount: Number(session.initialAmount),
+                expectedAmount: session.expectedAmount == null ? null : Number(session.expectedAmount),
+                actualAmount: session.actualAmount == null ? null : Number(session.actualAmount),
+                difference: session.difference == null ? null : Number(session.difference),
+                openedBy: session.openedBy
+                    ? { id: session.openedBy.id, name: session.openedBy.name, role: session.openedBy.role }
+                    : null,
+                closedBy: session.closedBy
+                    ? { id: session.closedBy.id, name: session.closedBy.name, role: session.closedBy.role }
+                    : null,
+                countedBy: session.countedBy
+                    ? { id: session.countedBy.id, name: session.countedBy.name, role: session.countedBy.role }
+                    : null,
+                movements: session.movements.map((movement) => ({
+                    id: movement.id,
+                    amount: Number(movement.amount),
+                    type: movement.type,
+                    reason: movement.reason,
+                    createdAt: movement.createdAt.toISOString(),
+                })),
+                sales: session.sales.map((sale) => ({
+                    id: sale.id,
+                    ticketNumber: sale.ticketNumber,
+                    total: Number(sale.total),
+                    paymentMethod: sale.paymentMethod,
+                    cashAmount: sale.cashAmount == null ? null : Number(sale.cashAmount),
+                    transferAmount: sale.transferAmount == null ? null : Number(sale.transferAmount),
+                    createdAt: sale.createdAt.toISOString(),
+                    sellerName: sale.user.name,
+                })),
             })),
-            sales: session.sales.map((sale) => ({
-                id: sale.id,
-                ticketNumber: sale.ticketNumber,
-                total: Number(sale.total),
-                paymentMethod: sale.paymentMethod,
-                cashAmount: sale.cashAmount == null ? null : Number(sale.cashAmount),
-                transferAmount: sale.transferAmount == null ? null : Number(sale.transferAmount),
-                createdAt: sale.createdAt.toISOString(),
-                sellerName: sale.user.name,
-            })),
-        }));
+            total,
+            page: safePage,
+            pageSize: safePageSize,
+            totalPages: Math.max(1, Math.ceil(total / safePageSize)),
+        };
     },
     ["cash-sessions-history"],
     { revalidate: 300, tags: [CACHE_TAGS.cash, CACHE_TAGS.sales] }

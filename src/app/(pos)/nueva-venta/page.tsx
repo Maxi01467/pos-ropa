@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getProductsForPOS, getSellers } from "@/app/actions/pos-actions";
 import { createQuickProductWithStock } from "@/app/actions/inventory-actions";
-import { createExchangeSale, createSale, getSalesHistory } from "@/app/actions/sales-actions";
+import {
+    createExchangeSale,
+    createSale,
+    findSalesForExchange,
+} from "@/app/actions/sales-actions";
 import { TicketReceipt } from "@/components/ticket-receipt";
 import {
     CheckoutDialog,
@@ -77,6 +81,7 @@ interface Seller {
 
 interface ExchangeSaleItem {
     id: string;
+    variantId: string;
     productName: string;
     size: string;
     color: string;
@@ -103,6 +108,7 @@ interface AppliedExchange {
     credit: number;
     items: Array<{
         saleItemId: string;
+        variantId: string;
         quantity: number;
         label: string;
         amount: number;
@@ -129,6 +135,44 @@ function formatCurrency(amount: number): string {
         currency: "ARS",
         minimumFractionDigits: 0,
     }).format(amount);
+}
+
+function reconcileProductStocks(
+    products: POSProduct[],
+    soldItems: Array<{ variantId: string; quantity: number }>,
+    returnedItems: Array<{ variantId: string; quantity: number }> = []
+) {
+    const stockDeltaByVariant = new Map<string, number>();
+
+    for (const item of soldItems) {
+        stockDeltaByVariant.set(
+            item.variantId,
+            (stockDeltaByVariant.get(item.variantId) ?? 0) - item.quantity
+        );
+    }
+
+    for (const item of returnedItems) {
+        stockDeltaByVariant.set(
+            item.variantId,
+            (stockDeltaByVariant.get(item.variantId) ?? 0) + item.quantity
+        );
+    }
+
+    if (stockDeltaByVariant.size === 0) {
+        return products;
+    }
+
+    return products.map((product) => {
+        const delta = stockDeltaByVariant.get(product.id);
+        if (delta == null || delta === 0) {
+            return product;
+        }
+
+        return {
+            ...product,
+            stock: Math.max(0, product.stock + delta),
+        };
+    });
 }
 
 export default function NuevaVentaPage() {
@@ -291,13 +335,33 @@ export default function NuevaVentaPage() {
         setAllProducts(products);
     }, []);
 
-    const refreshSalesData = useCallback(async () => {
-        console.log("[nueva-venta] refreshSalesData");
-        await loadCatalog({ background: true, reason: "data-sync" });
-        if (exchangeDialogOpen) {
-            await loadExchangeSales();
-        }
-    }, [exchangeDialogOpen, loadCatalog]);
+    const refreshCatalogData = useCallback(async () => {
+        console.log("[nueva-venta] refreshCatalogData");
+        await loadCatalog({ background: true, reason: "data-sync-catalog" });
+    }, [loadCatalog]);
+
+    const loadExchangeSales = useCallback(
+        async (query = "") => {
+            setIsLoadingExchangeSales(true);
+            try {
+                const sales = await findSalesForExchange({ query, limit: 20 });
+                setExchangeSales(sales);
+            } catch (error) {
+                toast.error("No se pudieron cargar las boletas");
+                console.error(error);
+            } finally {
+                setIsLoadingExchangeSales(false);
+            }
+        },
+        []
+    );
+
+    const refreshExchangeSales = useCallback(async () => {
+        if (!exchangeDialogOpen) return;
+
+        console.log("[nueva-venta] refreshExchangeSales");
+        await loadExchangeSales(exchangeSearchQuery);
+    }, [exchangeDialogOpen, exchangeSearchQuery, loadExchangeSales]);
 
     useDataRefresh(
         [
@@ -305,11 +369,22 @@ export default function NuevaVentaPage() {
             CACHE_TAGS.inventory,
             CACHE_TAGS.stock,
             CACHE_TAGS.employees,
-            CACHE_TAGS.sales,
-            CACHE_TAGS.cash,
         ],
-        refreshSalesData,
-        { refreshOnFocus: false, debugLabel: "nueva-venta" }
+        refreshCatalogData,
+        {
+            debugLabel: "nueva-venta-catalog",
+            pollIntervalMs: false,
+        }
+    );
+
+    useDataRefresh(
+        [CACHE_TAGS.sales, CACHE_TAGS.cash],
+        refreshExchangeSales,
+        {
+            debugLabel: "nueva-venta-exchange",
+            pollIntervalMs: false,
+            refreshOnFocus: false,
+        }
     );
 
     useEffect(() => {
@@ -615,9 +690,20 @@ export default function NuevaVentaPage() {
             exchangedTicketNumber: appliedExchange?.ticketNumber,
         };
 
+        setAllProducts((currentProducts) =>
+            reconcileProductStocks(
+                currentProducts,
+                saleItems.map((item) => ({
+                    variantId: item.variantId,
+                    quantity: item.quantity,
+                })),
+                appliedExchange?.items.map((item) => ({
+                    variantId: item.variantId,
+                    quantity: item.quantity,
+                })) ?? []
+            )
+        );
         clearCart();
-        const updatedProducts = await getProductsForPOS();
-        setAllProducts(updatedProducts);
         setAppliedExchange(null);
         setReceiptData(nextReceiptData);
         console.log("[nueva-venta] notifyDataUpdated after sale");
@@ -654,40 +740,24 @@ export default function NuevaVentaPage() {
         }
     };
 
-    const loadExchangeSales = async () => {
-        setIsLoadingExchangeSales(true);
-        try {
-            const sales = await getSalesHistory();
-            setExchangeSales(sales);
-        } catch (error) {
-            toast.error("No se pudieron cargar las boletas");
-            console.error(error);
-        } finally {
-            setIsLoadingExchangeSales(false);
-        }
-    };
-
     const handleOpenExchangeDialog = async () => {
-        if (exchangeSales.length === 0) {
-            await loadExchangeSales();
-        }
         setExchangeSearchQuery("");
         setSelectedExchangeSale(null);
         setExchangeQuantities({});
         setExchangeDialogOpen(true);
     };
 
-    const filteredExchangeSales = useMemo(() => {
-        const query = exchangeSearchQuery.trim();
-        if (!query) return exchangeSales.slice(0, 5);
+    useEffect(() => {
+        if (!exchangeDialogOpen) return;
 
-        return exchangeSales.filter((sale) => {
-            return (
-                sale.ticketNumber.toString().includes(query) ||
-                barcodeFromTicketNumber(sale.ticketNumber).includes(query)
-            );
-        });
-    }, [exchangeSales, exchangeSearchQuery]);
+        const timeoutId = window.setTimeout(() => {
+            void loadExchangeSales(exchangeSearchQuery);
+        }, 250);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [exchangeDialogOpen, exchangeSearchQuery, loadExchangeSales]);
 
     const selectedExchangeItems = useMemo(() => {
         if (!selectedExchangeSale) return [];
@@ -723,6 +793,7 @@ export default function NuevaVentaPage() {
             credit: selectedExchangeCredit,
             items: selectedExchangeItems.map((item) => ({
                 saleItemId: item.id,
+                variantId: item.variantId,
                 quantity: item.selectedQuantity,
                 label: `${item.productName} ${item.size !== "Único" ? `· ${item.size}` : ""}`,
                 amount: item.selectedQuantity * item.priceAtTime,
@@ -1235,7 +1306,7 @@ export default function NuevaVentaPage() {
                 open={exchangeDialogOpen}
                 onOpenChange={setExchangeDialogOpen}
                 isLoading={isLoadingExchangeSales}
-                sales={filteredExchangeSales}
+                sales={exchangeSales}
                 searchQuery={exchangeSearchQuery}
                 onSearchQueryChange={setExchangeSearchQuery}
                 selectedSale={selectedExchangeSale}

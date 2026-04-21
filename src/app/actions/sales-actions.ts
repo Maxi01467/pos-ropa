@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidateTag } from "next/cache";
+import { Prisma } from "@prisma/client";
 import { CACHE_TAGS, unstable_cache } from "@/lib/cache-tags";
+import { barcodeFromTicketNumber } from "@/lib/barcodes";
 import { prisma } from "@/lib/prisma";
 
 const SHOULD_REVALIDATE_SERVER_CACHE = process.env.POS_DESKTOP !== "1";
@@ -50,49 +52,137 @@ type CreateExchangeSaleInput = {
     items: CreateSaleItemInput[];
 };
 
-const getSalesHistoryCached = unstable_cache(
-    async () => {
-        const sales = await prisma.sale.findMany({
-            orderBy: { createdAt: "desc" },
+type PaginatedSalesHistory = {
+    items: Array<{
+        id: string;
+        ticketNumber: number;
+        total: number;
+        paymentMethod: string;
+        cashAmount?: number;
+        transferAmount?: number;
+        date: string;
+        sellerName: string;
+        items: Array<{
+            id: string;
+            variantId: string;
+            productName: string;
+            size: string;
+            color: string;
+            sku: string;
+            quantity: number;
+            priceAtTime: number;
+            priceType: "NORMAL" | "WHOLESALE";
+            returnedQuantity: number;
+        }>;
+    }>;
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+};
+
+const DEFAULT_SALES_HISTORY_PAGE_SIZE = 200;
+const DEFAULT_EXCHANGE_SEARCH_LIMIT = 20;
+
+type ExchangeSearchSale = PaginatedSalesHistory["items"][number];
+type SaleHistoryRecord = Prisma.SaleGetPayload<{
+    include: {
+        user: {
+            select: { name: true };
+        };
+        items: {
             include: {
-                user: {
-                    select: { name: true }
-                },
-                items: {
+                variant: {
                     include: {
-                        variant: {
-                            include: {
-                                product: {
-                                    select: { name: true }
+                        product: {
+                            select: { name: true };
+                        };
+                    };
+                };
+            };
+        };
+    };
+}>;
+
+function mapSaleHistoryItem(sale: SaleHistoryRecord): ExchangeSearchSale {
+    return {
+        id: sale.id,
+        ticketNumber: sale.ticketNumber,
+        total: Number(sale.total),
+        paymentMethod: sale.paymentMethod,
+        cashAmount: sale.cashAmount ? Number(sale.cashAmount) : undefined,
+        transferAmount: sale.transferAmount ? Number(sale.transferAmount) : undefined,
+        date: sale.createdAt.toISOString(),
+        sellerName: sale.user.name,
+                items: sale.items.map((item) => ({
+                    id: item.id,
+                    variantId: item.variantId,
+                    productName: item.variant.product.name,
+                    size: item.variant.size,
+                    color: item.variant.color,
+            sku: item.variant.sku,
+            quantity: item.quantity,
+            priceAtTime: Number(item.priceAtTime),
+            priceType: item.priceType as "NORMAL" | "WHOLESALE",
+            returnedQuantity: item.returnedQuantity,
+        })),
+    };
+}
+
+function parseExchangeTicketQuery(query: string) {
+    const trimmed = query.trim();
+    if (!trimmed) return null;
+
+    const digits = trimmed.replace(/\D/g, "");
+    if (!digits) return null;
+
+    if (digits.length === 13) {
+        const ticketNumber = Number.parseInt(digits.slice(0, 12), 10);
+        return Number.isNaN(ticketNumber) ? null : ticketNumber;
+    }
+
+    const ticketNumber = Number.parseInt(digits, 10);
+    return Number.isNaN(ticketNumber) ? null : ticketNumber;
+}
+
+const getSalesHistoryCached = unstable_cache(
+    async (page: number, pageSize: number): Promise<PaginatedSalesHistory> => {
+        const safePage = Math.max(1, Math.trunc(page));
+        const safePageSize = Math.max(1, Math.min(500, Math.trunc(pageSize)));
+        const skip = (safePage - 1) * safePageSize;
+
+        const [total, sales] = await Promise.all([
+            prisma.sale.count(),
+            prisma.sale.findMany({
+                orderBy: { createdAt: "desc" },
+                skip,
+                take: safePageSize,
+                include: {
+                    user: {
+                        select: { name: true }
+                    },
+                    items: {
+                        include: {
+                            variant: {
+                                include: {
+                                    product: {
+                                        select: { name: true }
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
-        });
+            }),
+        ]);
 
-        return sales.map((sale) => ({
-            id: sale.id,
-            ticketNumber: sale.ticketNumber,
-            total: Number(sale.total),
-            paymentMethod: sale.paymentMethod,
-            cashAmount: sale.cashAmount ? Number(sale.cashAmount) : undefined,
-            transferAmount: sale.transferAmount ? Number(sale.transferAmount) : undefined,
-            date: sale.createdAt.toISOString(),
-            sellerName: sale.user.name,
-            items: sale.items.map((item) => ({
-                id: item.id,
-                productName: item.variant.product.name,
-                size: item.variant.size,
-                color: item.variant.color,
-                sku: item.variant.sku,
-                quantity: item.quantity,
-                priceAtTime: Number(item.priceAtTime),
-                priceType: item.priceType,
-                returnedQuantity: item.returnedQuantity
-            }))
-        }));
+        return {
+            items: sales.map(mapSaleHistoryItem),
+            total,
+            page: safePage,
+            pageSize: safePageSize,
+            totalPages: Math.max(1, Math.ceil(total / safePageSize)),
+        };
     },
     ["sales-history"],
     { revalidate: 120, tags: [CACHE_TAGS.sales, CACHE_TAGS.cash, CACHE_TAGS.posProducts] }
@@ -349,6 +439,61 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
     return sale;
 }
 
-export async function getSalesHistory() {
-    return getSalesHistoryCached();
+export async function getSalesHistory({
+    page = 1,
+    pageSize = DEFAULT_SALES_HISTORY_PAGE_SIZE,
+}: {
+    page?: number;
+    pageSize?: number;
+} = {}) {
+    return getSalesHistoryCached(page, pageSize);
+}
+
+export async function findSalesForExchange({
+    query = "",
+    limit = DEFAULT_EXCHANGE_SEARCH_LIMIT,
+}: {
+    query?: string;
+    limit?: number;
+} = {}) {
+    const safeLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
+    const normalizedQuery = query.trim();
+    const ticketNumber = parseExchangeTicketQuery(normalizedQuery);
+
+    const sales = await prisma.sale.findMany({
+        where: ticketNumber == null ? undefined : { ticketNumber },
+        orderBy: { createdAt: "desc" },
+        take: ticketNumber == null ? safeLimit : Math.max(1, Math.min(10, safeLimit)),
+        include: {
+            user: {
+                select: { name: true },
+            },
+            items: {
+                include: {
+                    variant: {
+                        include: {
+                            product: {
+                                select: { name: true },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    });
+
+    if (ticketNumber == null && normalizedQuery) {
+        return sales
+            .map(mapSaleHistoryItem)
+            .filter((sale) => {
+                const ticketValue = sale.ticketNumber.toString();
+                return (
+                    ticketValue.includes(normalizedQuery) ||
+                    barcodeFromTicketNumber(sale.ticketNumber).includes(normalizedQuery)
+                );
+            })
+            .slice(0, safeLimit);
+    }
+
+    return sales.map(mapSaleHistoryItem);
 }

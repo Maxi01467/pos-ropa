@@ -44,7 +44,7 @@ import { es } from "date-fns/locale";
 import { useSessionSnapshot } from "@/lib/session-client";
 import { notifyCashSessionUpdated } from "@/lib/cash-session-client";
 import { CACHE_TAGS } from "@/lib/cache-tags";
-import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
+import { notifyDataUpdated } from "@/lib/data-sync-client";
 
 type Seller = { id: string; name: string; role: string };
 
@@ -1033,8 +1033,6 @@ export default function CajaPage() {
     useEffect(() => {
         void loadData();
     }, [loadData]);
-
-    useDataRefresh([CACHE_TAGS.cash, CACHE_TAGS.sales, CACHE_TAGS.employees], loadData);
 
     useEffect(() => {
         setSelectedSellerId((currentSelectedSellerId) => {

@@ -50,10 +50,50 @@ type StockPageVariant = {
     stock: number;
 };
 
+type GetStockPageDataInput = {
+    movementPage?: number;
+    movementPageSize?: number;
+    productId?: string;
+    supplierId?: string;
+    dateFrom?: string;
+    dateTo?: string;
+};
+
+const DEFAULT_STOCK_MOVEMENTS_PAGE_SIZE = 12;
+
 // 1. Traer los datos iniciales para la pantalla
 const getStockPageDataCached = unstable_cache(
-    async () => {
-        const [products, suppliers, movements, variants] = await Promise.all([
+    async ({
+        movementPage,
+        movementPageSize,
+        productId,
+        supplierId,
+        dateFrom,
+        dateTo,
+    }: Required<GetStockPageDataInput>) => {
+        const safePage = Math.max(1, Math.trunc(movementPage));
+        const safePageSize = Math.max(1, Math.min(100, Math.trunc(movementPageSize)));
+        const skip = (safePage - 1) * safePageSize;
+        const movementWhere = {
+            ...(supplierId ? { supplierId } : {}),
+            ...(dateFrom || dateTo
+                ? {
+                      createdAt: {
+                          ...(dateFrom ? { gte: new Date(`${dateFrom}T00:00:00`) } : {}),
+                          ...(dateTo ? { lte: new Date(`${dateTo}T23:59:59.999`) } : {}),
+                      },
+                  }
+                : {}),
+            ...(productId
+                ? {
+                      variant: {
+                          productId,
+                      },
+                  }
+                : {}),
+        };
+
+        const [products, suppliers, movements, totalMovements, variants] = await Promise.all([
             prisma.product.findMany({
                 select: { id: true, name: true, priceNormal: true, priceWholesale: true },
             }),
@@ -61,6 +101,7 @@ const getStockPageDataCached = unstable_cache(
                 select: { id: true, name: true },
             }),
             prisma.stockMovement.findMany({
+                where: movementWhere,
                 select: {
                     id: true,
                     supplierId: true,
@@ -78,6 +119,11 @@ const getStockPageDataCached = unstable_cache(
                     },
                 },
                 orderBy: { createdAt: "desc" },
+                skip,
+                take: safePageSize,
+            }),
+            prisma.stockMovement.count({
+                where: movementWhere,
             }),
             prisma.productVariant.findMany({
                 select: {
@@ -127,6 +173,10 @@ const getStockPageDataCached = unstable_cache(
                     stock: variant.stock,
                 })
             ),
+            movementPage: safePage,
+            movementPageSize: safePageSize,
+            totalMovements,
+            totalMovementPages: Math.max(1, Math.ceil(totalMovements / safePageSize)),
         };
     },
     ["stock-page-data"],
@@ -136,8 +186,22 @@ const getStockPageDataCached = unstable_cache(
     }
 );
 
-export async function getStockPageData() {
-    return getStockPageDataCached();
+export async function getStockPageData({
+    movementPage = 1,
+    movementPageSize = DEFAULT_STOCK_MOVEMENTS_PAGE_SIZE,
+    productId,
+    supplierId,
+    dateFrom,
+    dateTo,
+}: GetStockPageDataInput = {}) {
+    return getStockPageDataCached({
+        movementPage,
+        movementPageSize,
+        productId: productId ?? "",
+        supplierId: supplierId ?? "",
+        dateFrom: dateFrom ?? "",
+        dateTo: dateTo ?? "",
+    });
 }
 
 // 2. Registrar nuevos ingresos (Usa Transacciones para máxima seguridad)

@@ -59,8 +59,6 @@ type GetStockPageDataInput = {
     dateTo?: string;
 };
 
-const DEFAULT_STOCK_MOVEMENTS_PAGE_SIZE = 12;
-
 // 1. Traer los datos iniciales para la pantalla
 const getStockPageDataCached = unstable_cache(
     async ({
@@ -71,23 +69,28 @@ const getStockPageDataCached = unstable_cache(
         dateFrom,
         dateTo,
     }: Required<GetStockPageDataInput>) => {
-        const safePage = Math.max(1, Math.trunc(movementPage));
-        const safePageSize = Math.max(1, Math.min(100, Math.trunc(movementPageSize)));
-        const skip = (safePage - 1) * safePageSize;
+        const hasServerPagination = movementPage > 0 && movementPageSize > 0;
+        const safePage = hasServerPagination ? Math.max(1, Math.trunc(movementPage)) : 1;
+        const safePageSize = hasServerPagination
+            ? Math.max(1, Math.min(100, Math.trunc(movementPageSize)))
+            : 0;
+        const skip = hasServerPagination ? (safePage - 1) * safePageSize : undefined;
+        const take = hasServerPagination ? safePageSize : undefined;
         const movementWhere = {
+            deletedAt: null,
+            variant: {
+                deletedAt: null,
+                product: {
+                    deletedAt: null,
+                },
+                ...(productId ? { productId } : {}),
+            },
             ...(supplierId ? { supplierId } : {}),
             ...(dateFrom || dateTo
                 ? {
                       createdAt: {
                           ...(dateFrom ? { gte: new Date(`${dateFrom}T00:00:00`) } : {}),
                           ...(dateTo ? { lte: new Date(`${dateTo}T23:59:59.999`) } : {}),
-                      },
-                  }
-                : {}),
-            ...(productId
-                ? {
-                      variant: {
-                          productId,
                       },
                   }
                 : {}),
@@ -107,15 +110,7 @@ const getStockPageDataCached = unstable_cache(
                 select: { id: true, name: true },
             }),
             prisma.stockMovement.findMany({
-                where: {
-                    deletedAt: null,
-                    variant: {
-                        deletedAt: null,
-                        product: {
-                            deletedAt: null,
-                        },
-                    },
-                },
+                where: movementWhere,
                 select: {
                     id: true,
                     supplierId: true,
@@ -134,7 +129,7 @@ const getStockPageDataCached = unstable_cache(
                 },
                 orderBy: { createdAt: "desc" },
                 skip,
-                take: safePageSize,
+                take,
             }),
             prisma.stockMovement.count({
                 where: movementWhere,
@@ -194,9 +189,11 @@ const getStockPageDataCached = unstable_cache(
                 })
             ),
             movementPage: safePage,
-            movementPageSize: safePageSize,
+            movementPageSize: hasServerPagination ? safePageSize : totalMovements,
             totalMovements,
-            totalMovementPages: Math.max(1, Math.ceil(totalMovements / safePageSize)),
+            totalMovementPages: hasServerPagination
+                ? Math.max(1, Math.ceil(totalMovements / safePageSize))
+                : 1,
         };
     },
     ["stock-page-data"],
@@ -207,16 +204,16 @@ const getStockPageDataCached = unstable_cache(
 );
 
 export async function getStockPageData({
-    movementPage = 1,
-    movementPageSize = DEFAULT_STOCK_MOVEMENTS_PAGE_SIZE,
+    movementPage,
+    movementPageSize,
     productId,
     supplierId,
     dateFrom,
     dateTo,
 }: GetStockPageDataInput = {}) {
     return getStockPageDataCached({
-        movementPage,
-        movementPageSize,
+        movementPage: movementPage ?? 0,
+        movementPageSize: movementPageSize ?? 0,
         productId: productId ?? "",
         supplierId: supplierId ?? "",
         dateFrom: dateFrom ?? "",

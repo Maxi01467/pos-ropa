@@ -78,6 +78,9 @@ function serializeProductForClient(product: {
 const getInventoryDataCached = unstable_cache(
     async () => {
         const products = await prisma.product.findMany({
+            where: {
+                deletedAt: null,
+            },
             select: {
                 id: true,
                 name: true,
@@ -250,8 +253,20 @@ export async function updateProduct(id: string, data: InventoryProductInput) {
 
 // 4. Eliminar un producto
 export async function deleteProduct(id: string) {
-    const deleted = await prisma.product.delete({
-        where: { id }
+    const timestamp = new Date();
+    const deleted = await prisma.product.update({
+        where: { id },
+        data: {
+            deletedAt: timestamp,
+            variants: {
+                updateMany: {
+                    where: { productId: id },
+                    data: {
+                        deletedAt: timestamp,
+                    },
+                },
+            },
+        },
     });
 
     revalidateTag(CACHE_TAGS.inventory, "max");
@@ -269,6 +284,7 @@ export async function markProductReviewed(id: string) {
         where: { id },
         data: {
             pendingReview: false,
+            quickNotificationSeen: true,
             reviewedAt: new Date(),
             reviewedByName: session?.userName ?? "Sistema",
         },
@@ -284,6 +300,7 @@ const getQuickCreationNotificationsCached = unstable_cache(
     async () => {
         const products = await prisma.product.findMany({
             where: {
+                deletedAt: null,
                 quickCreated: true,
                 quickNotificationSeen: false,
             },

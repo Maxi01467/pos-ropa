@@ -8,19 +8,44 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { authenticateUser } from "@/app/actions/auth/auth-actions";
+import { authenticatePosUser } from "@/lib/offline/auth-client";
+import { setLocalSession, useSessionSnapshot } from "@/lib/session/session-client";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import {
+    getOfflineBootstrapRequiredMessage,
+    refreshOfflineBootstrapState,
+    useOfflineBootstrap,
+} from "@/lib/offline/offline-bootstrap";
 
 export default function LoginPage() {
+    const router = useRouter();
+    const session = useSessionSnapshot();
+    const bootstrap = useOfflineBootstrap();
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+
+    useEffect(() => {
+        if (!session.hasSession || !session.role) {
+            return;
+        }
+
+        router.replace(session.role === "ADMIN" ? "/" : "/nueva-venta");
+    }, [router, session.hasSession, session.role]);
+
+    useEffect(() => {
+        void refreshOfflineBootstrapState().catch((error) => {
+            console.warn("No se pudo calcular el bootstrap offline en login", error);
+        });
+    }, []);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
 
         try {
-            const result = await authenticateUser(username, password);
+            const result = await authenticatePosUser(username, password);
 
             if (!result.success || !result.user) {
                 toast.error(result.error || "No se pudo iniciar sesión");
@@ -31,12 +56,15 @@ export default function LoginPage() {
             const user = result.user;
             const destination = user.role === "ADMIN" ? "/" : "/nueva-venta";
 
-            localStorage.setItem("pos_session", "true");
-            localStorage.setItem("pos_user", user.name);
-            localStorage.setItem("pos_user_id", user.id);
-            localStorage.setItem("pos_role", user.role);
+            setLocalSession({
+                userId: user.id,
+                userName: user.name,
+                role: user.role,
+            });
 
-            toast.success("¡Acceso concedido!");
+            toast.success(
+                result.source === "local" ? "Acceso offline concedido" : "¡Acceso concedido!"
+            );
             window.location.assign(destination);
         } catch (error) {
             const message =
@@ -90,11 +118,29 @@ export default function LoginPage() {
                                 className="h-11 text-base"
                             />
                         </div>
+
+                        {bootstrap.isOnline === false &&
+                            bootstrap.state === "requires_initial_sync" && (
+                                <div className="rounded-2xl border border-amber-600/40 bg-amber-500/8 p-4 text-left">
+                                    <p className="text-sm font-semibold text-amber-200">
+                                        Sincronización inicial requerida
+                                    </p>
+                                    <p className="mt-1 text-sm text-amber-100/85">
+                                        {getOfflineBootstrapRequiredMessage()}
+                                    </p>
+                                </div>
+                            )}
                         
                         <Button
                             type="submit"
                             className="h-12 w-full bg-emerald-600 hover:bg-emerald-700 text-base font-bold gap-2 mt-2 shadow-md transition-all hover:shadow-lg"
-                            disabled={isLoading || !username || !password}
+                            disabled={
+                                isLoading ||
+                                !username ||
+                                !password ||
+                                (bootstrap.isOnline === false &&
+                                    bootstrap.state === "requires_initial_sync")
+                            }
                         >
                             {isLoading ? <Loader2 className="size-5 animate-spin" /> : <KeyRound className="size-5" />}
                             Ingresar al Sistema

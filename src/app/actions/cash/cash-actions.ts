@@ -11,56 +11,21 @@ const SESSION_INCLUDE = {
     closedBy: true,
     countedBy: true,
     movements: {
+        where: {
+            deletedAt: null,
+        },
         orderBy: { createdAt: "desc" as const },
     },
-    sales: true,
+    sales: {
+        where: {
+            deletedAt: null,
+        },
+    },
 } satisfies Prisma.CashSessionInclude;
 
 type CashSessionWithIncludes = Prisma.CashSessionGetPayload<{
     include: typeof SESSION_INCLUDE;
 }>;
-
-type CashSessionHistoryItem = {
-    id: string;
-    status: string;
-    openingDate: string;
-    closingDate: string | null;
-    countingDate: string | null;
-    initialAmount: number;
-    expectedAmount: number | null;
-    actualAmount: number | null;
-    difference: number | null;
-    openedBy: { id: string; name: string; role: string } | null;
-    closedBy: { id: string; name: string; role: string } | null;
-    countedBy: { id: string; name: string; role: string } | null;
-    movements: Array<{
-        id: string;
-        amount: number;
-        type: string;
-        reason: string;
-        createdAt: string;
-    }>;
-    sales: Array<{
-        id: string;
-        ticketNumber: number;
-        total: number;
-        paymentMethod: string;
-        cashAmount: number | null;
-        transferAmount: number | null;
-        createdAt: string;
-        sellerName: string;
-    }>;
-};
-
-type PaginatedCashSessionsHistory = {
-    items: CashSessionHistoryItem[];
-    total: number;
-    page: number;
-    pageSize: number;
-    totalPages: number;
-};
-
-const DEFAULT_CASH_SESSIONS_HISTORY_PAGE_SIZE = 30;
 
 function serializeCashSession(session: CashSessionWithIncludes) {
     return {
@@ -106,12 +71,13 @@ function serializeCashSession(session: CashSessionWithIncludes) {
     };
 }
 
-
-
 // 1. Obtener la caja que está actualmente abierta
 export async function getCurrentSession() {
     const session = await prisma.cashSession.findFirst({
-        where: { status: "OPEN" },
+        where: {
+            status: "OPEN",
+            deletedAt: null,
+        },
         include: SESSION_INCLUDE,
     });
 
@@ -125,7 +91,10 @@ export async function openCashSession(initialAmount: number, userId: string) {
     }
 
     const existingSession = await prisma.cashSession.findFirst({
-        where: { status: "OPEN" },
+        where: {
+            status: "OPEN",
+            deletedAt: null,
+        },
     });
 
     if (existingSession) {
@@ -172,9 +141,23 @@ export async function addCashMovement(
 
 // Función interna para calcular el monto esperado de una sesión
 async function calculateExpectedAmount(sessionId: string) {
-    const session = await prisma.cashSession.findUnique({
-        where: { id: sessionId },
-        include: { sales: true, movements: true },
+    const session = await prisma.cashSession.findFirst({
+        where: {
+            id: sessionId,
+            deletedAt: null,
+        },
+        include: {
+            sales: {
+                where: {
+                    deletedAt: null,
+                },
+            },
+            movements: {
+                where: {
+                    deletedAt: null,
+                },
+            },
+        },
     });
 
     if (!session) throw new Error("Sesión no encontrada");
@@ -200,20 +183,39 @@ export async function closeCashSession(sessionId: string, actualAmount: number, 
     const expectedAmount = await calculateExpectedAmount(sessionId);
     const difference = actualAmount - expectedAmount;
 
-    const closedSession = await prisma.cashSession.update({
-        where: { id: sessionId },
+    const closingDate = new Date();
+    const updatedCount = await prisma.cashSession.updateMany({
+        where: {
+            id: sessionId,
+            deletedAt: null,
+        },
         data: {
             status: "CLOSED",
-            closingDate: new Date(),
+            closingDate,
             closedById: userId,
             expectedAmount,
             actualAmount,
             difference,
             countedById: userId,
-            countingDate: new Date(),
+            countingDate: closingDate,
+        },
+    });
+
+    if (updatedCount.count !== 1) {
+        throw new Error("No se pudo cerrar la sesión activa");
+    }
+
+    const closedSession = await prisma.cashSession.findFirst({
+        where: {
+            id: sessionId,
+            deletedAt: null,
         },
         include: SESSION_INCLUDE,
     });
+
+    if (!closedSession) {
+        throw new Error("Sesión no encontrada después del cierre");
+    }
 
     revalidateTag(CACHE_TAGS.cash, "max");
     revalidateTag(CACHE_TAGS.attendance, "max");
@@ -225,17 +227,35 @@ export async function closeCashSession(sessionId: string, actualAmount: number, 
 export async function closeCashSessionWithoutCount(sessionId: string, userId: string) {
     const expectedAmount = await calculateExpectedAmount(sessionId);
 
-    const closedSession = await prisma.cashSession.update({
-        where: { id: sessionId },
+    const closingDate = new Date();
+    const updatedCount = await prisma.cashSession.updateMany({
+        where: {
+            id: sessionId,
+            deletedAt: null,
+        },
         data: {
             status: "PENDING_COUNT",
-            closingDate: new Date(),
+            closingDate,
             closedById: userId,
             expectedAmount,
-            // actualAmount y difference quedan null hasta el arqueo diferido
+        },
+    });
+
+    if (updatedCount.count !== 1) {
+        throw new Error("No se pudo cerrar la sesión activa");
+    }
+
+    const closedSession = await prisma.cashSession.findFirst({
+        where: {
+            id: sessionId,
+            deletedAt: null,
         },
         include: SESSION_INCLUDE,
     });
+
+    if (!closedSession) {
+        throw new Error("Sesión no encontrada después del cierre");
+    }
 
     revalidateTag(CACHE_TAGS.cash, "max");
     revalidateTag(CACHE_TAGS.attendance, "max");
@@ -249,8 +269,11 @@ export async function submitArqueo(
     actualAmount: number,
     countedByUserId: string
 ) {
-    const session = await prisma.cashSession.findUnique({
-        where: { id: sessionId },
+    const session = await prisma.cashSession.findFirst({
+        where: {
+            id: sessionId,
+            deletedAt: null,
+        },
     });
 
     if (!session) throw new Error("Sesión no encontrada");
@@ -261,17 +284,37 @@ export async function submitArqueo(
 
     const difference = actualAmount - Number(session.expectedAmount);
 
-    const updated = await prisma.cashSession.update({
-        where: { id: sessionId },
+    const countingDate = new Date();
+    const updatedCount = await prisma.cashSession.updateMany({
+        where: {
+            id: sessionId,
+            status: "PENDING_COUNT",
+            deletedAt: null,
+        },
         data: {
             status: "CLOSED",
             actualAmount,
             difference,
             countedById: countedByUserId,
-            countingDate: new Date(),
+            countingDate,
+        },
+    });
+
+    if (updatedCount.count !== 1) {
+        throw new Error("No se pudo registrar el arqueo de una sesión activa");
+    }
+
+    const updated = await prisma.cashSession.findFirst({
+        where: {
+            id: sessionId,
+            deletedAt: null,
         },
         include: SESSION_INCLUDE,
     });
+
+    if (!updated) {
+        throw new Error("Sesión no encontrada después del arqueo");
+    }
 
     revalidateTag(CACHE_TAGS.cash, "max");
 
@@ -288,19 +331,17 @@ export async function getClosedSessions(limit = 30) {
     return getClosedSessionsCached(limit);
 }
 
-export async function getCashSessionsHistory({
-    page = 1,
-    pageSize = DEFAULT_CASH_SESSIONS_HISTORY_PAGE_SIZE,
-}: {
-    page?: number;
-    pageSize?: number;
-} = {}) {
-    return getCashSessionsHistoryCached(page, pageSize);
+export async function getCashSessionsHistory() {
+    return getCashSessionsHistoryCached();
 }
+
 const getPendingCountSessionsCached = unstable_cache(
     async () => {
         const sessions = await prisma.cashSession.findMany({
-            where: { status: "PENDING_COUNT" },
+            where: {
+                status: "PENDING_COUNT",
+                deletedAt: null,
+            },
             include: SESSION_INCLUDE,
             orderBy: { closingDate: "asc" },
         });
@@ -314,7 +355,10 @@ const getPendingCountSessionsCached = unstable_cache(
 const getClosedSessionsCached = unstable_cache(
     async (limit: number) => {
         const sessions = await prisma.cashSession.findMany({
-            where: { status: "CLOSED" },
+            where: {
+                status: "CLOSED",
+                deletedAt: null,
+            },
             include: SESSION_INCLUDE,
             orderBy: { countingDate: "desc" },
             take: limit,
@@ -327,92 +371,80 @@ const getClosedSessionsCached = unstable_cache(
 );
 
 const getCashSessionsHistoryCached = unstable_cache(
-    async (page: number, pageSize: number): Promise<PaginatedCashSessionsHistory> => {
-        const safePage = Math.max(1, Math.trunc(page));
-        const safePageSize = Math.max(1, Math.min(100, Math.trunc(pageSize)));
-        const skip = (safePage - 1) * safePageSize;
-
-        const [total, sessions] = await Promise.all([
-            prisma.cashSession.count(),
-            prisma.cashSession.findMany({
-                orderBy: { openingDate: "desc" },
-                skip,
-                take: safePageSize,
-                include: {
-                    openedBy: {
-                        select: { id: true, name: true, role: true },
+    async () => {
+        const sessions = await prisma.cashSession.findMany({
+            where: {
+                deletedAt: null,
+            },
+            orderBy: { openingDate: "desc" },
+            include: {
+                openedBy: {
+                    select: { id: true, name: true, role: true },
+                },
+                closedBy: {
+                    select: { id: true, name: true, role: true },
+                },
+                countedBy: {
+                    select: { id: true, name: true, role: true },
+                },
+                movements: {
+                    orderBy: { createdAt: "desc" },
+                    select: {
+                        id: true,
+                        amount: true,
+                        type: true,
+                        reason: true,
+                        createdAt: true,
                     },
-                    closedBy: {
-                        select: { id: true, name: true, role: true },
-                    },
-                    countedBy: {
-                        select: { id: true, name: true, role: true },
-                    },
-                    movements: {
-                        orderBy: { createdAt: "desc" },
-                        select: {
-                            id: true,
-                            amount: true,
-                            type: true,
-                            reason: true,
-                            createdAt: true,
-                        },
-                    },
-                    sales: {
-                        orderBy: { createdAt: "desc" },
-                        include: {
-                            user: {
-                                select: { name: true },
-                            },
+                },
+                sales: {
+                    orderBy: { createdAt: "desc" },
+                    include: {
+                        user: {
+                            select: { name: true },
                         },
                     },
                 },
-            }),
-        ]);
+            },
+        });
 
-        return {
-            items: sessions.map((session) => ({
-                id: session.id,
-                status: session.status,
-                openingDate: session.openingDate.toISOString(),
-                closingDate: session.closingDate?.toISOString() ?? null,
-                countingDate: session.countingDate?.toISOString() ?? null,
-                initialAmount: Number(session.initialAmount),
-                expectedAmount: session.expectedAmount == null ? null : Number(session.expectedAmount),
-                actualAmount: session.actualAmount == null ? null : Number(session.actualAmount),
-                difference: session.difference == null ? null : Number(session.difference),
-                openedBy: session.openedBy
-                    ? { id: session.openedBy.id, name: session.openedBy.name, role: session.openedBy.role }
-                    : null,
-                closedBy: session.closedBy
-                    ? { id: session.closedBy.id, name: session.closedBy.name, role: session.closedBy.role }
-                    : null,
-                countedBy: session.countedBy
-                    ? { id: session.countedBy.id, name: session.countedBy.name, role: session.countedBy.role }
-                    : null,
-                movements: session.movements.map((movement) => ({
-                    id: movement.id,
-                    amount: Number(movement.amount),
-                    type: movement.type,
-                    reason: movement.reason,
-                    createdAt: movement.createdAt.toISOString(),
-                })),
-                sales: session.sales.map((sale) => ({
-                    id: sale.id,
-                    ticketNumber: sale.ticketNumber,
-                    total: Number(sale.total),
-                    paymentMethod: sale.paymentMethod,
-                    cashAmount: sale.cashAmount == null ? null : Number(sale.cashAmount),
-                    transferAmount: sale.transferAmount == null ? null : Number(sale.transferAmount),
-                    createdAt: sale.createdAt.toISOString(),
-                    sellerName: sale.user.name,
-                })),
+        return sessions.map((session) => ({
+            id: session.id,
+            status: session.status,
+            openingDate: session.openingDate.toISOString(),
+            closingDate: session.closingDate?.toISOString() ?? null,
+            countingDate: session.countingDate?.toISOString() ?? null,
+            initialAmount: Number(session.initialAmount),
+            expectedAmount: session.expectedAmount == null ? null : Number(session.expectedAmount),
+            actualAmount: session.actualAmount == null ? null : Number(session.actualAmount),
+            difference: session.difference == null ? null : Number(session.difference),
+            openedBy: session.openedBy
+                ? { id: session.openedBy.id, name: session.openedBy.name, role: session.openedBy.role }
+                : null,
+            closedBy: session.closedBy
+                ? { id: session.closedBy.id, name: session.closedBy.name, role: session.closedBy.role }
+                : null,
+            countedBy: session.countedBy
+                ? { id: session.countedBy.id, name: session.countedBy.name, role: session.countedBy.role }
+                : null,
+            movements: session.movements.map((movement) => ({
+                id: movement.id,
+                amount: Number(movement.amount),
+                type: movement.type,
+                reason: movement.reason,
+                createdAt: movement.createdAt.toISOString(),
             })),
-            total,
-            page: safePage,
-            pageSize: safePageSize,
-            totalPages: Math.max(1, Math.ceil(total / safePageSize)),
-        };
+            sales: session.sales.map((sale) => ({
+                id: sale.id,
+                ticketNumber: sale.ticketNumber,
+                total: Number(sale.total),
+                paymentMethod: sale.paymentMethod,
+                cashAmount: sale.cashAmount == null ? null : Number(sale.cashAmount),
+                transferAmount: sale.transferAmount == null ? null : Number(sale.transferAmount),
+                createdAt: sale.createdAt.toISOString(),
+                sellerName: sale.user.name,
+            })),
+        }));
     },
     ["cash-sessions-history"],
     { revalidate: 300, tags: [CACHE_TAGS.cash, CACHE_TAGS.sales] }

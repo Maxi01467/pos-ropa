@@ -5,7 +5,7 @@ import { es } from "date-fns/locale";
 import { barcodeFromTicketNumber } from "@/lib/printing/barcodes";
 
 export interface ReceiptPrintData {
-    ticketNumber: number;
+    ticketNumber: string;
     date: Date;
     sellerName: string;
     items: {
@@ -23,7 +23,7 @@ export interface ReceiptPrintData {
     total: number;
     paymentMethod: string;
     exchangeCredit?: number;
-    exchangedTicketNumber?: number;
+    exchangedTicketNumber?: string;
 }
 
 function formatCurrency(amount: number): string {

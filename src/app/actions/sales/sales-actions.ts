@@ -1,10 +1,14 @@
 "use server";
 
 import { revalidateTag } from "next/cache";
-import { Prisma } from "@prisma/client";
 import { CACHE_TAGS, unstable_cache } from "@/lib/core/cache-tags";
 import { barcodeFromTicketNumber } from "@/lib/printing/barcodes";
 import { prisma } from "@/lib/prisma";
+import {
+    buildTicketNumber,
+    computeNextTicketSequence,
+    normalizeTerminalPrefix,
+} from "@/lib/terminal/tickets";
 
 const SHOULD_REVALIDATE_SERVER_CACHE = process.env.POS_DESKTOP !== "1";
 
@@ -33,6 +37,7 @@ type CreateSaleInput = {
     cashAmount?: number;
     transferAmount?: number;
     userId?: string;
+    terminalPrefix?: string;
     items: CreateSaleItemInput[];
 };
 
@@ -47,142 +52,114 @@ type CreateExchangeSaleInput = {
     cashAmount?: number;
     transferAmount?: number;
     userId?: string;
+    terminalPrefix?: string;
     originalSaleId: string;
     returnedItems: ExchangeReturnItemInput[];
     items: CreateSaleItemInput[];
 };
 
-type PaginatedSalesHistory = {
+const DEFAULT_EXCHANGE_SEARCH_LIMIT = 20;
+
+type SaleHistoryItem = {
+    id: string;
+    ticketNumber: string;
+    total: number;
+    paymentMethod: string;
+    cashAmount?: number;
+    transferAmount?: number;
+    date: string;
+    sellerName: string;
+    items: {
+        id: string;
+        variantId: string;
+        productName: string;
+        size: string;
+        color: string;
+        sku: string;
+        quantity: number;
+        priceAtTime: number;
+        priceType: string;
+        returnedQuantity: number;
+    }[];
+};
+
+function mapSaleHistoryItem(sale: {
+    id: string;
+    ticketNumber: string;
+    total: number | { toString(): string };
+    paymentMethod: string;
+    cashAmount: number | { toString(): string } | null;
+    transferAmount: number | { toString(): string } | null;
+    createdAt: Date;
+    user: { name: string } | null;
     items: Array<{
         id: string;
-        ticketNumber: number;
-        total: number;
-        paymentMethod: string;
-        cashAmount?: number;
-        transferAmount?: number;
-        date: string;
-        sellerName: string;
-        items: Array<{
-            id: string;
-            variantId: string;
-            productName: string;
+        variantId: string;
+        quantity: number;
+        priceAtTime: number | { toString(): string };
+        priceType: string;
+        returnedQuantity: number;
+        variant: {
             size: string;
             color: string;
             sku: string;
-            quantity: number;
-            priceAtTime: number;
-            priceType: "NORMAL" | "WHOLESALE";
-            returnedQuantity: number;
-        }>;
+            product: { name: string };
+        };
     }>;
-    total: number;
-    page: number;
-    pageSize: number;
-    totalPages: number;
-};
-
-const DEFAULT_SALES_HISTORY_PAGE_SIZE = 200;
-const DEFAULT_EXCHANGE_SEARCH_LIMIT = 20;
-
-type ExchangeSearchSale = PaginatedSalesHistory["items"][number];
-type SaleHistoryRecord = Prisma.SaleGetPayload<{
-    include: {
-        user: {
-            select: { name: true };
-        };
-        items: {
-            include: {
-                variant: {
-                    include: {
-                        product: {
-                            select: { name: true };
-                        };
-                    };
-                };
-            };
-        };
-    };
-}>;
-
-function mapSaleHistoryItem(sale: SaleHistoryRecord): ExchangeSearchSale {
+}): SaleHistoryItem {
     return {
         id: sale.id,
         ticketNumber: sale.ticketNumber,
         total: Number(sale.total),
         paymentMethod: sale.paymentMethod,
-        cashAmount: sale.cashAmount ? Number(sale.cashAmount) : undefined,
-        transferAmount: sale.transferAmount ? Number(sale.transferAmount) : undefined,
+        cashAmount: sale.cashAmount == null ? undefined : Number(sale.cashAmount),
+        transferAmount: sale.transferAmount == null ? undefined : Number(sale.transferAmount),
         date: sale.createdAt.toISOString(),
-        sellerName: sale.user.name,
-                items: sale.items.map((item) => ({
-                    id: item.id,
-                    variantId: item.variantId,
-                    productName: item.variant.product.name,
-                    size: item.variant.size,
-                    color: item.variant.color,
+        sellerName: sale.user?.name ?? "Sin vendedor",
+        items: sale.items.map((item) => ({
+            id: item.id,
+            variantId: item.variantId,
+            productName: item.variant.product.name,
+            size: item.variant.size,
+            color: item.variant.color,
             sku: item.variant.sku,
             quantity: item.quantity,
             priceAtTime: Number(item.priceAtTime),
-            priceType: item.priceType as "NORMAL" | "WHOLESALE",
+            priceType: item.priceType,
             returnedQuantity: item.returnedQuantity,
         })),
     };
 }
 
-function parseExchangeTicketQuery(query: string) {
-    const trimmed = query.trim();
-    if (!trimmed) return null;
-
-    const digits = trimmed.replace(/\D/g, "");
-    if (!digits) return null;
-
-    if (digits.length === 13) {
-        const ticketNumber = Number.parseInt(digits.slice(0, 12), 10);
-        return Number.isNaN(ticketNumber) ? null : ticketNumber;
-    }
-
-    const ticketNumber = Number.parseInt(digits, 10);
-    return Number.isNaN(ticketNumber) ? null : ticketNumber;
-}
-
 const getSalesHistoryCached = unstable_cache(
-    async (page: number, pageSize: number): Promise<PaginatedSalesHistory> => {
-        const safePage = Math.max(1, Math.trunc(page));
-        const safePageSize = Math.max(1, Math.min(500, Math.trunc(pageSize)));
-        const skip = (safePage - 1) * safePageSize;
-
-        const [total, sales] = await Promise.all([
-            prisma.sale.count(),
-            prisma.sale.findMany({
-                orderBy: { createdAt: "desc" },
-                skip,
-                take: safePageSize,
-                include: {
-                    user: {
-                        select: { name: true }
+    async (): Promise<SaleHistoryItem[]> => {
+        const sales = await prisma.sale.findMany({
+            where: {
+                deletedAt: null,
+            },
+            orderBy: { createdAt: "desc" },
+            include: {
+                user: {
+                    select: { name: true },
+                },
+                items: {
+                    where: {
+                        deletedAt: null,
                     },
-                    items: {
-                        include: {
-                            variant: {
-                                include: {
-                                    product: {
-                                        select: { name: true }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }),
-        ]);
+                    include: {
+                        variant: {
+                            include: {
+                                product: {
+                                    select: { name: true },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        });
 
-        return {
-            items: sales.map(mapSaleHistoryItem),
-            total,
-            page: safePage,
-            pageSize: safePageSize,
-            totalPages: Math.max(1, Math.ceil(total / safePageSize)),
-        };
+        return sales.map(mapSaleHistoryItem);
     },
     ["sales-history"],
     { revalidate: 120, tags: [CACHE_TAGS.sales, CACHE_TAGS.cash, CACHE_TAGS.posProducts] }
@@ -220,10 +197,13 @@ export async function createSale(input: CreateSaleInput) {
 
     const user = input.userId
         ? await prisma.user.findUnique({
-              where: { id: input.userId },
+              where: { id: input.userId, deletedAt: null },
               select: { id: true },
           })
         : await prisma.user.findFirst({
+              where: {
+                  deletedAt: null,
+              },
               orderBy: { createdAt: "asc" },
               select: { id: true },
           });
@@ -234,14 +214,24 @@ export async function createSale(input: CreateSaleInput) {
 
     // NUEVO: Buscamos si hay una sesión de caja abierta actualmente
     const currentSession = await prisma.cashSession.findFirst({
-        where: { status: "OPEN" },
+        where: {
+            status: "OPEN",
+            deletedAt: null,
+        },
         select: { id: true }
     });
+    const terminalPrefix = normalizeTerminalPrefix(input.terminalPrefix);
 
     const sale = await prisma.$transaction(async (tx) => {
         for (const item of input.items) {
-            const variant = await tx.productVariant.findUnique({
-                where: { id: item.variantId },
+            const variant = await tx.productVariant.findFirst({
+                where: {
+                    id: item.variantId,
+                    deletedAt: null,
+                    product: {
+                        deletedAt: null,
+                    },
+                },
                 select: { id: true, stock: true },
             });
 
@@ -254,8 +244,21 @@ export async function createSale(input: CreateSaleInput) {
             }
         }
 
+        const existingTickets = await tx.sale.findMany({
+            where: {
+                deletedAt: null,
+            },
+            select: { ticketNumber: true },
+        });
+        const nextTicket = computeNextTicketSequence(
+            existingTickets.map((saleRow) => saleRow.ticketNumber),
+            terminalPrefix
+        );
+        const ticketStr = buildTicketNumber(terminalPrefix, nextTicket);
+
         const sale = await tx.sale.create({
             data: {
+                ticketNumber: ticketStr,
                 total: input.total,
                 paymentMethod: input.paymentMethod,
                 cashAmount,
@@ -279,10 +282,20 @@ export async function createSale(input: CreateSaleInput) {
         });
 
         for (const item of input.items) {
-            await tx.productVariant.update({
-                where: { id: item.variantId },
+            const updatedVariant = await tx.productVariant.updateMany({
+                where: {
+                    id: item.variantId,
+                    deletedAt: null,
+                    product: {
+                        deletedAt: null,
+                    },
+                },
                 data: { stock: { decrement: item.quantity } },
             });
+
+            if (updatedVariant.count !== 1) {
+                throw new Error("No se pudo descontar stock de una variante activa");
+            }
         }
 
         return sale;
@@ -337,10 +350,13 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
 
     const user = input.userId
         ? await prisma.user.findUnique({
-              where: { id: input.userId },
+              where: { id: input.userId, deletedAt: null },
               select: { id: true },
           })
         : await prisma.user.findFirst({
+              where: {
+                  deletedAt: null,
+              },
               orderBy: { createdAt: "asc" },
               select: { id: true },
           });
@@ -350,19 +366,26 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
     }
 
     const currentSession = await prisma.cashSession.findFirst({
-        where: { status: "OPEN" },
+        where: {
+            status: "OPEN",
+            deletedAt: null,
+        },
         select: { id: true },
     });
 
-    if (requiresCashRefund && !currentSession) {
-        throw new Error("Necesitás una caja abierta para registrar una devolución por cambio");
-    }
+    const terminalPrefix = normalizeTerminalPrefix(input.terminalPrefix);
 
     const sale = await prisma.$transaction(async (tx) => {
-        const originalSale = await tx.sale.findUnique({
-            where: { id: input.originalSaleId },
+        const originalSale = await tx.sale.findFirst({
+            where: {
+                id: input.originalSaleId,
+                deletedAt: null,
+            },
             include: {
                 items: {
+                    where: {
+                        deletedAt: null,
+                    },
                     include: {
                         variant: true,
                     },
@@ -399,15 +422,31 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
                 data: { returnedQuantity: { increment: returnedItem.quantity } },
             });
 
-            await tx.productVariant.update({
-                where: { id: saleItem.variantId },
+            const restoredVariant = await tx.productVariant.updateMany({
+                where: {
+                    id: saleItem.variantId,
+                    deletedAt: null,
+                    product: {
+                        deletedAt: null,
+                    },
+                },
                 data: { stock: { increment: returnedItem.quantity } },
             });
+
+            if (restoredVariant.count !== 1) {
+                throw new Error("No se pudo devolver stock sobre una variante activa");
+            }
         }
 
         for (const item of input.items) {
-            const variant = await tx.productVariant.findUnique({
-                where: { id: item.variantId },
+            const variant = await tx.productVariant.findFirst({
+                where: {
+                    id: item.variantId,
+                    deletedAt: null,
+                    product: {
+                        deletedAt: null,
+                    },
+                },
                 select: { id: true, stock: true },
             });
 
@@ -420,8 +459,21 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
             }
         }
 
+        const existingTickets = await tx.sale.findMany({
+            where: {
+                deletedAt: null,
+            },
+            select: { ticketNumber: true },
+        });
+        const nextTicket = computeNextTicketSequence(
+            existingTickets.map((saleRow) => saleRow.ticketNumber),
+            terminalPrefix
+        );
+        const ticketStr = buildTicketNumber(terminalPrefix, nextTicket);
+
         const sale = await tx.sale.create({
             data: {
+                ticketNumber: ticketStr,
                 total: input.total,
                 paymentMethod: input.paymentMethod,
                 cashAmount,
@@ -444,10 +496,20 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
         });
 
         for (const item of input.items) {
-            await tx.productVariant.update({
-                where: { id: item.variantId },
+            const updatedVariant = await tx.productVariant.updateMany({
+                where: {
+                    id: item.variantId,
+                    deletedAt: null,
+                    product: {
+                        deletedAt: null,
+                    },
+                },
                 data: { stock: { decrement: item.quantity } },
             });
+
+            if (updatedVariant.count !== 1) {
+                throw new Error("No se pudo descontar stock de una variante activa");
+            }
         }
 
         if (requiresCashRefund && currentSession) {
@@ -469,14 +531,8 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
     return sale;
 }
 
-export async function getSalesHistory({
-    page = 1,
-    pageSize = DEFAULT_SALES_HISTORY_PAGE_SIZE,
-}: {
-    page?: number;
-    pageSize?: number;
-} = {}) {
-    return getSalesHistoryCached(page, pageSize);
+export async function getSalesHistory() {
+    return getSalesHistoryCached();
 }
 
 export async function findSalesForExchange({
@@ -488,17 +544,21 @@ export async function findSalesForExchange({
 } = {}) {
     const safeLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
     const normalizedQuery = query.trim();
-    const ticketNumber = parseExchangeTicketQuery(normalizedQuery);
 
     const sales = await prisma.sale.findMany({
-        where: ticketNumber == null ? undefined : { ticketNumber },
+        where: {
+            deletedAt: null,
+        },
         orderBy: { createdAt: "desc" },
-        take: ticketNumber == null ? safeLimit : Math.max(1, Math.min(10, safeLimit)),
+        take: normalizedQuery ? Math.max(safeLimit * 10, 50) : safeLimit,
         include: {
             user: {
                 select: { name: true },
             },
             items: {
+                where: {
+                    deletedAt: null,
+                },
                 include: {
                     variant: {
                         include: {
@@ -512,18 +572,19 @@ export async function findSalesForExchange({
         },
     });
 
-    if (ticketNumber == null && normalizedQuery) {
-        return sales
-            .map(mapSaleHistoryItem)
-            .filter((sale) => {
-                const ticketValue = sale.ticketNumber.toString();
-                return (
-                    ticketValue.includes(normalizedQuery) ||
-                    barcodeFromTicketNumber(sale.ticketNumber).includes(normalizedQuery)
-                );
-            })
-            .slice(0, safeLimit);
+    const mappedSales = sales.map(mapSaleHistoryItem);
+
+    if (normalizedQuery) {
+        const normalizedUpperQuery = normalizedQuery.toUpperCase();
+
+        return mappedSales.filter((sale) => {
+            const ticketValue = sale.ticketNumber.toUpperCase();
+            return (
+                ticketValue.includes(normalizedUpperQuery) ||
+                barcodeFromTicketNumber(sale.ticketNumber).includes(normalizedQuery)
+            );
+        }).slice(0, safeLimit);
     }
 
-    return sales.map(mapSaleHistoryItem);
+    return mappedSales;
 }

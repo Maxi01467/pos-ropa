@@ -25,6 +25,9 @@ const PRODUCT_FOR_POS_SELECT = {
     priceNormal: true,
     priceWholesale: true,
     variants: {
+        where: {
+            deletedAt: null,
+        },
         select: {
             id: true,
             sku: true,
@@ -32,6 +35,9 @@ const PRODUCT_FOR_POS_SELECT = {
             color: true,
             stock: true,
             barcodeAliases: {
+                where: {
+                    deletedAt: null,
+                },
                 select: { barcode: true },
             },
         },
@@ -81,6 +87,7 @@ const getSellersCached = unstable_cache(
         prisma.user.findMany({
             where: {
                 active: true,
+                deletedAt: null,
             },
             select: {
                 id: true,
@@ -96,6 +103,9 @@ const getSellersCached = unstable_cache(
 const getProductsForPOSCached = unstable_cache(
     async () => {
         const products = await prisma.product.findMany({
+            where: {
+                deletedAt: null,
+            },
             select: PRODUCT_FOR_POS_SELECT,
             orderBy: {
                 createdAt: "desc",
@@ -113,6 +123,7 @@ const getFeaturedProductsForPOSCached = unstable_cache(
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
         const recentSales = await prisma.sale.findMany({
             where: {
+                deletedAt: null,
                 createdAt: {
                     gte: since,
                 },
@@ -141,6 +152,9 @@ const getFeaturedProductsForPOSCached = unstable_cache(
         }
 
         const products = await prisma.product.findMany({
+            where: {
+                deletedAt: null,
+            },
             select: PRODUCT_FOR_POS_SELECT,
             orderBy: {
                 createdAt: "desc",

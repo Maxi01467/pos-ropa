@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
+import { scheduleOfflineBootstrapRefresh } from "@/lib/offline/offline-bootstrap";
 
 export type DataSyncDomain = (typeof CACHE_TAGS)[keyof typeof CACHE_TAGS];
 
@@ -51,10 +52,6 @@ export function notifyDataUpdated(domains: DataSyncDomain | DataSyncDomain[]) {
         sourceId: TAB_SOURCE_ID,
     };
 
-    console.log(
-        `[data-sync] notify source=${payload.sourceId} domains=${payload.domains.join(",")}`
-    );
-
     window.dispatchEvent(new CustomEvent<DataSyncPayload>(DATA_SYNC_EVENT, { detail: payload }));
     getBroadcastChannel()?.postMessage(payload);
 
@@ -63,6 +60,8 @@ export function notifyDataUpdated(domains: DataSyncDomain | DataSyncDomain[]) {
     } catch {
         // Ignoramos errores de almacenamiento porque el evento local ya fue emitido.
     }
+
+    scheduleOfflineBootstrapRefresh();
 }
 
 export function useDataRefresh(
@@ -89,9 +88,7 @@ export function useDataRefresh(
         const subscribedDomains = domainsKey
             .split(":")
             .filter(Boolean) as DataSyncDomain[];
-
         const runRefresh = () => {
-            console.log(`[data-sync] refresh label=${debugLabel}`);
             void refreshRef.current();
         };
 
@@ -99,14 +96,8 @@ export function useDataRefresh(
             if (!matchesDomains(subscribedDomains, payload)) return;
             if (!payload) return;
             if (payload.sourceId === TAB_SOURCE_ID) {
-                console.log(
-                    `[data-sync] ignore-self label=${debugLabel} source=${payload.sourceId}`
-                );
                 return;
             }
-            console.log(
-                `[data-sync] event label=${debugLabel} source=${payload.sourceId} domains=${payload.domains.join(",")}`
-            );
             runRefresh();
         };
 
@@ -118,7 +109,6 @@ export function useDataRefresh(
             if (event.key !== DATA_SYNC_STORAGE_KEY || !event.newValue) return;
 
             try {
-                console.log(`[data-sync] storage-event label=${debugLabel}`);
                 handlePayload(JSON.parse(event.newValue) as DataSyncPayload);
             } catch {
                 // Ignoramos payloads inválidos.
@@ -126,7 +116,6 @@ export function useDataRefresh(
         };
 
         const handleBroadcast = (event: MessageEvent<DataSyncPayload>) => {
-            console.log(`[data-sync] broadcast-event label=${debugLabel}`);
             handlePayload(event.data);
         };
 
@@ -139,6 +128,8 @@ export function useDataRefresh(
         const channel = getBroadcastChannel();
         channel?.addEventListener("message", handleBroadcast);
 
+        const pollIntervalMs =
+            options?.pollIntervalMs === false ? null : (options?.pollIntervalMs ?? 30000);
         const intervalId =
             pollIntervalMs == null ? null : window.setInterval(runRefresh, pollIntervalMs);
 
@@ -153,5 +144,5 @@ export function useDataRefresh(
                 window.clearInterval(intervalId);
             }
         };
-    }, [debugLabel, domainsKey, pollIntervalMs, refreshOnFocus]);
+    }, [domainsKey, options?.pollIntervalMs, options?.refreshOnFocus]);
 }

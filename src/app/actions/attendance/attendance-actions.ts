@@ -89,6 +89,7 @@ async function getActiveUser(userId: string) {
         where: {
             id: userId,
             active: true,
+            deletedAt: null,
         },
         select: {
             id: true,
@@ -119,6 +120,7 @@ export async function getAttendanceDashboard(userId: string): Promise<Attendance
             where: {
                 userId,
                 checkOut: null,
+                deletedAt: null,
             },
             orderBy: {
                 checkIn: "desc",
@@ -127,6 +129,7 @@ export async function getAttendanceDashboard(userId: string): Promise<Attendance
         prisma.shift.findMany({
             where: {
                 userId,
+                deletedAt: null,
                 checkIn: {
                     gte: getStartOfToday(),
                     lt: getEndOfToday(),
@@ -171,6 +174,7 @@ export async function checkInUser(userId: string) {
         where: {
             userId,
             checkOut: null,
+            deletedAt: null,
         },
         select: {
             id: true,
@@ -203,6 +207,7 @@ export async function checkOutUser(userId: string) {
         where: {
             userId,
             checkOut: null,
+            deletedAt: null,
         },
         orderBy: {
             checkIn: "desc",
@@ -238,6 +243,7 @@ const getAttendanceEmployeesCached = unstable_cache(
             where: {
                 active: true,
                 role: "STAFF",
+                deletedAt: null,
             },
             select: {
                 id: true,
@@ -257,6 +263,7 @@ const getAttendanceBoardCached = unstable_cache(
         const cashSession = await prisma.cashSession.findFirst({
             where: {
                 status: "OPEN",
+                deletedAt: null,
             },
             select: {
                 id: true,
@@ -279,6 +286,7 @@ const getAttendanceBoardCached = unstable_cache(
         const rangeEnd = cashSession.closingDate ?? new Date();
         const shifts = await prisma.shift.findMany({
             where: {
+                deletedAt: null,
                 checkIn: {
                     gte: cashSession.openingDate,
                     lte: rangeEnd,

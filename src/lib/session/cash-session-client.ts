@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useSyncExternalStore } from "react";
-import { getCurrentSession } from "@/app/actions/cash/cash-actions";
+// Eliminamos: import { getCurrentSession } from "@/app/actions/cash/cash-actions";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
 import { notifyDataUpdated } from "@/lib/sync/data-sync-client";
 
@@ -47,7 +47,10 @@ export function useCashSessionStatus() {
 
     const refreshCashSessionStatus = useCallback(async () => {
         try {
-            const session = await getCurrentSession();
+            // Importar dinámicamente el local-first runtime para no bloquear la UI si no está listo
+            const { getCashRuntime } = await import("@/lib/offline/cash-runtime");
+            const cashRuntime = getCashRuntime();
+            const session = await cashRuntime.getCurrentSession();
             setCashSessionStatus(Boolean(session));
         } catch {
             setCashSessionStatus(false);

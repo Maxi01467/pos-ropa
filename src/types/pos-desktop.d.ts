@@ -11,6 +11,23 @@ declare global {
             }) => Promise<{
                 printerName: string;
             }>;
+            getTerminalConfig: () => Promise<{
+                deviceId: string;
+                terminalId: string | null;
+                terminalPrefix: string | null;
+                terminalName: string | null;
+            }>;
+            setTerminalConfig: (payload: {
+                deviceId?: string;
+                terminalId: string;
+                terminalPrefix: string;
+                terminalName: string;
+            }) => Promise<{
+                deviceId: string;
+                terminalId: string | null;
+                terminalPrefix: string | null;
+                terminalName: string | null;
+            }>;
         };
     }
 }

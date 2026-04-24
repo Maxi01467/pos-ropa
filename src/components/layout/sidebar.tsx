@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, type AnchorHTMLAttributes } from "react";
-const Link = (props: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => <a {...props} />;
+import { useState } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
     CalendarClock,
-    ChartColumn,
     ChevronDown,
     ChevronLeft,
     ChevronRight,
@@ -40,6 +39,8 @@ import { cn } from "@/lib/core/utils";
 import { canAccessPath, type SessionRole } from "@/lib/core/permissions";
 import { useCashSessionStatus } from "@/lib/session/cash-session-client";
 import { logoutUser } from "@/app/actions/auth/auth-actions";
+import { clearLocalSession } from "@/lib/session/session-client";
+import { useTerminalSnapshot } from "@/lib/terminal/terminal-client";
 
 const mainItems = [
     { href: "/", label: "Inicio", icon: Home },
@@ -74,8 +75,8 @@ const workspaceItems = [
     {
         href: "/reportes",
         label: "Reportes",
-        icon: ChartColumn,
-        badge: 2,
+        icon: FileText,
+        badge: 1,
     },
     {
         href: "/empleados",
@@ -91,8 +92,10 @@ const workspaceItems = [
     },
 ] as const;
 
-function countVisibleWorkspaceChildren(role: SessionRole) {
-    return workspaceItems[0].children.filter((child) => canAccessPath(role, child.href)).length;
+function countVisibleWorkspaceChildren(role: SessionRole, isDesktop: boolean) {
+    return workspaceItems[0].children.filter((child) =>
+        canAccessPath(role, child.href, { isDesktop })
+    ).length;
 }
 
 function SidebarContent({
@@ -110,20 +113,25 @@ function SidebarContent({
 }) {
     const pathname = usePathname();
     const { hasOpenCashSession } = useCashSessionStatus();
+    const terminal = useTerminalSnapshot();
     const [menuExpanded] = useState(true);
     const [workspaceExpanded, setWorkspaceExpanded] = useState(true);
 
-    const visibleMainItems = mainItems.filter((item) => canAccessPath(role, item.href));
+    const visibleMainItems = mainItems.filter((item) =>
+        canAccessPath(role, item.href, { isDesktop: terminal.isDesktop })
+    );
     const visibleWorkspaceItems = workspaceItems.filter((item) => {
         if ("hidden" in item && item.hidden) {
             return false;
         }
 
         if ("children" in item) {
-            return item.children.some((child) => canAccessPath(role, child.href));
+            return item.children.some((child) =>
+                canAccessPath(role, child.href, { isDesktop: terminal.isDesktop })
+            );
         }
 
-        return canAccessPath(role, item.href);
+        return canAccessPath(role, item.href, { isDesktop: terminal.isDesktop });
     });
 
     const initials = userName
@@ -138,11 +146,12 @@ function SidebarContent({
     const navItemHoverClass = "text-muted-foreground hover:bg-muted/70 hover:text-foreground";
 
     const handleLogout = async () => {
-        await logoutUser();
-        localStorage.removeItem("pos_session");
-        localStorage.removeItem("pos_user");
-        localStorage.removeItem("pos_role");
-        localStorage.removeItem("pos_user_id");
+        try {
+            await logoutUser();
+        } catch (error) {
+            console.warn("No se pudo cerrar la sesión remota, se cerrará la sesión local igual", error);
+        }
+        clearLocalSession();
         window.location.href = "/login";
     };
 
@@ -272,7 +281,7 @@ function SidebarContent({
 
                                     if ("children" in item) {
                                         const visibleChildren = item.children.filter((child) =>
-                                            canAccessPath(role, child.href)
+                                            canAccessPath(role, child.href, { isDesktop: terminal.isDesktop })
                                         );
 
                                         if (collapsed) {
@@ -324,7 +333,7 @@ function SidebarContent({
                                                     <Icon className="size-4.5" />
                                                     <span className="flex-1 text-left">{item.label}</span>
                                                     <span className="rounded-full bg-[linear-gradient(135deg,#6d28d9_0%,#4c1d95_100%)] px-2 py-0.5 text-xs text-white shadow-[0_12px_24px_-18px_rgba(76,29,149,0.9)]">
-                                                        {countVisibleWorkspaceChildren(role)}
+                                                        {countVisibleWorkspaceChildren(role, terminal.isDesktop)}
                                                     </span>
                                                 </button>
 

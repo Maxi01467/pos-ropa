@@ -2,12 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-    getStockPageData,
-    registerStockEntries,
-    reduceStockEntries,
-    adjustStockEntries,
-} from "@/app/actions/stock/stock-actions";
-import {
     Barcode,
     CalendarDays,
     ClipboardList,
@@ -54,8 +48,9 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
-import { notifyDataUpdated } from "@/lib/sync/data-sync-client";
+import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
 import { cn } from "@/lib/core/utils";
+import { getStockRuntime } from "@/lib/offline/stock-runtime";
 
 // Reemplazamos mockSizes por un array constante aquí
 const commonSizes = ["XS", "S", "M", "L", "XL", "XXL", "38", "40", "42", "44", "46", "48"];
@@ -201,6 +196,7 @@ function normalizePrintQuantity(rawValue: string, max: number) {
 }
 
 export default function StockPage() {
+    const stockRuntime = useMemo(() => getStockRuntime(), []);
     // Estados de base de datos
     const [entries, setEntries] = useState<StockEntry[]>([]);
     const [products, setProducts] = useState<StockProduct[]>([]);
@@ -232,37 +228,31 @@ export default function StockPage() {
     const [selectedMovementIds, setSelectedMovementIds] = useState<string[]>([]);
     const [printDialogOpen, setPrintDialogOpen] = useState(false);
     const [printQuantities, setPrintQuantities] = useState<Record<string, string>>({});
-    const [totalMovements, setTotalMovements] = useState(0);
-    const [totalMovementPages, setTotalMovementPages] = useState(1);
     
     const loadData = useCallback(async () => {
         try {
-            setIsLoading(true);
-            const data = await getStockPageData({
-                movementPage: currentPage,
-                movementPageSize: STOCK_MOVEMENTS_PER_PAGE,
-                productId: filterProduct !== "all" ? filterProduct : undefined,
-                supplierId: filterProvider !== "all" ? filterProvider : undefined,
-                dateFrom: filterDateFrom || undefined,
-                dateTo: filterDateTo || undefined,
-            });
+            const data = await stockRuntime.getStockPageData();
             setProducts(data.products);
             setProviders(data.suppliers);
             setEntries(data.entries);
             setVariants(data.variants);
-            setTotalMovements(data.totalMovements);
-            setTotalMovementPages(data.totalMovementPages);
         } catch (error) {
             toast.error("Error al cargar el stock");
             console.error(error);
         } finally {
             setIsLoading(false);
         }
-    }, [currentPage, filterDateFrom, filterDateTo, filterProduct, filterProvider]);
+    }, [stockRuntime]);
 
     useEffect(() => {
         void loadData();
     }, [loadData]);
+
+    useDataRefresh(
+        [CACHE_TAGS.stock, CACHE_TAGS.inventory, CACHE_TAGS.suppliers, CACHE_TAGS.posProducts],
+        loadData,
+        { pollIntervalMs: false }
+    );
 
     useEffect(() => {
         const handleAfterPrint = () => {
@@ -276,6 +266,8 @@ export default function StockPage() {
     }, []);
 
     const movements = useMemo(() => buildMovements(entries), [entries]);
+    const totalMovements = movements.length;
+    const totalMovementPages = Math.max(1, Math.ceil(totalMovements / STOCK_MOVEMENTS_PER_PAGE));
 
     const isMovementSelectable = useCallback(
         (movement: StockMovement) =>
@@ -543,11 +535,11 @@ export default function StockPage() {
         setIsSaving(true);
         try {
             if (stockAction === "add") {
-                await registerStockEntries(newEntries);
+                await stockRuntime.registerStockEntries(newEntries);
             } else if (stockAction === "remove") {
-                await reduceStockEntries(newEntries);
+                await stockRuntime.reduceStockEntries(newEntries);
             } else {
-                await adjustStockEntries(newEntries);
+                await stockRuntime.adjustStockEntries(newEntries);
             }
             await loadData();
             notifyDataUpdated([CACHE_TAGS.stock, CACHE_TAGS.inventory, CACHE_TAGS.posProducts]);

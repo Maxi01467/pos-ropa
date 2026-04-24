@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getCashSessionsHistory } from "@/app/actions/cash/cash-actions";
 import {
     ReceiptText,
     Wallet,
@@ -34,38 +33,12 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/core/utils";
-
-type CashSessionHistory = {
-    id: string;
-    status: string;
-    openingDate: string;
-    closingDate: string | null;
-    countingDate: string | null;
-    initialAmount: number;
-    expectedAmount: number | null;
-    actualAmount: number | null;
-    difference: number | null;
-    openedBy: { id: string; name: string; role: string } | null;
-    closedBy: { id: string; name: string; role: string } | null;
-    countedBy: { id: string; name: string; role: string } | null;
-    movements: Array<{
-        id: string;
-        amount: number;
-        type: string;
-        reason: string;
-        createdAt: string;
-    }>;
-    sales: Array<{
-        id: string;
-        ticketNumber: number;
-        total: number;
-        paymentMethod: string;
-        cashAmount: number | null;
-        transferAmount: number | null;
-        createdAt: string;
-        sellerName: string;
-    }>;
-};
+import { CACHE_TAGS } from "@/lib/core/cache-tags";
+import { useDataRefresh } from "@/lib/sync/data-sync-client";
+import {
+    getCashHistoryRuntime,
+    type CashHistorySession as CashSessionHistory,
+} from "@/lib/offline/cash-history-runtime";
 
 function formatCurrency(amount: number | null | undefined): string {
     return new Intl.NumberFormat("es-AR", {
@@ -88,6 +61,7 @@ function formatDate(dateStr: string | null): string {
 }
 
 export default function HistorialCajaPage() {
+    const cashHistoryRuntime = useMemo(() => getCashHistoryRuntime(), []);
     const [sessions, setSessions] = useState<CashSessionHistory[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
@@ -99,23 +73,23 @@ export default function HistorialCajaPage() {
 
     const loadHistory = useCallback(async () => {
         try {
-            setIsLoading(true);
-            const data = await getCashSessionsHistory({ page: currentPage, pageSize });
-            setSessions(data.items);
-            setPageSize(data.pageSize);
-            setTotalPages(data.totalPages);
-            setTotalSessions(data.total);
+            const data = await cashHistoryRuntime.getCashSessionsHistory();
+            setSessions(data);
         } catch (error) {
             toast.error("No se pudo cargar el historial de caja");
             console.error(error);
         } finally {
             setIsLoading(false);
         }
-    }, [currentPage, pageSize]);
+    }, [cashHistoryRuntime]);
 
     useEffect(() => {
         void loadHistory();
     }, [loadHistory]);
+
+    useDataRefresh([CACHE_TAGS.cash, CACHE_TAGS.sales], loadHistory, {
+        pollIntervalMs: false,
+    });
 
     const summary = useMemo(() => {
         const openSessions = sessions.filter((session) => session.status === "OPEN").length;

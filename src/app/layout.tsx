@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PwaRegister } from "@/components/layout/pwa-register";
 import { ThemeProvider } from "@/components/layout/theme-provider";
+import { PowerSyncProvider } from "@/components/layout/powersync-provider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -62,11 +63,13 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
       >
         <ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange>
-          <PwaRegister />
-          <TooltipProvider delayDuration={300}>
-            {children}
-          </TooltipProvider>
-          <Toaster position="top-right" richColors closeButton />
+          <PowerSyncProvider>
+            <PwaRegister />
+            <TooltipProvider delayDuration={300}>
+              {children}
+            </TooltipProvider>
+            <Toaster position="top-right" richColors closeButton />
+          </PowerSyncProvider>
         </ThemeProvider>
       </body>
     </html>

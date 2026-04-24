@@ -13,10 +13,6 @@ import {
 import { useTheme } from "next-themes";
 /* import { Input } from "@/components/ui/input"; */
 import {
-    getQuickCreationNotifications,
-    markQuickCreationNotificationsSeen,
-} from "@/app/actions/inventory/inventory-actions";
-import {
     Select,
     SelectContent,
     SelectItem,
@@ -36,17 +32,15 @@ import {
     type PosPalette,
 } from "@/lib/core/pos-palette";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
-import { useDataRefresh } from "@/lib/sync/data-sync-client";
+import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
 import type { SessionRole } from "@/lib/core/permissions";
+import {
+    getQuickCreationsRuntime,
+    type QuickCreationNotification,
+} from "@/lib/offline/quick-creations-runtime";
+import { useOfflineBootstrap } from "@/lib/offline/offline-bootstrap";
 
-type QuickCreationNotification = {
-    id: string;
-    name: string;
-    quickCreatedAt: string | null;
-    quickCreatedByName: string;
-    quickCreatedByRole: string;
-    pendingReview: boolean;
-};
+const quickCreationsRuntime = getQuickCreationsRuntime();
 
 function getInitials(name: string) {
     return name
@@ -66,25 +60,17 @@ export function AppHeader({
 }) {
     const initials = getInitials(userName);
     const { theme, setTheme } = useTheme();
+    const bootstrap = useOfflineBootstrap();
     const [notifications, setNotifications] = useState<QuickCreationNotification[]>([]);
     const [seenNotificationIds, setSeenNotificationIds] = useState<Set<string>>(new Set());
-    const [palette, setPalette] = useState<PosPalette>("current");
-
-    useEffect(() => {
-        let timeoutId: number | null = null;
-        const savedPalette = window.localStorage.getItem(POS_PALETTE_STORAGE_KEY);
-        if (isPosPalette(savedPalette)) {
-            timeoutId = window.setTimeout(() => {
-                setPalette(savedPalette);
-            }, 0);
+    const [palette, setPalette] = useState<PosPalette>(() => {
+        if (typeof window === "undefined") {
+            return "current";
         }
 
-        return () => {
-            if (timeoutId != null) {
-                window.clearTimeout(timeoutId);
-            }
-        };
-    }, []);
+        const savedPalette = window.localStorage.getItem(POS_PALETTE_STORAGE_KEY);
+        return isPosPalette(savedPalette) ? savedPalette : "current";
+    });
 
     useEffect(() => {
         document.documentElement.dataset.posPalette = palette;
@@ -94,7 +80,7 @@ export function AppHeader({
     const loadNotifications = useCallback(async () => {
         if (role !== "ADMIN") return;
         try {
-            const items = await getQuickCreationNotifications();
+            const items = await quickCreationsRuntime.getNotifications();
             setNotifications(items);
             setSeenNotificationIds(new Set());
         } catch (error) {
@@ -114,6 +100,7 @@ export function AppHeader({
 
     useDataRefresh(CACHE_TAGS.quickCreations, loadNotifications, {
         debugLabel: "admin-quick-creations",
+        pollIntervalMs: false,
     });
 
     const handleNotificationsOpenChange = useCallback(
@@ -132,7 +119,8 @@ export function AppHeader({
             });
 
             try {
-                await markQuickCreationNotificationsSeen(ids);
+                await quickCreationsRuntime.markSeen(ids);
+                notifyDataUpdated(CACHE_TAGS.quickCreations);
             } catch (error) {
                 console.error("Error marking notifications seen:", error);
                 setSeenNotificationIds((current) => {
@@ -149,6 +137,26 @@ export function AppHeader({
     const unreadNotificationCount = notifications.filter(
         (notification) => !seenNotificationIds.has(notification.id)
     ).length;
+    const bootstrapLabel =
+        bootstrap.state === "requires_initial_sync"
+            ? "Sync inicial"
+            : bootstrap.isOnline
+              ? "Online"
+              : "Offline";
+    const bootstrapTone =
+        bootstrap.state === "requires_initial_sync"
+            ? "bg-amber-500/15 text-amber-200 border-amber-400/30"
+            : bootstrap.isOnline
+              ? "bg-emerald-500/15 text-emerald-200 border-emerald-400/30"
+              : "bg-sky-500/15 text-sky-200 border-sky-400/30";
+    const bootstrapHint =
+        bootstrap.state === "requires_initial_sync"
+            ? "Este equipo necesita una sincronización inicial online."
+            : bootstrap.lastSuccessfulSyncAt
+              ? `Ultima sync: ${new Date(bootstrap.lastSuccessfulSyncAt).toLocaleString("es-AR")}`
+              : bootstrap.isOnline
+                ? "Listo para sincronizar."
+                : "Trabajando con datos locales.";
 
     return (
         <header className="sticky top-0 z-30 border-b border-white/20 bg-white/40 dark:bg-black/20 dark:border-white/10 backdrop-blur-xl">
@@ -189,6 +197,13 @@ export function AppHeader({
                 */}
 
                 <div className="flex items-center gap-2">
+                    <div
+                        className={`hidden rounded-2xl border px-3 py-2 text-xs font-medium lg:flex lg:flex-col lg:items-start ${bootstrapTone}`}
+                        title={bootstrapHint}
+                    >
+                        <span className="uppercase tracking-[0.18em] opacity-80">{bootstrapLabel}</span>
+                    </div>
+
                     <Select
                         value={palette}
                         onValueChange={(value) => {

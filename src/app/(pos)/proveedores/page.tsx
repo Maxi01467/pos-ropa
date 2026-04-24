@@ -1,13 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-// Importamos las nuevas Server Actions
-import { 
-    getSuppliers, 
-    createSupplier, 
-    updateSupplier, 
-    deleteSupplier 
-} from "@/app/actions/suppliers/supplier-actions";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
     Plus,
     Truck,
@@ -35,6 +28,7 @@ import {
 import { toast } from "sonner";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
 import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
+import { getSuppliersRuntime } from "@/lib/offline/suppliers-runtime";
 
 // Interfaz adaptada a la Base de Datos
 export interface DBSupplier {
@@ -51,6 +45,7 @@ function sortSuppliers(items: DBSupplier[]) {
 }
 
 export default function ProveedoresPage() {
+    const suppliersRuntime = useMemo(() => getSuppliersRuntime(), []);
     // Estados de base de datos
     const [providers, setProviders] = useState<DBSupplier[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -68,7 +63,7 @@ export default function ProveedoresPage() {
     // Cargar datos al iniciar
     const loadData = useCallback(async () => {
         try {
-            const data = await getSuppliers();
+            const data = await suppliersRuntime.getSuppliers();
             setProviders(data);
         } catch (error) {
             toast.error("Error al cargar los proveedores");
@@ -76,13 +71,15 @@ export default function ProveedoresPage() {
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [suppliersRuntime]);
 
     useEffect(() => {
         void loadData();
     }, [loadData]);
 
-    useDataRefresh([CACHE_TAGS.suppliers, CACHE_TAGS.stock], loadData);
+    useDataRefresh([CACHE_TAGS.suppliers, CACHE_TAGS.stock], loadData, {
+        pollIntervalMs: false,
+    });
 
     const resetForm = () => {
         setFormName("");
@@ -104,7 +101,7 @@ export default function ProveedoresPage() {
         setDialogOpen(true);
     };
 
-    const handleSave = async () => {
+    const handleSave = useCallback(async () => {
         if (!formName.trim()) {
             toast.error("El nombre es obligatorio");
             return;
@@ -119,7 +116,10 @@ export default function ProveedoresPage() {
             };
 
             if (editingProvider) {
-                const updatedProvider = await updateSupplier(editingProvider.id, providerData);
+                const updatedProvider = await suppliersRuntime.updateSupplier(
+                    editingProvider.id,
+                    providerData
+                );
                 setProviders((current) =>
                     sortSuppliers(
                         current.map((provider) =>
@@ -129,7 +129,7 @@ export default function ProveedoresPage() {
                 );
                 toast.success("Proveedor actualizado");
             } else {
-                const createdProvider = await createSupplier(providerData);
+                const createdProvider = await suppliersRuntime.createSupplier(providerData);
                 setProviders((current) => sortSuppliers([...current, createdProvider]));
                 toast.success("Proveedor creado con éxito");
             }
@@ -141,15 +141,15 @@ export default function ProveedoresPage() {
             toast.error("Hubo un error al guardar el proveedor");
             console.error(error);
         } finally {
-            setIsSaving(false);
+        setIsSaving(false);
         }
-    };
+    }, [editingProvider, formName, formNotes, formPhone, suppliersRuntime]);
 
-    const handleDelete = async (provider: DBSupplier) => {
+    const handleDelete = useCallback(async (provider: DBSupplier) => {
         if (!confirm(`¿Estás seguro de eliminar a ${provider.name}?`)) return;
 
         try {
-            await deleteSupplier(provider.id);
+            await suppliersRuntime.deleteSupplier(provider.id);
             setProviders((prev) => prev.filter((p) => p.id !== provider.id));
             notifyDataUpdated([CACHE_TAGS.suppliers, CACHE_TAGS.stock]);
             toast.success("Proveedor eliminado", { description: provider.name });
@@ -160,7 +160,7 @@ export default function ProveedoresPage() {
             });
             console.error(error);
         }
-    };
+    }, [suppliersRuntime]);
 
     const filteredProviders = providers.filter((p) =>
         p.name.toLowerCase().includes(searchQuery.toLowerCase())

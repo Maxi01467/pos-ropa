@@ -29,7 +29,21 @@ model User {
   shifts    Shift[]
   sales     Sale[]
   
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model Terminal {
+  id        String   @id @default(cuid())
+  name      String
+  prefix    String   @unique
+  deviceId  String   @unique
+  active    Boolean  @default(true)
+
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
 }
 
 model Shift {
@@ -41,6 +55,10 @@ model Shift {
   checkOut   DateTime?
   totalHours Decimal?
   notes      String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
 }
 
 // ------------------------------------------------------
@@ -70,6 +88,10 @@ model CashSession {
   expectedAmount Decimal?  // Lo que el sistema calcula que debería haber
   actualAmount   Decimal?  // Lo que el usuario contó físicamente
   difference     Decimal?  // Diferencia entre lo esperado y lo real
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
   
   // Relaciones
   sales          Sale[]
@@ -86,6 +108,8 @@ model CashMovement {
   reason       String      // Descripción del movimiento
   
   createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  deletedAt    DateTime?
 }
 
 // ------------------------------------------------------
@@ -98,7 +122,10 @@ model Supplier {
   notes     String?
   
   stockMovements StockMovement[]  
-  createdAt DateTime  @default(now())
+  
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
 }
 
 model Product {
@@ -123,6 +150,7 @@ model Product {
   
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
 }
 
 model ProductVariant {
@@ -140,6 +168,8 @@ model ProductVariant {
   barcodeAliases BarcodeAlias[]
   
   createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
 }
 
 model StockMovement {
@@ -155,6 +185,8 @@ model StockMovement {
   notes          String?
   
   createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
 }
 
 // ------------------------------------------------------
@@ -163,8 +195,8 @@ model StockMovement {
 model Sale {
   id            String     @id @default(cuid())
   
-  // Este es el número de Boleta físico que verá el cliente
-  ticketNumber  Int        @unique @default(autoincrement()) 
+  // Este es el número de Boleta físico que verá el cliente (Prefijo Caja + Secuencia, ej: C1-001)
+  ticketNumber  String     @unique 
   
   total         Decimal
   paymentMethod String     // EFECTIVO, TRANSFERENCIA, MIXTO
@@ -183,6 +215,8 @@ model Sale {
   cashSession   CashSession? @relation(fields: [cashSessionId], references: [id])
   
   createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  deletedAt     DateTime?
 }
 
 model SaleItem {
@@ -199,6 +233,10 @@ model SaleItem {
   
   // Control para devoluciones futuras
   returnedQuantity Int            @default(0) 
+  
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  deletedAt        DateTime?
 }
 
 // ------------------------------------------------------
@@ -211,5 +249,8 @@ model BarcodeAlias {
   barcode   String         @unique // Código del sistema anterior
   variantId String
   variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  
   createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  deletedAt DateTime?
 }

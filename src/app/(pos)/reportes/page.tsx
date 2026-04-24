@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getSalesHistory } from "@/app/actions/sales/sales-actions";
-import { getInventoryData } from "@/app/actions/inventory/inventory-actions";
+import { useRouter } from "next/navigation";
 import {
     ArrowDownLeft,
     ArrowUpRight,
@@ -33,28 +32,16 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { cn } from "@/lib/core/utils";
-
-type SaleHistoryItem = {
-    id: string;
-    ticketNumber: number;
-    total: number;
-    paymentMethod: string;
-    cashAmount?: number;
-    transferAmount?: number;
-    date: string;
-    sellerName: string;
-    items?: {
-        id: string;
-        productName: string;
-        size: string;
-        color: string;
-        sku: string;
-        quantity: number;
-        priceAtTime: number;
-        priceType: "NORMAL" | "WHOLESALE";
-        returnedQuantity?: number;
-    }[];
-};
+import { CACHE_TAGS } from "@/lib/core/cache-tags";
+import { useDataRefresh } from "@/lib/sync/data-sync-client";
+import {
+    OfflineBootstrapRequiredError,
+    assertOfflineBootstrapReady,
+    getOfflineBootstrapRequiredMessage,
+} from "@/lib/offline/offline-bootstrap";
+import { db, initPowerSync } from "@/lib/powersync/db";
+import { useTerminalSnapshot } from "@/lib/terminal/terminal-client";
+import type { PosSaleHistoryItem } from "@/lib/offline/pos-runtime-data";
 
 type InventoryProduct = {
     id: string;
@@ -64,6 +51,43 @@ type InventoryProduct = {
     wholesalePrice: number;
     costPrice?: number;
     stock: number;
+};
+
+type LocalProductRow = {
+    id: string;
+    name: string;
+    priceNormal: number | string | null;
+    priceWholesale: number | string | null;
+};
+
+type LocalVariantRow = {
+    productId: string;
+    stock: number | string | null;
+};
+
+type LocalSaleRow = {
+    id: string;
+    ticketNumber: string | number | null;
+    total: number | string | null;
+    paymentMethod: string;
+    cashAmount: number | string | null;
+    transferAmount: number | string | null;
+    date: string;
+    sellerName: string;
+};
+
+type LocalSaleItemRow = {
+    id: string;
+    saleId: string;
+    variantId: string;
+    productName: string;
+    size: string;
+    color: string;
+    sku: string;
+    quantity: number | string | null;
+    priceAtTime: number | string | null;
+    priceType: string;
+    returnedQuantity: number | string | null;
 };
 
 function formatCurrency(amount: number | null | undefined): string {
@@ -97,27 +121,179 @@ function formatHourRange(hour: number): string {
     return `${start}:00 - ${end}:00`;
 }
 
+function toNumber(value: number | string | null | undefined): number {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function queryRows<T extends object>(sql: string, parameters: unknown[] = []): Promise<T[]> {
+    const rows = await db.getAll(sql, parameters);
+    return rows as T[];
+}
+
+async function loadLocalReportsData() {
+    await initPowerSync();
+    assertOfflineBootstrapReady();
+
+    const [productRows, variantRows, salesRows, saleItemRows] = await Promise.all([
+        queryRows<LocalProductRow>(
+            `
+                SELECT id, name, priceNormal, priceWholesale
+                FROM "Product"
+                WHERE deletedAt IS NULL
+                ORDER BY createdAt DESC
+            `
+        ),
+        queryRows<LocalVariantRow>(
+            `
+                SELECT productId, stock
+                FROM "ProductVariant"
+                WHERE deletedAt IS NULL
+            `
+        ),
+        queryRows<LocalSaleRow>(
+            `
+                SELECT
+                    s.id,
+                    s.ticketNumber,
+                    s.total,
+                    s.paymentMethod,
+                    s.cashAmount,
+                    s.transferAmount,
+                    s.createdAt AS date,
+                    COALESCE(u.name, 'Vendedor') AS sellerName
+                FROM "Sale" s
+                LEFT JOIN "User" u
+                    ON u.id = s.userId
+                WHERE s.deletedAt IS NULL
+                ORDER BY s.createdAt DESC
+            `
+        ),
+        queryRows<LocalSaleItemRow>(
+            `
+                    SELECT
+                        si.id,
+                        si.saleId,
+                        si.variantId,
+                        p.name AS productName,
+                        pv.size,
+                        pv.color,
+                    pv.sku,
+                    si.quantity,
+                    si.priceAtTime,
+                    si.priceType,
+                    si.returnedQuantity
+                FROM "SaleItem" si
+                INNER JOIN "ProductVariant" pv
+                    ON pv.id = si.variantId
+                INNER JOIN "Product" p
+                    ON p.id = pv.productId
+                WHERE si.deletedAt IS NULL
+            `
+        ),
+    ]);
+
+    const itemsBySaleId = new Map<string, PosSaleHistoryItem["items"]>();
+    saleItemRows.forEach((item) => {
+        const currentItems = itemsBySaleId.get(item.saleId) ?? [];
+        currentItems.push({
+            id: item.id,
+            variantId: item.variantId,
+            productName: item.productName,
+            size: item.size,
+            color: item.color,
+            sku: item.sku,
+            quantity: toNumber(item.quantity),
+            priceAtTime: toNumber(item.priceAtTime),
+            priceType: item.priceType,
+            returnedQuantity: toNumber(item.returnedQuantity),
+        });
+        itemsBySaleId.set(item.saleId, currentItems);
+    });
+
+    const sales: PosSaleHistoryItem[] = salesRows.map((sale) => ({
+        id: sale.id,
+        ticketNumber: String(sale.ticketNumber || ""),
+        total: toNumber(sale.total),
+        paymentMethod: sale.paymentMethod,
+        cashAmount: sale.cashAmount == null ? undefined : toNumber(sale.cashAmount),
+        transferAmount: sale.transferAmount == null ? undefined : toNumber(sale.transferAmount),
+        date: sale.date,
+        sellerName: sale.sellerName,
+        items: itemsBySaleId.get(sale.id) ?? [],
+    }));
+
+    const inventoryProductsMap = new Map<string, InventoryProduct>();
+    productRows.forEach((product) => {
+        inventoryProductsMap.set(product.id, {
+            id: product.id,
+            code: product.id.slice(-6).toUpperCase(),
+            name: product.name,
+            price: toNumber(product.priceNormal),
+            wholesalePrice: toNumber(product.priceWholesale),
+            stock: 0,
+        });
+    });
+
+    variantRows.forEach((variant) => {
+        const current = inventoryProductsMap.get(variant.productId);
+        if (!current) {
+            return;
+        }
+
+        current.stock += toNumber(variant.stock);
+    });
+
+    return {
+        sales,
+        inventoryProducts: Array.from(inventoryProductsMap.values()),
+    };
+}
+
 export default function ReportesPage() {
-    const [sales, setSales] = useState<SaleHistoryItem[]>([]);
+    const router = useRouter();
+    const terminal = useTerminalSnapshot();
+    const [sales, setSales] = useState<PosSaleHistoryItem[]>([]);
     const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     const loadReports = useCallback(async () => {
+        if (!terminal.isDesktop) {
+            return;
+        }
+
         try {
-            const [salesData, inventoryData] = await Promise.all([getSalesHistory(), getInventoryData()]);
-            setSales(salesData.items as SaleHistoryItem[]);
-            setInventoryProducts((inventoryData.products ?? []) as InventoryProduct[]);
+            const localData = await loadLocalReportsData();
+            setSales(localData.sales);
+            setInventoryProducts(localData.inventoryProducts);
         } catch (error) {
             console.error(error);
-            toast.error("No se pudieron cargar los reportes");
+            toast.error(
+                error instanceof OfflineBootstrapRequiredError
+                    ? getOfflineBootstrapRequiredMessage()
+                    : "No se pudieron cargar los reportes"
+            );
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [terminal.isDesktop]);
 
     useEffect(() => {
+        if (!terminal.isDesktop) {
+            router.replace("/");
+            return;
+        }
+
         void loadReports();
-    }, [loadReports]);
+    }, [loadReports, router, terminal.isDesktop]);
+
+    useDataRefresh(
+        [CACHE_TAGS.sales, CACHE_TAGS.cash, CACHE_TAGS.inventory, CACHE_TAGS.stock],
+        loadReports,
+        {
+            pollIntervalMs: false,
+        }
+    );
 
     const reportData = useMemo(() => {
         const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);

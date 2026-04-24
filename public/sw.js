@@ -31,6 +31,11 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
 
+  // Bypass the service worker completely for PowerSync assets
+  if (url.pathname.startsWith("/@powersync/")) {
+    return;
+  }
+
   if (url.origin !== self.location.origin) {
     return;
   }

@@ -83,12 +83,6 @@ async function ensureReceiptRendered(html: string): Promise<string> {
                     stabilityAttempts++;
                     if (stabilityAttempts >= 2) {
                         // La altura es estable, proceder
-                        const heightInMm = Math.ceil(currentHeight / 3.78); // Conversión aprox: 1mm ≈ 3.78px
-
-                        console.log(
-                            `[Print] ✓ Contenido renderizado y estable: ${currentHeight}px = ${heightInMm}mm (intentos: ${attempts})`
-                        );
-
                         // El HTML ya tiene size: 80mm 300mm en CSS, así que no reemplazamos
                         // Electron se encargará de ajustar el pageSize basado en la medición real
                         document.body.removeChild(iframe);
@@ -127,16 +121,12 @@ async function printReceiptCopy(
     jobName: string,
     isGift: boolean
 ): Promise<PrintReceiptResult> {
-    console.log(`[Print] Iniciando impresión de: ${jobName}`);
     let html = renderReceiptHtml(receipt, isGift);
 
     // Renderizar en el DOM para asegurar que está completo y obtener altura real
-    console.log("[Print] Renderizando HTML en iframe para medir altura...");
     html = await ensureReceiptRendered(html);
-    console.log("[Print] HTML medido y actualizado. Enviando a impresora...");
 
     if (isDesktopPrintingAvailable()) {
-        console.log("[Print] Utilizando Desktop App (CSS left-aligned)");
         const printerName = await printHtmlWithDesktopApp(html, jobName);
         return { channel: "desktop", printerName };
     }

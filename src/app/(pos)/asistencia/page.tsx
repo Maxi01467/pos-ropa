@@ -1,13 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import {
-    checkInUser,
-    getAttendanceBoard,
-    checkOutUser,
-    getAttendanceDashboard,
-    getAttendanceEmployees,
-} from "@/app/actions/attendance/attendance-actions";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
     CalendarClock,
     Clock3,
@@ -45,48 +38,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
 import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
-type AttendanceEmployee = {
-    id: string;
-    name: string;
-    role: string;
-};
-
-type AttendanceShift = {
-    id: string;
-    checkIn: string;
-    checkOut: string | null;
-    totalHours: number | null;
-    notes: string | null;
-};
-
-type AttendanceDashboard = {
-    user: {
-        id: string;
-        name: string;
-        role: string;
-    };
-    activeShift: AttendanceShift | null;
-    todayShifts: AttendanceShift[];
-    todayWorkedHours: number;
-};
-
-type AttendanceBoard = {
-    cashSession: {
-        id: string;
-        status: string;
-        openingDate: string;
-        closingDate: string | null;
-    } | null;
-    shifts: Array<{
-        id: string;
-        userId: string;
-        userName: string;
-        checkIn: string;
-        checkOut: string | null;
-        totalHours: number | null;
-        status: "ACTIVE" | "FINISHED";
-    }>;
-};
+import {
+    getAttendanceRuntime,
+    type RuntimeAttendanceBoard as AttendanceBoard,
+    type RuntimeAttendanceDashboard as AttendanceDashboard,
+    type RuntimeAttendanceEmployee as AttendanceEmployee,
+} from "@/lib/offline/attendance-runtime";
 
 function formatDateTime(date: string) {
     return new Intl.DateTimeFormat("es-AR", {
@@ -102,6 +59,7 @@ function formatHours(hours: number) {
 }
 
 export default function AsistenciaPage() {
+    const attendanceRuntime = useMemo(() => getAttendanceRuntime(), []);
     const [employees, setEmployees] = useState<AttendanceEmployee[]>([]);
     const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
     const [dashboard, setDashboard] = useState<AttendanceDashboard | null>(null);
@@ -111,7 +69,7 @@ export default function AsistenciaPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const loadEmployees = useCallback(async () => {
-        const data = await getAttendanceEmployees();
+        const data = await attendanceRuntime.getAttendanceEmployees();
         setEmployees(data);
         setSelectedEmployeeId((currentId) => {
             if (currentId && data.some((employee) => employee.id === currentId)) {
@@ -120,12 +78,12 @@ export default function AsistenciaPage() {
 
             return data[0]?.id ?? "";
         });
-    }, []);
+    }, [attendanceRuntime]);
 
     const loadBoard = useCallback(async () => {
-        const data = await getAttendanceBoard();
+        const data = await attendanceRuntime.getAttendanceBoard();
         setBoard(data);
-    }, []);
+    }, [attendanceRuntime]);
 
     const loadDashboard = useCallback(async (employeeId: string) => {
         if (!employeeId) {
@@ -135,7 +93,7 @@ export default function AsistenciaPage() {
 
         setIsEmployeeLoading(true);
         try {
-            const data = await getAttendanceDashboard(employeeId);
+            const data = await attendanceRuntime.getAttendanceDashboard(employeeId);
             setDashboard(data);
         } catch (error) {
             const message =
@@ -144,7 +102,7 @@ export default function AsistenciaPage() {
         } finally {
             setIsEmployeeLoading(false);
         }
-    }, []);
+    }, [attendanceRuntime]);
 
     const refreshAttendanceData = useCallback(async () => {
         await Promise.all([loadEmployees(), loadBoard()]);
@@ -175,7 +133,8 @@ export default function AsistenciaPage() {
 
     useDataRefresh(
         [CACHE_TAGS.attendance, CACHE_TAGS.employees, CACHE_TAGS.cash],
-        refreshAttendanceData
+        refreshAttendanceData,
+        { pollIntervalMs: false }
     );
 
     useEffect(() => {
@@ -183,14 +142,14 @@ export default function AsistenciaPage() {
         loadDashboard(selectedEmployeeId);
     }, [loadDashboard, selectedEmployeeId]);
 
-    const handleCheckIn = async () => {
+    const handleCheckIn = useCallback(async () => {
         if (!selectedEmployeeId) {
             return toast.error("Seleccioná un empleado");
         }
 
         setIsSubmitting(true);
         try {
-            await checkInUser(selectedEmployeeId);
+            await attendanceRuntime.checkInUser(selectedEmployeeId);
             toast.success("Entrada registrada");
             await Promise.all([
                 loadDashboard(selectedEmployeeId),
@@ -204,16 +163,16 @@ export default function AsistenciaPage() {
         } finally {
             setIsSubmitting(false);
         }
-    };
+    }, [attendanceRuntime, loadBoard, loadDashboard, selectedEmployeeId]);
 
-    const handleCheckOut = async () => {
+    const handleCheckOut = useCallback(async () => {
         if (!selectedEmployeeId) {
             return toast.error("Seleccioná un empleado");
         }
 
         setIsSubmitting(true);
         try {
-            await checkOutUser(selectedEmployeeId);
+            await attendanceRuntime.checkOutUser(selectedEmployeeId);
             toast.success("Salida registrada");
             await Promise.all([
                 loadDashboard(selectedEmployeeId),
@@ -227,7 +186,7 @@ export default function AsistenciaPage() {
         } finally {
             setIsSubmitting(false);
         }
-    };
+    }, [attendanceRuntime, loadBoard, loadDashboard, selectedEmployeeId]);
 
     if (isBootstrapping) {
         return (

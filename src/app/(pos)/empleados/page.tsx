@@ -2,13 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { SessionRole } from "@/lib/core/permissions";
-import {
-    createEmployee,
-    deleteEmployee,
-    getEmployees,
-    setEmployeeStatus,
-    updateEmployee,
-} from "@/app/actions/employees/employee-actions";
+import { getEmployeesRuntime } from "@/lib/offline/employees-runtime";
 import { useSessionSnapshot } from "@/lib/session/session-client";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
 import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
@@ -74,6 +68,8 @@ const EMPTY_FORM: EmployeeFormState = {
     role: "STAFF",
 };
 
+const employeesRuntime = getEmployeesRuntime();
+
 function formatDate(date: string) {
     return new Intl.DateTimeFormat("es-AR", {
         dateStyle: "short",
@@ -106,7 +102,7 @@ export default function EmpleadosPage() {
     const loadEmployees = useCallback(async () => {
         setIsLoading(true);
         try {
-            const data = await getEmployees();
+            const data = await employeesRuntime.getEmployees();
             setEmployees(data);
         } catch (error) {
             const message =
@@ -121,7 +117,7 @@ export default function EmpleadosPage() {
         void loadEmployees();
     }, [loadEmployees]);
 
-    useDataRefresh(CACHE_TAGS.employees, loadEmployees);
+    useDataRefresh(CACHE_TAGS.employees, loadEmployees, { pollIntervalMs: false });
 
     const openCreateDialog = () => {
         setEditingEmployee(null);
@@ -147,7 +143,7 @@ export default function EmpleadosPage() {
         setIsSaving(true);
         try {
             if (editingEmployee) {
-                const updatedEmployee = await updateEmployee(editingEmployee.id, form);
+                const updatedEmployee = await employeesRuntime.updateEmployee(editingEmployee.id, form);
                 setEmployees((current) =>
                     sortEmployees(
                         current.map((employee) =>
@@ -157,7 +153,7 @@ export default function EmpleadosPage() {
                 );
                 toast.success("Empleado actualizado");
             } else {
-                const createdEmployee = await createEmployee(form);
+                const createdEmployee = await employeesRuntime.createEmployee(form);
                 setEmployees((current) => sortEmployees([...current, createdEmployee]));
                 toast.success("Empleado creado");
             }
@@ -182,7 +178,7 @@ export default function EmpleadosPage() {
     const handleToggleStatus = async (employee: Employee) => {
         setStatusUpdatingId(employee.id);
         try {
-            const updatedEmployee = await setEmployeeStatus(employee.id, !employee.active);
+            const updatedEmployee = await employeesRuntime.setEmployeeStatus(employee.id, !employee.active);
             setEmployees((current) =>
                 sortEmployees(
                     current.map((currentEmployee) =>
@@ -210,7 +206,7 @@ export default function EmpleadosPage() {
 
         setIsDeleting(true);
         try {
-            await deleteEmployee(employeePendingDelete.id);
+            await employeesRuntime.deleteEmployee(employeePendingDelete.id);
             setEmployees((current) =>
                 current.filter((employee) => employee.id !== employeePendingDelete.id)
             );

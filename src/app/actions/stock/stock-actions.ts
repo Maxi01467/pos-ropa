@@ -95,13 +95,27 @@ const getStockPageDataCached = unstable_cache(
 
         const [products, suppliers, movements, totalMovements, variants] = await Promise.all([
             prisma.product.findMany({
+                where: {
+                    deletedAt: null,
+                },
                 select: { id: true, name: true, priceNormal: true, priceWholesale: true },
             }),
             prisma.supplier.findMany({
+                where: {
+                    deletedAt: null,
+                },
                 select: { id: true, name: true },
             }),
             prisma.stockMovement.findMany({
-                where: movementWhere,
+                where: {
+                    deletedAt: null,
+                    variant: {
+                        deletedAt: null,
+                        product: {
+                            deletedAt: null,
+                        },
+                    },
+                },
                 select: {
                     id: true,
                     supplierId: true,
@@ -126,6 +140,12 @@ const getStockPageDataCached = unstable_cache(
                 where: movementWhere,
             }),
             prisma.productVariant.findMany({
+                where: {
+                    deletedAt: null,
+                    product: {
+                        deletedAt: null,
+                    },
+                },
                 select: {
                     id: true,
                     productId: true,
@@ -208,8 +228,14 @@ export async function getStockPageData({
 export async function registerStockEntries(entries: RegisterStockEntry[]) {
     const result = await prisma.$transaction(async (tx) => {
         for (const entry of entries) {
-            let variant = await tx.productVariant.findUnique({
-                where: { sku: entry.sku }
+            let variant = await tx.productVariant.findFirst({
+                where: {
+                    sku: entry.sku,
+                    deletedAt: null,
+                    product: {
+                        deletedAt: null,
+                    },
+                }
             });
 
             if (variant) {
@@ -251,8 +277,14 @@ export async function registerStockEntries(entries: RegisterStockEntry[]) {
 export async function reduceStockEntries(entries: RegisterStockEntry[]) {
     const result = await prisma.$transaction(async (tx) => {
         for (const entry of entries) {
-            const variant = await tx.productVariant.findUnique({
-                where: { sku: entry.sku },
+            const variant = await tx.productVariant.findFirst({
+                where: {
+                    sku: entry.sku,
+                    deletedAt: null,
+                    product: {
+                        deletedAt: null,
+                    },
+                },
             });
 
             if (!variant || variant.productId !== entry.productId) {
@@ -289,8 +321,14 @@ export async function reduceStockEntries(entries: RegisterStockEntry[]) {
 export async function adjustStockEntries(entries: RegisterStockEntry[]) {
     const result = await prisma.$transaction(async (tx) => {
         for (const entry of entries) {
-            let variant = await tx.productVariant.findUnique({
-                where: { sku: entry.sku },
+            let variant = await tx.productVariant.findFirst({
+                where: {
+                    sku: entry.sku,
+                    deletedAt: null,
+                    product: {
+                        deletedAt: null,
+                    },
+                },
             });
 
             if (!variant) {

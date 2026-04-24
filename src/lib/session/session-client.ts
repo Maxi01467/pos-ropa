@@ -17,6 +17,8 @@ const EMPTY_SESSION_SNAPSHOT: SessionSnapshot = {
     userName: null,
 };
 
+const SESSION_STORAGE_EVENT = "pos-session-updated";
+
 let lastSnapshot: SessionSnapshot = EMPTY_SESSION_SNAPSHOT;
 let lastSnapshotKey = "false:";
 
@@ -49,11 +51,37 @@ function getSnapshot(): SessionSnapshot {
 
 function subscribe(callback: () => void) {
     window.addEventListener("storage", callback);
+    window.addEventListener(SESSION_STORAGE_EVENT, callback);
     return () => {
         window.removeEventListener("storage", callback);
+        window.removeEventListener(SESSION_STORAGE_EVENT, callback);
     };
 }
 
 export function useSessionSnapshot() {
     return useSyncExternalStore(subscribe, getSnapshot, () => EMPTY_SESSION_SNAPSHOT);
+}
+
+function notifySessionUpdated() {
+    window.dispatchEvent(new Event(SESSION_STORAGE_EVENT));
+}
+
+export function setLocalSession(session: {
+    userId: string;
+    userName: string;
+    role: SessionRole;
+}) {
+    localStorage.setItem("pos_session", "true");
+    localStorage.setItem("pos_user", session.userName);
+    localStorage.setItem("pos_user_id", session.userId);
+    localStorage.setItem("pos_role", session.role);
+    notifySessionUpdated();
+}
+
+export function clearLocalSession() {
+    localStorage.removeItem("pos_session");
+    localStorage.removeItem("pos_user");
+    localStorage.removeItem("pos_user_id");
+    localStorage.removeItem("pos_role");
+    notifySessionUpdated();
 }

@@ -2,14 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-    getCurrentSession,
-    openCashSession,
-    closeCashSession,
-    closeCashSessionWithoutCount,
-    addCashMovement,
-} from "@/app/actions/cash/cash-actions";
-import { getSellers } from "@/app/actions/pos/pos-actions";
-import {
     Wallet,
     ArrowUpCircle,
     ArrowDownCircle,
@@ -44,13 +36,14 @@ import { es } from "date-fns/locale";
 import { useSessionSnapshot } from "@/lib/session/session-client";
 import { notifyCashSessionUpdated } from "@/lib/session/cash-session-client";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
-import { notifyDataUpdated } from "@/lib/sync/data-sync-client";
+import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
+import { getCashRuntime } from "@/lib/offline/cash-runtime";
 
 type Seller = { id: string; name: string; role: string };
 
 type CashSale = {
     id: string;
-    ticketNumber: number;
+    ticketNumber: string;
     total: number;
     paymentMethod: string;
     cashAmount: number | null;
@@ -286,16 +279,20 @@ function AbrirCajaView({
                         <CardContent className="space-y-5">
                             <div className="space-y-2">
                                 <Label>Usuario / Vendedor</Label>
-                                <Select value={selectedSellerId} onValueChange={setSelectedSellerId}>
+                                <Select value={selectedSellerId} onValueChange={setSelectedSellerId} disabled={sellers.length === 0}>
                                     <SelectTrigger className="h-12 w-full text-base">
-                                        <SelectValue placeholder="¿Quién abre la caja?" />
+                                        <SelectValue placeholder={sellers.length === 0 ? "Buscando usuarios..." : "¿Quién abre la caja?"} />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {sellers.map((s) => (
-                                            <SelectItem key={s.id} value={s.id}>
-                                                {s.name}
-                                            </SelectItem>
-                                        ))}
+                                        {sellers.length === 0 ? (
+                                            <div className="p-2 text-sm text-center text-muted-foreground">Sincronizando u obtenidos 0...</div>
+                                        ) : (
+                                            sellers.map((s) => (
+                                                <SelectItem key={s.id} value={s.id}>
+                                                    {s.name}
+                                                </SelectItem>
+                                            ))
+                                        )}
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -438,16 +435,20 @@ function StaffCajaView({
                             <CardContent className="space-y-4">
                                 <div className="space-y-2">
                                     <Label>Responsable del cierre</Label>
-                                    <Select value={selectedSellerId} onValueChange={setSelectedSellerId}>
+                                    <Select value={selectedSellerId} onValueChange={setSelectedSellerId} disabled={sellers.length === 0}>
                                         <SelectTrigger className="w-full">
-                                            <SelectValue placeholder="Seleccioná un usuario" />
+                                            <SelectValue placeholder={sellers.length === 0 ? "Cargando..." : "Seleccioná un usuario"} />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {sellers.map((s) => (
-                                                <SelectItem key={s.id} value={s.id}>
-                                                    {s.name}
-                                                </SelectItem>
-                                            ))}
+                                            {sellers.length > 0 ? (
+                                                sellers.map((s) => (
+                                                    <SelectItem key={s.id} value={s.id}>
+                                                        {s.name}
+                                                    </SelectItem>
+                                                ))
+                                            ) : (
+                                                <div className="p-2 text-sm text-center text-muted-foreground">Sin usuarios</div>
+                                            )}
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -830,16 +831,20 @@ function AdminCajaView({
                                     <Label className="text-xs text-muted-foreground">
                                         Responsable del cierre
                                     </Label>
-                                    <Select value={selectedSellerId} onValueChange={setSelectedSellerId}>
+                                    <Select value={selectedSellerId} onValueChange={setSelectedSellerId} disabled={sellers.length === 0}>
                                         <SelectTrigger className="w-full">
-                                            <SelectValue placeholder="Seleccioná un usuario" />
+                                            <SelectValue placeholder={sellers.length === 0 ? "Cargando..." : "Seleccioná un usuario"} />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {sellers.map((s) => (
-                                                <SelectItem key={s.id} value={s.id}>
-                                                    {s.name}
-                                                </SelectItem>
-                                            ))}
+                                            {sellers.length > 0 ? (
+                                                sellers.map((s) => (
+                                                    <SelectItem key={s.id} value={s.id}>
+                                                        {s.name}
+                                                    </SelectItem>
+                                                ))
+                                            ) : (
+                                                <div className="p-2 text-sm text-center text-muted-foreground">Sin usuarios</div>
+                                            )}
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -1000,6 +1005,7 @@ function AdminCajaView({
 export default function CajaPage() {
     const { role, userId } = useSessionSnapshot();
     const isAdmin = role === "ADMIN";
+    const cashRuntime = useMemo(() => getCashRuntime(), []);
 
     const [session, setSession] = useState<CashSession | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -1014,8 +1020,8 @@ export default function CajaPage() {
         setIsLoading(true);
         try {
             const [currentSession, sellersData] = await Promise.all([
-                getCurrentSession(),
-                getSellers(),
+                cashRuntime.getCurrentSession(),
+                cashRuntime.getSellers(),
             ]);
             setSession(currentSession as CashSession | null);
             setSellers(sellersData as Seller[]);
@@ -1028,11 +1034,15 @@ export default function CajaPage() {
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [cashRuntime]);
 
     useEffect(() => {
         void loadData();
     }, [loadData]);
+
+    useDataRefresh([CACHE_TAGS.cash, CACHE_TAGS.sales, CACHE_TAGS.employees], loadData, {
+        pollIntervalMs: false,
+    });
 
     useEffect(() => {
         setSelectedSellerId((currentSelectedSellerId) => {
@@ -1058,7 +1068,7 @@ export default function CajaPage() {
             return toast.error("Ingresá un monto inicial válido");
         if (!selectedSellerId) return toast.error("Seleccioná un usuario");
         try {
-            const openedSession = await openCashSession(parsedInitialAmount, selectedSellerId);
+            const openedSession = await cashRuntime.openCashSession(parsedInitialAmount, selectedSellerId);
             setSession(openedSession as CashSession);
             notifyCashSessionUpdated(true);
             notifyDataUpdated([CACHE_TAGS.cash, CACHE_TAGS.attendance]);
@@ -1073,7 +1083,7 @@ export default function CajaPage() {
     const handleCloseWithArqueo = async (actualAmount: number, userId: string) => {
         if (!session) return;
         try {
-            await closeCashSession(session.id, actualAmount, userId);
+            await cashRuntime.closeCashSession(session.id, actualAmount, userId);
             setSession(null);
             notifyCashSessionUpdated(false);
             notifyDataUpdated([CACHE_TAGS.cash, CACHE_TAGS.sales, CACHE_TAGS.attendance]);
@@ -1092,7 +1102,7 @@ export default function CajaPage() {
     const handleCloseWithoutCount = async (userId: string) => {
         if (!session) return;
         try {
-            await closeCashSessionWithoutCount(session.id, userId);
+            await cashRuntime.closeCashSessionWithoutCount(session.id, userId);
             setSession(null);
             notifyCashSessionUpdated(false);
             notifyDataUpdated([CACHE_TAGS.cash, CACHE_TAGS.sales, CACHE_TAGS.attendance]);
@@ -1110,7 +1120,7 @@ export default function CajaPage() {
     ) => {
         if (!session) return;
         try {
-            await addCashMovement(session.id, amount, type, reason);
+            await cashRuntime.addCashMovement(session.id, amount, type, reason);
             notifyDataUpdated(CACHE_TAGS.cash);
             toast.success("Movimiento registrado");
             await loadData();

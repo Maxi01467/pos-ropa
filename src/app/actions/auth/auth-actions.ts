@@ -16,6 +16,7 @@ export async function authenticateUser(name: string, pin: string) {
 
         const user = await prisma.user.findFirst({
             where: {
+                deletedAt: null,
                 name: {
                     equals: normalizedName,
                     mode: "insensitive",

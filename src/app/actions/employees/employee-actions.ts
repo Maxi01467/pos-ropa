@@ -42,6 +42,7 @@ function validateEmployeeInput(input: EmployeeInput) {
 async function ensureUniqueEmployeeName(name: string, excludeId?: string) {
     const existing = await prisma.user.findFirst({
         where: {
+            deletedAt: null,
             name: {
                 equals: name,
                 mode: "insensitive",
@@ -113,6 +114,7 @@ export async function updateEmployee(employeeId: string, input: EmployeeInput) {
     const employee = await prisma.user.findFirst({
         where: {
             id: employeeId,
+            deletedAt: null,
         },
         select: { id: true },
     });
@@ -149,6 +151,7 @@ export async function setEmployeeStatus(employeeId: string, active: boolean) {
     const employee = await prisma.user.findFirst({
         where: {
             id: employeeId,
+            deletedAt: null,
         },
         select: { id: true },
     });
@@ -181,6 +184,7 @@ export async function deleteEmployee(employeeId: string) {
     const employee = await prisma.user.findFirst({
         where: {
             id: employeeId,
+            deletedAt: null,
         },
         select: { id: true },
     });
@@ -189,8 +193,11 @@ export async function deleteEmployee(employeeId: string) {
         throw new Error("El empleado no existe");
     }
 
-    await prisma.user.delete({
+    await prisma.user.update({
         where: { id: employeeId },
+        data: {
+            deletedAt: new Date(),
+        },
     });
 
     revalidateTag(CACHE_TAGS.employees, "max");
@@ -202,6 +209,9 @@ export async function deleteEmployee(employeeId: string) {
 const getEmployeesCached = unstable_cache(
     async () => {
         const employees = await prisma.user.findMany({
+            where: {
+                deletedAt: null,
+            },
             select: {
                 id: true,
                 name: true,

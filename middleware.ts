@@ -9,6 +9,7 @@ function isPublicAsset(pathname: string) {
   return (
     pathname.startsWith("/_next/") ||
     pathname.startsWith("/api/") ||
+    pathname.startsWith("/@powersync/") ||
     pathname === "/favicon.ico" ||
     pathname === "/manifest.webmanifest" ||
     pathname === "/sw.js" ||

@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import {
     ArrowRight,
@@ -14,6 +16,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useTerminalSnapshot } from "@/lib/terminal/terminal-client";
 
 const teamMembers = [
     { name: "Brenda", initials: "BR" },
@@ -147,6 +150,15 @@ const quickLinks = [
 ];
 
 export default function InicioPage() {
+    const terminal = useTerminalSnapshot();
+    const visibleBoardColumns = boardColumns.map((column) => ({
+        ...column,
+        items: column.items.filter((item) => terminal.isDesktop || item.href !== "/reportes"),
+    }));
+    const visibleQuickLinks = quickLinks.filter(
+        (item) => terminal.isDesktop || item.href !== "/reportes"
+    );
+
     return (
         <main className="flex-1 overflow-auto p-4 sm:p-5 lg:p-6">
             <div className="flex w-full flex-col gap-5">
@@ -229,7 +241,7 @@ export default function InicioPage() {
                                 </CardHeader>
                                 <CardContent>
                                     <div className="grid gap-4 md:grid-cols-3">
-                                        {boardColumns.map((column) => (
+                                        {visibleBoardColumns.map((column) => (
                                             <div
                                                 key={column.title}
                                                 className="rounded-[1.5rem] border border-border/70 bg-card/80 p-4"
@@ -317,7 +329,7 @@ export default function InicioPage() {
                                         <CardTitle className="text-lg">Accesos rapidos</CardTitle>
                                     </CardHeader>
                                     <CardContent className="space-y-2">
-                                        {quickLinks.map((link) => {
+                            {visibleQuickLinks.map((link) => {
                                             const Icon = link.icon;
                                             return (
                                                 <Link key={link.href} href={link.href}>

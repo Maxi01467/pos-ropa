@@ -2,12 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-    getPendingCountSessions,
-    getClosedSessions,
-    submitArqueo,
-} from "@/app/actions/cash/cash-actions";
-import { getSellers } from "@/app/actions/pos/pos-actions";
-import {
     ClipboardList,
     Loader2,
     CheckCircle2,
@@ -39,25 +33,11 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
 import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
-
-type Seller = { id: string; name: string; role: string };
-
-type CashSession = {
-    id: string;
-    status: string;
-    openingDate: string;
-    closingDate: string | null;
-    countingDate: string | null;
-    initialAmount: number;
-    expectedAmount: number | null;
-    actualAmount: number | null;
-    difference: number | null;
-    openedBy: { id: string; name: string; role: string } | null;
-    closedBy: { id: string; name: string; role: string } | null;
-    countedBy: { id: string; name: string; role: string } | null;
-    movements: Array<{ id: string; amount: number; type: string; reason: string; createdAt: string }>;
-    sales: Array<{ id: string; total: number; paymentMethod: string; cashAmount: number | null; createdAt: string }>;
-};
+import {
+    getCashHistoryRuntime,
+    type CashHistorySeller as Seller,
+    type CashHistorySession as CashSession,
+} from "@/lib/offline/cash-history-runtime";
 
 const CLOSED_ARQUEOS_PER_PAGE = 8;
 
@@ -77,6 +57,7 @@ function calcCashTotals(session: CashSession) {
 }
 
 export default function ArqueosPage() {
+    const cashHistoryRuntime = useMemo(() => getCashHistoryRuntime(), []);
     const [pending, setPending] = useState<CashSession[]>([]);
     const [closed, setClosed] = useState<CashSession[]>([]);
     const [sellers, setSellers] = useState<Seller[]>([]);
@@ -93,26 +74,28 @@ export default function ArqueosPage() {
         setIsLoading(true);
         try {
             const [p, c, s] = await Promise.all([
-                getPendingCountSessions(),
-                getClosedSessions(20),
-                getSellers(),
+                cashHistoryRuntime.getPendingCountSessions(),
+                cashHistoryRuntime.getClosedSessions(20),
+                cashHistoryRuntime.getSellers(),
             ]);
-            setPending(p as CashSession[]);
-            setClosed(c as CashSession[]);
-            setSellers(s as Seller[]);
+            setPending(p);
+            setClosed(c);
+            setSellers(s);
             if (s.length > 0) setCountedById(s[0].id);
         } catch {
             toast.error("Error al cargar los arqueos");
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [cashHistoryRuntime]);
 
     useEffect(() => {
         void loadData();
     }, [loadData]);
 
-    useDataRefresh([CACHE_TAGS.cash, CACHE_TAGS.sales, CACHE_TAGS.employees], loadData);
+    useDataRefresh([CACHE_TAGS.cash, CACHE_TAGS.sales, CACHE_TAGS.employees], loadData, {
+        pollIntervalMs: false,
+    });
 
     const totalClosedPages = Math.max(1, Math.ceil(closed.length / CLOSED_ARQUEOS_PER_PAGE));
     const paginatedClosed = useMemo(() => {
@@ -131,7 +114,7 @@ export default function ArqueosPage() {
         setActualAmount("");
     };
 
-    const handleSubmitArqueo = async () => {
+    const handleSubmitArqueo = useCallback(async () => {
         if (!arqueoDialogSession) return;
         if (actualAmount === "" || isNaN(Number(actualAmount))) {
             return toast.error("Ingresá el monto real que contaste");
@@ -141,7 +124,11 @@ export default function ArqueosPage() {
         }
         setIsSaving(true);
         try {
-            await submitArqueo(arqueoDialogSession.id, Number(actualAmount), countedById);
+            await cashHistoryRuntime.submitArqueo(
+                arqueoDialogSession.id,
+                Number(actualAmount),
+                countedById
+            );
             notifyDataUpdated(CACHE_TAGS.cash);
             toast.success("Arqueo registrado correctamente");
             setArqueoDialogSession(null);
@@ -152,7 +139,7 @@ export default function ArqueosPage() {
         } finally {
             setIsSaving(false);
         }
-    };
+    }, [actualAmount, arqueoDialogSession, cashHistoryRuntime, countedById, loadData]);
 
     if (isLoading) {
         return (

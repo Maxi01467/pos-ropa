@@ -1,14 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-// Importamos nuestras nuevas Server Actions
-import { 
-    getInventoryData, 
-    createProduct, 
-    updateProduct, 
-    deleteProduct,
-    markProductReviewed,
-} from "@/app/actions/inventory/inventory-actions";
 import {
     AlertCircle,
     CheckCheck,
@@ -39,6 +31,7 @@ import {
 import { toast } from "sonner";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
 import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
+import { getInventoryRuntime } from "@/lib/offline/inventory-runtime";
 
 // Interfaz adaptada a lo que devuelve nuestra BD
 export interface DBProduct {
@@ -73,6 +66,7 @@ function formatCurrency(amount: number): string {
 const CATALOG_ITEMS_PER_PAGE = 6;
 
 export default function InventarioPage() {
+    const inventoryRuntime = useMemo(() => getInventoryRuntime(), []);
     // Estados de base de datos
     const [products, setProducts] = useState<DBProduct[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -93,7 +87,7 @@ export default function InventarioPage() {
     // Cargar datos al iniciar
     const loadData = useCallback(async () => {
         try {
-            const data = await getInventoryData();
+            const data = await inventoryRuntime.getInventoryData();
             setProducts(data.products);
         } catch (error) {
             toast.error("Error al cargar el inventario");
@@ -101,7 +95,7 @@ export default function InventarioPage() {
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [inventoryRuntime]);
 
     useEffect(() => {
         void loadData();
@@ -109,7 +103,8 @@ export default function InventarioPage() {
 
     useDataRefresh(
         [CACHE_TAGS.inventory, CACHE_TAGS.stock, CACHE_TAGS.posProducts, CACHE_TAGS.quickCreations],
-        loadData
+        loadData,
+        { pollIntervalMs: false }
     );
 
     const resetForm = () => {
@@ -171,7 +166,7 @@ export default function InventarioPage() {
             };
 
             if (editingProduct) {
-                const updatedProduct = await updateProduct(editingProduct.id, productData);
+                const updatedProduct = await inventoryRuntime.updateProduct(editingProduct.id, productData);
                 setProducts((current) =>
                     sortProducts(
                         current.map((product) =>
@@ -182,8 +177,8 @@ export default function InventarioPage() {
                                       pendingReview: updatedProduct.pendingReview,
                                       reviewedAt: updatedProduct.reviewedAt,
                                       reviewedByName: updatedProduct.reviewedByName ?? undefined,
-                                      price: updatedProduct.priceNormal,
-                                      wholesalePrice: updatedProduct.priceWholesale,
+                                      price: updatedProduct.price,
+                                      wholesalePrice: updatedProduct.wholesalePrice,
                                       costPrice: updatedProduct.costPrice,
                                   }
                                 : product
@@ -192,7 +187,7 @@ export default function InventarioPage() {
                 );
                 toast.success("Producto actualizado");
             } else {
-                const createdProduct = await createProduct(productData);
+                const createdProduct = await inventoryRuntime.createProduct(productData);
                 setProducts((current) =>
                     sortProducts([
                         {
@@ -206,8 +201,8 @@ export default function InventarioPage() {
                             quickCreatedByRole: createdProduct.quickCreatedByRole,
                             reviewedAt: createdProduct.reviewedAt,
                             reviewedByName: createdProduct.reviewedByName,
-                            price: createdProduct.priceNormal,
-                            wholesalePrice: createdProduct.priceWholesale,
+                            price: createdProduct.price,
+                            wholesalePrice: createdProduct.wholesalePrice,
                             costPrice: createdProduct.costPrice,
                             stock: 0,
                         },
@@ -235,7 +230,7 @@ export default function InventarioPage() {
 
     const handleMarkReviewed = async (product: DBProduct) => {
         try {
-            const reviewedProduct = await markProductReviewed(product.id);
+            const reviewedProduct = await inventoryRuntime.markProductReviewed(product.id);
             setProducts((current) =>
                 sortProducts(
                     current.map((item) =>
@@ -262,7 +257,7 @@ export default function InventarioPage() {
         if (!confirm(`¿Estás seguro de eliminar ${product.name}?`)) return;
         
         try {
-            await deleteProduct(product.id);
+            await inventoryRuntime.deleteProduct(product.id);
             setProducts((prev) => prev.filter((p) => p.id !== product.id));
             notifyDataUpdated([
                 CACHE_TAGS.inventory,

@@ -39,7 +39,7 @@ interface CheckoutDialogProps {
     itemCount: number;
     onConfirm: (
         payment: PaymentBreakdown
-    ) => Promise<{ ticketNumber: number }>;
+    ) => Promise<{ ticketNumber: string }>;
 }
 
 const paymentMethods: {

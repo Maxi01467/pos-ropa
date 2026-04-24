@@ -35,7 +35,7 @@ interface CodigoBarraViejo {
 // ─── Carga de datos ──────────────────────────────────────────────────────────
 
 function loadJson<T>(filename: string): T {
-    const path = join(__dirname, "..", "data-migration", filename);
+    const path = join(process.cwd(), "data-migration", filename);
     const raw = readFileSync(path, "utf-8");
     return (JSON.parse(raw) as { rows: T }).rows;
 }

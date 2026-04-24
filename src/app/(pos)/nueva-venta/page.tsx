@@ -1,13 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getProductsForPOS, getSellers } from "@/app/actions/pos/pos-actions";
-import { createQuickProductWithStock } from "@/app/actions/inventory/inventory-actions";
-import {
-    createExchangeSale,
-    createSale,
-    findSalesForExchange,
-} from "@/app/actions/sales/sales-actions";
 import { TicketReceipt } from "@/components/printing/ticket-receipt";
 import {
     CheckoutDialog,
@@ -54,6 +47,9 @@ import type { ReceiptPrintData } from "@/lib/printing/receipt-printing";
 import { printSaleReceipt } from "@/lib/printing/printing";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
 import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
+import { useTerminalSnapshot } from "@/lib/terminal/terminal-client";
+import { getPosRuntimeDataSource } from "@/lib/offline/pos-runtime-data";
+import { getPosRuntimeMutations } from "@/lib/offline/pos-runtime-mutations";
 
 export interface POSProduct {
     id: string;
@@ -94,7 +90,7 @@ interface ExchangeSaleItem {
 
 interface ExchangeSaleTicket {
     id: string;
-    ticketNumber: number;
+    ticketNumber: string;
     total: number;
     paymentMethod: string;
     date: string;
@@ -104,7 +100,7 @@ interface ExchangeSaleTicket {
 
 interface AppliedExchange {
     saleId: string;
-    ticketNumber: number;
+    ticketNumber: string;
     credit: number;
     items: Array<{
         saleItemId: string;
@@ -176,6 +172,8 @@ function reconcileProductStocks(
 }
 
 export default function NuevaVentaPage() {
+    const posDataSource = useMemo(() => getPosRuntimeDataSource(), []);
+    const posMutations = useMemo(() => getPosRuntimeMutations(), []);
     const searchInputRef = useRef<HTMLInputElement>(null); // NUEVO
     const exchangeSearchInputRef = useRef<HTMLInputElement>(null);
     const sellerSelectTriggerRef = useRef<HTMLButtonElement>(null);
@@ -206,6 +204,7 @@ export default function NuevaVentaPage() {
     const [quickCreateWholesalePrice, setQuickCreateWholesalePrice] = useState("");
     const [quickCreateInitialStock, setQuickCreateInitialStock] = useState("1");
     const [isQuickCreating, setIsQuickCreating] = useState(false);
+    const terminal = useTerminalSnapshot();
     const startBrowserPrint = ({
         hasGiftCopy,
         initialGiftCopy = false,
@@ -241,7 +240,15 @@ export default function NuevaVentaPage() {
                     : printerName,
             });
         } catch (error) {
-            console.error("Printing failed:", error);
+            const isDesktopUnavailable =
+                error instanceof Error &&
+                error.message === "La app de escritorio no está disponible";
+
+            if (isDesktopUnavailable) {
+                console.warn("Desktop print bridge no disponible. Usando impresión del navegador.");
+            } else {
+                console.error("Printing failed:", error);
+            }
 
             if (regularReceiptPrinted && hasGiftCopy) {
                 toast.error("Falló la copia de regalo. Se abrirá esa copia en el navegador.");
@@ -257,11 +264,6 @@ export default function NuevaVentaPage() {
     const loadCatalog = useCallback(async (options?: { background?: boolean; reason?: string }) => {
         let cancelled = false;
         const isBackgroundRefresh = options?.background ?? false;
-        const reason = options?.reason ?? "unknown";
-
-        console.log(
-            `[nueva-venta] loadCatalog start background=${isBackgroundRefresh} reason=${reason}`
-        );
 
         if (!isBackgroundRefresh && !hasLoadedCatalogOnce) {
             setIsLoadingProducts(true);
@@ -270,8 +272,8 @@ export default function NuevaVentaPage() {
 
         try {
             const [productsResult, sellersResult] = await Promise.allSettled([
-                getProductsForPOS(),
-                getSellers(),
+                posDataSource.getProducts(),
+                posDataSource.getSellers(),
             ]);
 
             if (productsResult.status === "rejected") {
@@ -302,9 +304,6 @@ export default function NuevaVentaPage() {
 
                 return "";
             });
-            console.log(
-                `[nueva-venta] loadCatalog success products=${products.length} sellers=${sellersData.length} reason=${reason}`
-            );
         } catch (error) {
             if (cancelled) return;
             console.error("Error loading initial data:", error);
@@ -319,7 +318,7 @@ export default function NuevaVentaPage() {
         return () => {
             cancelled = true;
         };
-    }, [hasLoadedCatalogOnce]);
+    }, [hasLoadedCatalogOnce, posDataSource]);
 
     useEffect(() => {
         let cleanup: (() => void) | undefined;
@@ -333,61 +332,9 @@ export default function NuevaVentaPage() {
     }, [loadCatalog]);
 
     const reloadProducts = useCallback(async () => {
-        const products = await getProductsForPOS();
+        const products = await posDataSource.getProducts();
         setAllProducts(products);
-    }, []);
-
-    const refreshCatalogData = useCallback(async () => {
-        console.log("[nueva-venta] refreshCatalogData");
-        await loadCatalog({ background: true, reason: "data-sync-catalog" });
-    }, [loadCatalog]);
-
-    const loadExchangeSales = useCallback(
-        async (query = "") => {
-            setIsLoadingExchangeSales(true);
-            try {
-                const sales = await findSalesForExchange({ query, limit: 20 });
-                setExchangeSales(sales);
-            } catch (error) {
-                toast.error("No se pudieron cargar las boletas");
-                console.error(error);
-            } finally {
-                setIsLoadingExchangeSales(false);
-            }
-        },
-        []
-    );
-
-    const refreshExchangeSales = useCallback(async () => {
-        if (!exchangeDialogOpen) return;
-
-        console.log("[nueva-venta] refreshExchangeSales");
-        await loadExchangeSales(exchangeSearchQuery);
-    }, [exchangeDialogOpen, exchangeSearchQuery, loadExchangeSales]);
-
-    useDataRefresh(
-        [
-            CACHE_TAGS.posProducts,
-            CACHE_TAGS.inventory,
-            CACHE_TAGS.stock,
-            CACHE_TAGS.employees,
-        ],
-        refreshCatalogData,
-        {
-            debugLabel: "nueva-venta-catalog",
-            pollIntervalMs: false,
-        }
-    );
-
-    useDataRefresh(
-        [CACHE_TAGS.sales, CACHE_TAGS.cash],
-        refreshExchangeSales,
-        {
-            debugLabel: "nueva-venta-exchange",
-            pollIntervalMs: false,
-            refreshOnFocus: false,
-        }
-    );
+    }, [posDataSource]);
 
     useEffect(() => {
         const handleAfterPrint = () => {
@@ -691,7 +638,6 @@ export default function NuevaVentaPage() {
     };
 
     const finalizeSale = async (payment?: PaymentBreakdown) => {
-        console.log("[nueva-venta] finalizeSale start");
         if (!selectedSellerId) {
             throw new Error("Seleccioná un vendedor antes de cobrar");
         }
@@ -719,11 +665,12 @@ export default function NuevaVentaPage() {
             cashAmount: payment?.cashAmount ?? 0,
             transferAmount: payment?.transferAmount ?? 0,
             userId: selectedSellerId,
+            terminalPrefix: terminal.terminalPrefix ?? undefined,
             items: saleItems,
         };
 
         const sale = appliedExchange
-            ? await createExchangeSale({
+            ? await posMutations.createExchangeSale({
                 ...exchangePayload,
                 originalSaleId: appliedExchange.saleId,
                 returnedItems: appliedExchange.items.map((item) => ({
@@ -731,12 +678,10 @@ export default function NuevaVentaPage() {
                     quantity: item.quantity,
                 })),
             })
-            : await createSale({
+            : await posMutations.createSale({
                 ...exchangePayload,
                 paymentMethod: paymentMethodMap[payment!.paymentMethod],
             });
-        console.log(`[nueva-venta] finalizeSale success ticket=${sale.ticketNumber}`);
-
         const nextReceiptData: ReceiptPrintData = {
             ticketNumber: sale.ticketNumber,
             date: new Date(),
@@ -776,10 +721,11 @@ export default function NuevaVentaPage() {
             )
         );
         clearCart();
+        const updatedProducts = await posDataSource.getProducts();
+        setAllProducts(updatedProducts);
         setAppliedExchange(null);
         setSelectedSellerId("");
         setReceiptData(nextReceiptData);
-        console.log("[nueva-venta] notifyDataUpdated after sale");
         notifyDataUpdated([
             CACHE_TAGS.sales,
             CACHE_TAGS.cash,
@@ -813,6 +759,55 @@ export default function NuevaVentaPage() {
         }
     };
 
+    const loadExchangeSales = useCallback(async () => {
+        setIsLoadingExchangeSales(true);
+        try {
+            const sales = await posDataSource.getSalesHistory();
+            setExchangeSales(sales);
+        } catch (error) {
+            toast.error("No se pudieron cargar las boletas");
+            console.error(error);
+        } finally {
+            setIsLoadingExchangeSales(false);
+        }
+    }, [posDataSource]);
+
+    const refreshCatalogData = useCallback(async () => {
+        await loadCatalog({ background: true, reason: "data-sync-catalog" });
+    }, [loadCatalog]);
+
+    const refreshExchangeSales = useCallback(async () => {
+        if (!exchangeDialogOpen) {
+            return;
+        }
+
+        await loadExchangeSales();
+    }, [exchangeDialogOpen, loadExchangeSales]);
+
+    useDataRefresh(
+        [
+            CACHE_TAGS.posProducts,
+            CACHE_TAGS.inventory,
+            CACHE_TAGS.stock,
+            CACHE_TAGS.employees,
+        ],
+        refreshCatalogData,
+        {
+            debugLabel: "nueva-venta-catalog",
+            pollIntervalMs: false,
+        }
+    );
+
+    useDataRefresh(
+        [CACHE_TAGS.sales, CACHE_TAGS.cash],
+        refreshExchangeSales,
+        {
+            debugLabel: "nueva-venta-exchange",
+            pollIntervalMs: false,
+            refreshOnFocus: false,
+        }
+    );
+
     const handleOpenExchangeDialog = async () => {
         setExchangeSearchQuery("");
         setSelectedExchangeSale(null);
@@ -824,7 +819,7 @@ export default function NuevaVentaPage() {
         if (!exchangeDialogOpen) return;
 
         const timeoutId = window.setTimeout(() => {
-            void loadExchangeSales(exchangeSearchQuery);
+            void loadExchangeSales();
         }, 250);
 
         return () => {
@@ -925,11 +920,12 @@ export default function NuevaVentaPage() {
 
         setIsQuickCreating(true);
         try {
-            const createdProduct = await createQuickProductWithStock({
+            const createdProduct = await posMutations.createQuickProductWithStock({
                 name: normalizedName,
                 price,
                 wholesalePrice,
                 initialStock,
+                creatorUserId: selectedSellerId || undefined,
             });
 
             await reloadProducts();

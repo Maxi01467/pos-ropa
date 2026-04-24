@@ -1,5 +1,7 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
+const { randomUUID } = require("crypto");
 const fs = require("fs");
 const net = require("net");
 const path = require("path");
@@ -11,11 +13,9 @@ const PROD_PORT_START = 3210;
 const PROD_PORT_MAX_ATTEMPTS = 5;
 const CREDENTIALS_FILENAME = "credentials.bin";
 const LOG_FILENAME = "desktop.log";
-const THERMAL_TICKET_WIDTH_MICRONS = 80000;
-const THERMAL_TICKET_HEIGHT_MICRONS = 200000;
+const TERMINAL_CONFIG_FILENAME = "terminal-config.json";
 
 let localServerPromise;
-let loggingHooksInstalled = false;
 let updateReadyDialogShown = false;
 let updateCheckScheduled = false;
 
@@ -36,36 +36,77 @@ function appendDesktopLog(message) {
     }
 }
 
-function installProcessLoggingHooks() {
-    if (loggingHooksInstalled) return;
-    loggingHooksInstalled = true;
+function getTerminalConfigPath() {
+    return path.join(app.getPath("userData"), TERMINAL_CONFIG_FILENAME);
+}
 
-    const originalConsoleError = console.error.bind(console);
-    console.error = (...args) => {
-        try {
-            const rendered = args
-                .map((arg) => (arg instanceof Error ? arg.stack || arg.message : String(arg)))
-                .join(" ");
-            appendDesktopLog(`console.error: ${rendered}`);
-        } catch {
-            // Ignore logging failures.
+function readTerminalConfigFile() {
+    try {
+        if (!fs.existsSync(getTerminalConfigPath())) {
+            return null;
         }
-        originalConsoleError(...args);
+
+        return JSON.parse(fs.readFileSync(getTerminalConfigPath(), "utf8"));
+    } catch (error) {
+        appendDesktopLog(
+            `terminal-config: read error ${error instanceof Error ? error.message : String(error)}`
+        );
+        return null;
+    }
+}
+
+function writeTerminalConfigFile(payload) {
+    fs.mkdirSync(path.dirname(getTerminalConfigPath()), { recursive: true });
+    fs.writeFileSync(getTerminalConfigPath(), JSON.stringify(payload, null, 2), "utf8");
+    return payload;
+}
+
+function getTerminalConfig() {
+    const existing = readTerminalConfigFile() || {};
+    const deviceId =
+        typeof existing.deviceId === "string" && existing.deviceId.trim()
+            ? existing.deviceId.trim()
+            : randomUUID();
+
+    const normalized = {
+        deviceId,
+        terminalId:
+            typeof existing.terminalId === "string" && existing.terminalId.trim()
+                ? existing.terminalId.trim()
+                : null,
+        terminalPrefix:
+            typeof existing.terminalPrefix === "string" && existing.terminalPrefix.trim()
+                ? existing.terminalPrefix.trim().toUpperCase()
+                : null,
+        terminalName:
+            typeof existing.terminalName === "string" && existing.terminalName.trim()
+                ? existing.terminalName.trim()
+                : null,
     };
 
-    const originalStderrWrite = process.stderr.write.bind(process.stderr);
-    process.stderr.write = (chunk, encoding, callback) => {
-        try {
-            const text = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
-            const trimmed = text.trim();
-            if (trimmed) {
-                appendDesktopLog(`stderr: ${trimmed}`);
-            }
-        } catch {
-            // Ignore logging failures.
-        }
-        return originalStderrWrite(chunk, encoding, callback);
+    writeTerminalConfigFile(normalized);
+    return normalized;
+}
+
+function saveTerminalConfig(input) {
+    const current = getTerminalConfig();
+    const next = {
+        deviceId: current.deviceId,
+        terminalId:
+            typeof input?.terminalId === "string" && input.terminalId.trim()
+                ? input.terminalId.trim()
+                : current.terminalId,
+        terminalPrefix:
+            typeof input?.terminalPrefix === "string" && input.terminalPrefix.trim()
+                ? input.terminalPrefix.trim().toUpperCase()
+                : current.terminalPrefix,
+        terminalName:
+            typeof input?.terminalName === "string" && input.terminalName.trim()
+                ? input.terminalName.trim()
+                : current.terminalName,
     };
+
+    return writeTerminalConfigFile(next);
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +234,48 @@ function getCredentialsPath() {
     return path.join(app.getPath("userData"), CREDENTIALS_FILENAME);
 }
 
+function readSensitiveEnvFromFile(envFilePath) {
+    if (!fs.existsSync(envFilePath)) return {};
+
+    const contents = fs.readFileSync(envFilePath, "utf8");
+    const credentials = {};
+    for (const rawLine of contents.split(/\r?\n/u)) {
+        const parsed = parseEnvLine(rawLine);
+        if (parsed && SENSITIVE_KEYS.includes(parsed.key) && parsed.value) {
+            credentials[parsed.key] = parsed.value;
+        }
+    }
+
+    return credentials;
+}
+
+function writeCredentialsToSafeStorage(credentials) {
+    if (!safeStorage.isEncryptionAvailable()) return false;
+    if (!credentials || Object.keys(credentials).length === 0) return false;
+
+    try {
+        const encrypted = safeStorage.encryptString(JSON.stringify(credentials));
+        fs.mkdirSync(path.dirname(getCredentialsPath()), { recursive: true });
+        fs.writeFileSync(getCredentialsPath(), encrypted);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function readCredentialsFromSafeStorage() {
+    if (!safeStorage.isEncryptionAvailable()) return null;
+    const credPath = getCredentialsPath();
+    if (!fs.existsSync(credPath)) return null;
+
+    try {
+        const encrypted = fs.readFileSync(credPath);
+        return JSON.parse(safeStorage.decryptString(encrypted));
+    } catch {
+        return null;
+    }
+}
+
 /**
  * On the very first launch, reads sensitive env vars from the bundled .env
  * and encrypts them into the OS keychain (DPAPI on Windows, Keychain on
@@ -206,26 +289,36 @@ function migrateCredentialsToSafeStorage(envFilePath) {
     const credPath = getCredentialsPath();
     if (fs.existsSync(credPath)) return; // Already migrated on a previous run
 
-    if (!fs.existsSync(envFilePath)) return;
-    const contents = fs.readFileSync(envFilePath, "utf8");
-
-    const credentials = {};
-    for (const rawLine of contents.split(/\r?\n/u)) {
-        const parsed = parseEnvLine(rawLine);
-        if (parsed && SENSITIVE_KEYS.includes(parsed.key) && parsed.value) {
-            credentials[parsed.key] = parsed.value;
-        }
-    }
+    const credentials = readSensitiveEnvFromFile(envFilePath);
 
     if (Object.keys(credentials).length === 0) return;
 
-    try {
-        const encrypted = safeStorage.encryptString(JSON.stringify(credentials));
-        fs.mkdirSync(path.dirname(credPath), { recursive: true });
-        fs.writeFileSync(credPath, encrypted);
-    } catch {
+    if (!writeCredentialsToSafeStorage(credentials)) {
         // Non-fatal – the plaintext .env serves as a fallback
+        return;
     }
+
+    appendDesktopLog("safeStorage: credentials migrated from bundled env");
+}
+
+function syncCredentialsFromBundledEnv(envFilePath) {
+    const fileCredentials = readSensitiveEnvFromFile(envFilePath);
+    if (Object.keys(fileCredentials).length === 0) return false;
+
+    const storedCredentials = readCredentialsFromSafeStorage();
+    const nextSerialized = JSON.stringify(fileCredentials);
+    const currentSerialized = storedCredentials ? JSON.stringify(storedCredentials) : null;
+
+    if (nextSerialized === currentSerialized) {
+        return false;
+    }
+
+    const wrote = writeCredentialsToSafeStorage(fileCredentials);
+    if (wrote) {
+        appendDesktopLog("safeStorage: credentials refreshed from bundled env");
+    }
+
+    return wrote;
 }
 
 /**
@@ -234,16 +327,14 @@ function migrateCredentialsToSafeStorage(envFilePath) {
  * Returns true if credentials were loaded successfully.
  */
 function loadCredentialsFromSafeStorage() {
-    if (!safeStorage.isEncryptionAvailable()) return false;
-    const credPath = getCredentialsPath();
-    if (!fs.existsSync(credPath)) return false;
+    const credentials = readCredentialsFromSafeStorage();
+    if (!credentials) return false;
+
     try {
-        const encrypted = fs.readFileSync(credPath);
-        const decrypted = safeStorage.decryptString(encrypted);
-        const credentials = JSON.parse(decrypted);
         for (const [key, value] of Object.entries(credentials)) {
             process.env[key] = value; // Prefer keychain value over .env
         }
+        appendDesktopLog("safeStorage: credentials loaded");
         return true;
     } catch {
         return false;
@@ -339,10 +430,6 @@ async function getAppUrl() {
             const serverPath = path.join(standaloneRoot, "server.js");
             const envFilePath = path.join(standaloneRoot, ".env");
 
-            appendDesktopLog(`standaloneRoot=${standaloneRoot}`);
-            appendDesktopLog(`serverPath=${serverPath} exists=${fs.existsSync(serverPath)}`);
-            appendDesktopLog(`envPath=${envFilePath} exists=${fs.existsSync(envFilePath)}`);
-
             if (!fs.existsSync(serverPath)) {
                 throw new Error(
                     "Falta .next/standalone/server.js dentro del paquete. " +
@@ -352,21 +439,19 @@ async function getAppUrl() {
 
             // 1. Load all vars from the bundled .env (DATABASE_URL included as fallback)
             loadEnvFile(envFilePath);
-            appendDesktopLog(
-                `DATABASE_URL loaded=${Boolean(process.env.DATABASE_URL)} AUTH_SECRET loaded=${Boolean(process.env.AUTH_SECRET)}`
-            );
 
             // 2. On first run: encrypt sensitive vars and save them to the OS keychain
             migrateCredentialsToSafeStorage(envFilePath);
 
+            // 2.5. If a newer build ships a different DATABASE_URL, refresh the cached
+            // credential so the desktop app does not keep using an outdated database.
+            syncCredentialsFromBundledEnv(envFilePath);
+
             // 3. Override env vars with keychain values when available (more secure)
             //    Falls back silently to the .env values loaded in step 1.
-            appendDesktopLog(
-                `safeStorage available=${safeStorage.isEncryptionAvailable()} loaded=${loadCredentialsFromSafeStorage()}`
-            );
+            loadCredentialsFromSafeStorage();
 
             const port = await findAvailablePort();
-            appendDesktopLog(`selected port=${port}`);
 
             process.env.NODE_ENV = "production";
             process.env.HOSTNAME = PROD_HOST;
@@ -374,11 +459,9 @@ async function getAppUrl() {
             process.env.POS_DESKTOP = "1";
 
             require(serverPath);
-            appendDesktopLog("server.js required successfully");
 
             const serverUrl = `http://${PROD_HOST}:${port}`;
             await waitForHttpServer(serverUrl);
-            appendDesktopLog(`server reachable at ${serverUrl}`);
             return serverUrl;
         })();
     }
@@ -467,27 +550,14 @@ async function createMainWindow() {
         return { action: "deny" };
     });
 
-    window.webContents.on("did-start-loading", () => {
-        appendDesktopLog("window did-start-loading");
-    });
-
-    window.webContents.on("did-finish-load", () => {
-        appendDesktopLog(`window did-finish-load url=${window.webContents.getURL()}`);
-    });
-
     window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {
         const message = `No se pudo cargar ${validatedUrl || "la aplicacion"} (${errorCode}): ${errorDescription}`;
         appendDesktopLog(`did-fail-load: ${message}`);
         void window.loadURL(buildErrorPage(message));
     });
 
-    window.webContents.on("console-message", (_event, level, message) => {
-        appendDesktopLog(`renderer console [${level}]: ${message}`);
-    });
-
     try {
         const appUrl = await getAppUrl();
-        appendDesktopLog(`loading appUrl=${appUrl}`);
         await window.loadURL(appUrl);
     } catch (error) {
         const message =
@@ -519,7 +589,7 @@ async function printHtmlSilently({ html, jobName, printerName }) {
     const tempDir = path.join(app.getPath("temp"), "pos-print");
     try {
         fs.mkdirSync(tempDir, { recursive: true });
-    } catch (e) {
+    } catch {
         // Ignore
     }
     
@@ -530,19 +600,7 @@ async function printHtmlSilently({ html, jobName, printerName }) {
         fs.writeFileSync(tempHtmlFile, html, "utf-8");
         const fileUrl = `file://${tempHtmlFile}`;
         
-        appendDesktopLog(`print starting job="${jobName}" using temp file="${tempHtmlFile}"`);
-        
-        // LOG: Información del HTML recibido
-        const htmlTrimmed = html.trim();
-        const htmlLines = htmlTrimmed.split('\n').length;
-        const hasTable = htmlTrimmed.includes('<table');
-        const hasSvg = htmlTrimmed.includes('<svg');
-        const hasArticle = htmlTrimmed.includes('<article');
-        
-        appendDesktopLog(`print html info job="${jobName}" length=${htmlTrimmed.length} lines=${htmlLines} hasTable=${hasTable} hasSvg=${hasSvg} hasArticle=${hasArticle}`);
-        
         await printWindow.loadURL(fileUrl);
-        appendDesktopLog(`print html loaded job="${jobName}" from file="${tempHtmlFile}"`);
         
         // Esperar a que se renderice correctamente y medir la altura real del contenido
         const contentHeight = await printWindow.webContents.executeJavaScript(`
@@ -561,60 +619,23 @@ async function printHtmlSilently({ html, jobName, printerName }) {
                             const documentHeight = document.documentElement.scrollHeight || document.documentElement.offsetHeight;
                             const contentHeight = Math.max(bodyHeight, documentHeight);
                             
-                            // LOG DETALLADO
-                            const bodyComputed = window.getComputedStyle(document.body);
-                            const articleEl = document.querySelector('article');
-                            const articleHeight = articleEl ? articleEl.offsetHeight : 0;
-                            
-                            console.log(\`[Desktop Print] ===== RENDER DETAILS =====\`);
-                            console.log(\`[Desktop Print] body.scrollHeight: \${document.body.scrollHeight}px\`);
-                            console.log(\`[Desktop Print] body.offsetHeight: \${document.body.offsetHeight}px\`);
-                            console.log(\`[Desktop Print] documentElement.scrollHeight: \${document.documentElement.scrollHeight}px\`);
-                            console.log(\`[Desktop Print] documentElement.offsetHeight: \${document.documentElement.offsetHeight}px\`);
-                            console.log(\`[Desktop Print] article.offsetHeight: \${articleHeight}px\`);
-                            console.log(\`[Desktop Print] Final contentHeight: \${contentHeight}px\`);
-                            console.log(\`[Desktop Print] body margin: \${bodyComputed.margin}\`);
-                            console.log(\`[Desktop Print] body padding: \${bodyComputed.padding}\`);
-                            console.log(\`[Desktop Print] Total children in body: \${document.body.children.length}\`);
-                            
-                            // Verificar si hay contenido visible
-                            const allElements = document.querySelectorAll('*');
-                            let hiddenCount = 0;
-                            allElements.forEach(el => {
-                                const style = window.getComputedStyle(el);
-                                if (style.display === 'none' || style.visibility === 'hidden') {
-                                    hiddenCount++;
-                                }
-                            });
-                            console.log(\`[Desktop Print] Total elements: \${allElements.length}, Hidden: \${hiddenCount}\`);
-                            console.log(\`[Desktop Print] ===== END DETAILS =====\`);
-                            
                             resolve(contentHeight);
                         });
                     });
                 }).catch((err) => {
                     // Si falla fonts.ready, intentar de todas formas
-                    console.log(\`[Desktop Print] fonts.ready error: \${err}\`);
                     requestAnimationFrame(() => {
                         requestAnimationFrame(() => {
                             const bodyHeight = document.body.scrollHeight || document.body.offsetHeight;
                             const documentHeight = document.documentElement.scrollHeight || document.documentElement.offsetHeight;
                             const contentHeight = Math.max(bodyHeight, documentHeight);
-                            
-                            console.log(\`[Desktop Print] Contenido renderizado (sin fuentes): \${contentHeight}px\`);
                             resolve(contentHeight);
                         });
                     });
                 });
             });
         `);
-
-        appendDesktopLog(`print html measured job="${jobName}" contentHeight=${contentHeight}px`);
-
-        // ⏱️ Dar un margen corto para que el contenido termine de estabilizarse
-        appendDesktopLog(`print waiting for full render job="${jobName}" delayMs=1000`);
         await new Promise((resolve) => setTimeout(resolve, 1000));
-        appendDesktopLog(`print render ready, sending to printer job="${jobName}"`);
 
         // Convertir píxeles a milímetros (1mm ≈ 3.78px en pantalla)
         // Para valores de impresión, usamos 96 DPI = 3.78px/mm
@@ -623,16 +644,7 @@ async function printHtmlSilently({ html, jobName, printerName }) {
         // Mínimo 120mm para asegurar que las térmicas procesen correctamente
         const finalHeightMicrons = Math.max((contentHeightMm + 30) * 1000, 120000);
 
-        appendDesktopLog(
-            `print job="${jobName}" contentHeight=${contentHeight}px (${contentHeightMm}mm) finalHeight=${finalHeightMicrons}µm`
-        );
-
         const availablePrinters = await printWindow.webContents.getPrintersAsync();
-        appendDesktopLog(
-            `print job="${jobName}" requestedPrinter="${printerName || ""}" availablePrinters=${availablePrinters
-                .map((printer) => printer.name)
-                .join(", ")}`
-        );
 
         // Detectar automáticamente impresoras térmicas conocidas si no se especifica una
         let thermalPrinterName = null;
@@ -651,9 +663,6 @@ async function printHtmlSilently({ html, jobName, printerName }) {
                 const lowerName = printer.name.toLowerCase();
                 if (thermalKeywords.some((keyword) => lowerName.includes(keyword))) {
                     thermalPrinterName = printer.name;
-                    appendDesktopLog(
-                        `print detected thermal printer="${thermalPrinterName}"`
-                    );
                     break;
                 }
             }
@@ -718,7 +727,6 @@ async function printHtmlSilently({ html, jobName, printerName }) {
                 availablePrinters.find((printer) => printer.isDefault)?.name ||
                 "Impresora predeterminada de Windows";
 
-            appendDesktopLog(`print success job="${jobName}" printer="${resolvedPrinterName}" method=traditional`);
             return { printerName: resolvedPrinterName };
         } catch (firstError) {
             appendDesktopLog(
@@ -733,9 +741,6 @@ async function printHtmlSilently({ html, jobName, printerName }) {
                         availablePrinters.find((printer) => printer.isDefault)?.name ||
                         "Impresora predeterminada de Windows";
 
-                    appendDesktopLog(
-                        `print traditional retry success job="${jobName}" printer="${defaultPrinterName}"`
-                    );
                     return { printerName: defaultPrinterName };
                 } catch (secondError) {
                     appendDesktopLog(
@@ -752,7 +757,6 @@ async function printHtmlSilently({ html, jobName, printerName }) {
         try {
             if (fs.existsSync(tempHtmlFile)) {
                 fs.unlinkSync(tempHtmlFile);
-                appendDesktopLog(`print cleaned temp file job="${jobName}"`);
             }
         } catch (e) {
             appendDesktopLog(`print temp file cleanup error job="${jobName}" error="${e instanceof Error ? e.message : String(e)}"`);
@@ -770,10 +774,13 @@ async function printHtmlSilently({ html, jobName, printerName }) {
 // ---------------------------------------------------------------------------
 
 app.whenReady().then(() => {
-    installProcessLoggingHooks();
     appendDesktopLog("desktop app ready");
     ipcMain.handle("pos-desktop:is-available", () => true);
     ipcMain.handle("pos-desktop:print-html", (_event, payload) => printHtmlSilently(payload));
+    ipcMain.handle("pos-desktop:get-terminal-config", () => getTerminalConfig());
+    ipcMain.handle("pos-desktop:set-terminal-config", (_event, payload) =>
+        saveTerminalConfig(payload)
+    );
 
     void createMainWindow().then((mainWindow) => {
         scheduleAutoUpdateCheck(mainWindow);

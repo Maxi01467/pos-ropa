@@ -8,6 +8,9 @@ import { prisma } from "@/lib/prisma";
 const getSuppliersCached = unstable_cache(
     async () =>
         prisma.supplier.findMany({
+            where: {
+                deletedAt: null,
+            },
             orderBy: { name: "asc" }
         }),
     ["suppliers"],
@@ -54,8 +57,11 @@ export async function updateSupplier(id: string, data: { name: string; phone?: s
 
 // 4. Eliminar un proveedor
 export async function deleteSupplier(id: string) {
-    const deleted = await prisma.supplier.delete({
-        where: { id }
+    const deleted = await prisma.supplier.update({
+        where: { id },
+        data: {
+            deletedAt: new Date(),
+        },
     });
 
     revalidateTag(CACHE_TAGS.suppliers, "max");

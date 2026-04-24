@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import { TicketReceipt } from "@/components/printing/ticket-receipt";
 import {
     CheckoutDialog,
@@ -18,6 +18,7 @@ import {
     UserCircle,
     ReceiptText,
     RotateCcw,
+    X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -114,6 +115,81 @@ interface AppliedExchange {
 
 type PriceMode = "retail" | "wholesale";
 
+const MAX_SALE_DRAFT_TABS = 3;
+
+type SaleDraft = {
+    id: string;
+    label: string;
+    createdAt: string;
+    updatedAt: string;
+    searchQuery: string;
+    cart: CartItem[];
+    checkoutOpen: boolean;
+    priceMode: PriceMode;
+    exchangeDialogOpen: boolean;
+    sellerSelectOpen: boolean;
+    exchangeSearchQuery: string;
+    selectedExchangeSale: ExchangeSaleTicket | null;
+    exchangeQuantities: Record<string, string>;
+    appliedExchange: AppliedExchange | null;
+    selectedSellerId: string;
+    quickCreateOpen: boolean;
+    quickCreateName: string;
+    quickCreatePrice: string;
+    quickCreateWholesalePrice: string;
+    quickCreateInitialStock: string;
+};
+
+function createSaleDraft(label = "Venta 1"): SaleDraft {
+    const timestamp = new Date().toISOString();
+
+    return {
+        id: crypto.randomUUID(),
+        label,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        searchQuery: "",
+        cart: [],
+        checkoutOpen: false,
+        priceMode: "retail",
+        exchangeDialogOpen: false,
+        sellerSelectOpen: false,
+        exchangeSearchQuery: "",
+        selectedExchangeSale: null,
+        exchangeQuantities: {},
+        appliedExchange: null,
+        selectedSellerId: "",
+        quickCreateOpen: false,
+        quickCreateName: "",
+        quickCreatePrice: "",
+        quickCreateWholesalePrice: "",
+        quickCreateInitialStock: "1",
+    };
+}
+
+function applyStateAction<T>(current: T, action: SetStateAction<T>): T {
+    return typeof action === "function"
+        ? (action as (currentValue: T) => T)(current)
+        : action;
+}
+
+function isSaleDraftEmpty(draft: SaleDraft) {
+    return (
+        draft.cart.length === 0 &&
+        !draft.appliedExchange &&
+        !draft.searchQuery.trim() &&
+        !draft.selectedSellerId &&
+        draft.priceMode === "retail" &&
+        !draft.exchangeSearchQuery.trim() &&
+        !draft.selectedExchangeSale &&
+        Object.keys(draft.exchangeQuantities).length === 0 &&
+        !draft.quickCreateName.trim() &&
+        !draft.quickCreatePrice.trim() &&
+        !draft.quickCreateWholesalePrice.trim() &&
+        draft.quickCreateInitialStock === "1"
+    );
+}
+
 function isEditableTarget(target: EventTarget | null) {
     if (!(target instanceof HTMLElement)) return false;
 
@@ -177,35 +253,236 @@ export default function NuevaVentaPage() {
     const posMutations = useMemo(() => getPosRuntimeMutations(), []);
     const searchInputRef = useRef<HTMLInputElement>(null); // NUEVO
     const exchangeSearchInputRef = useRef<HTMLInputElement>(null);
+    const exchangeSalesRequestIdRef = useRef(0);
     const sellerSelectTriggerRef = useRef<HTMLButtonElement>(null);
-    const [exchangeDialogOpen, setExchangeDialogOpen] = useState(false);
-    const [sellerSelectOpen, setSellerSelectOpen] = useState(false);
+    const [draftTabs, setDraftTabs] = useState(() => {
+        const initialDraft = createSaleDraft();
+        return {
+            drafts: [initialDraft],
+            activeDraftId: initialDraft.id,
+        };
+    });
     const [printGiftCopy, setPrintGiftCopy] = useState(false);
     const [activePrintIsGift, setActivePrintIsGift] = useState(false);
     const [receiptData, setReceiptData] = useState<ReceiptPrintData | null>(null);
-    const [searchQuery, setSearchQuery] = useState("");
-    const [cart, setCart] = useState<CartItem[]>([]);
-    const [checkoutOpen, setCheckoutOpen] = useState(false);
-    const [priceMode, setPriceMode] = useState<PriceMode>("retail");
     const [allProducts, setAllProducts] = useState<POSProduct[]>([]);
     const [exchangeSales, setExchangeSales] = useState<ExchangeSaleTicket[]>([]);
     const [isLoadingExchangeSales, setIsLoadingExchangeSales] = useState(false);
-    const [exchangeSearchQuery, setExchangeSearchQuery] = useState("");
-    const [selectedExchangeSale, setSelectedExchangeSale] = useState<ExchangeSaleTicket | null>(null);
-    const [exchangeQuantities, setExchangeQuantities] = useState<Record<string, string>>({});
-    const [appliedExchange, setAppliedExchange] = useState<AppliedExchange | null>(null);
+    const [hasLoadedExchangeSalesOnce, setHasLoadedExchangeSalesOnce] = useState(false);
     const [isLoadingProducts, setIsLoadingProducts] = useState(true);
     const [hasLoadedCatalogOnce, setHasLoadedCatalogOnce] = useState(false);
     const [productsError, setProductsError] = useState<string | null>(null);
     const [sellers, setSellers] = useState<Seller[]>([]);
-    const [selectedSellerId, setSelectedSellerId] = useState("");
-    const [quickCreateOpen, setQuickCreateOpen] = useState(false);
-    const [quickCreateName, setQuickCreateName] = useState("");
-    const [quickCreatePrice, setQuickCreatePrice] = useState("");
-    const [quickCreateWholesalePrice, setQuickCreateWholesalePrice] = useState("");
-    const [quickCreateInitialStock, setQuickCreateInitialStock] = useState("1");
     const [isQuickCreating, setIsQuickCreating] = useState(false);
+    const [draftIdPendingClose, setDraftIdPendingClose] = useState<string | null>(null);
     const terminal = useTerminalSnapshot();
+    const activeDraft =
+        draftTabs.drafts.find((draft) => draft.id === draftTabs.activeDraftId) ??
+        draftTabs.drafts[0]!;
+    const updateDraftField = useCallback(
+        <Key extends keyof SaleDraft>(field: Key, action: SetStateAction<SaleDraft[Key]>) => {
+            setDraftTabs((currentTabs) => ({
+                ...currentTabs,
+                drafts: currentTabs.drafts.map((draft) =>
+                    draft.id === currentTabs.activeDraftId
+                        ? {
+                            ...draft,
+                            [field]: applyStateAction(draft[field], action),
+                            updatedAt: new Date().toISOString(),
+                        }
+                        : draft
+                ),
+            }));
+        },
+        []
+    );
+    const searchQuery = activeDraft.searchQuery;
+    const cart = activeDraft.cart;
+    const checkoutOpen = activeDraft.checkoutOpen;
+    const priceMode = activeDraft.priceMode;
+    const exchangeDialogOpen = activeDraft.exchangeDialogOpen;
+    const sellerSelectOpen = activeDraft.sellerSelectOpen;
+    const exchangeSearchQuery = activeDraft.exchangeSearchQuery;
+    const selectedExchangeSale = activeDraft.selectedExchangeSale;
+    const exchangeQuantities = activeDraft.exchangeQuantities;
+    const appliedExchange = activeDraft.appliedExchange;
+    const selectedSellerId = activeDraft.selectedSellerId;
+    const quickCreateOpen = activeDraft.quickCreateOpen;
+    const quickCreateName = activeDraft.quickCreateName;
+    const quickCreatePrice = activeDraft.quickCreatePrice;
+    const quickCreateWholesalePrice = activeDraft.quickCreateWholesalePrice;
+    const quickCreateInitialStock = activeDraft.quickCreateInitialStock;
+    const setSearchQuery = useCallback(
+        (action: SetStateAction<string>) => updateDraftField("searchQuery", action),
+        [updateDraftField]
+    );
+    const setCart = useCallback(
+        (action: SetStateAction<CartItem[]>) => updateDraftField("cart", action),
+        [updateDraftField]
+    );
+    const setCheckoutOpen = useCallback(
+        (action: SetStateAction<boolean>) => updateDraftField("checkoutOpen", action),
+        [updateDraftField]
+    );
+    const setPriceMode = useCallback(
+        (action: SetStateAction<PriceMode>) => updateDraftField("priceMode", action),
+        [updateDraftField]
+    );
+    const setExchangeDialogOpen = useCallback(
+        (action: SetStateAction<boolean>) => updateDraftField("exchangeDialogOpen", action),
+        [updateDraftField]
+    );
+    const setSellerSelectOpen = useCallback(
+        (action: SetStateAction<boolean>) => updateDraftField("sellerSelectOpen", action),
+        [updateDraftField]
+    );
+    const setExchangeSearchQuery = useCallback(
+        (action: SetStateAction<string>) => updateDraftField("exchangeSearchQuery", action),
+        [updateDraftField]
+    );
+    const setSelectedExchangeSale = useCallback(
+        (action: SetStateAction<ExchangeSaleTicket | null>) =>
+            updateDraftField("selectedExchangeSale", action),
+        [updateDraftField]
+    );
+    const setExchangeQuantities = useCallback(
+        (action: SetStateAction<Record<string, string>>) =>
+            updateDraftField("exchangeQuantities", action),
+        [updateDraftField]
+    );
+    const setAppliedExchange = useCallback(
+        (action: SetStateAction<AppliedExchange | null>) => updateDraftField("appliedExchange", action),
+        [updateDraftField]
+    );
+    const setSelectedSellerId = useCallback(
+        (action: SetStateAction<string>) => updateDraftField("selectedSellerId", action),
+        [updateDraftField]
+    );
+    const setQuickCreateOpen = useCallback(
+        (action: SetStateAction<boolean>) => updateDraftField("quickCreateOpen", action),
+        [updateDraftField]
+    );
+    const setQuickCreateName = useCallback(
+        (action: SetStateAction<string>) => updateDraftField("quickCreateName", action),
+        [updateDraftField]
+    );
+    const setQuickCreatePrice = useCallback(
+        (action: SetStateAction<string>) => updateDraftField("quickCreatePrice", action),
+        [updateDraftField]
+    );
+    const setQuickCreateWholesalePrice = useCallback(
+        (action: SetStateAction<string>) => updateDraftField("quickCreateWholesalePrice", action),
+        [updateDraftField]
+    );
+    const setQuickCreateInitialStock = useCallback(
+        (action: SetStateAction<string>) => updateDraftField("quickCreateInitialStock", action),
+        [updateDraftField]
+    );
+    const draftTabSummaries = useMemo(
+        () =>
+            draftTabs.drafts.map((draft) => {
+                const itemCount = draft.cart.reduce((sum, item) => sum + item.quantity, 0);
+                const total = draft.cart.reduce((sum, item) => {
+                    const unitPrice =
+                        draft.priceMode === "wholesale"
+                            ? item.product.wholesalePrice
+                            : item.product.price;
+
+                    return sum + unitPrice * item.quantity;
+                }, 0);
+
+                return {
+                    id: draft.id,
+                    label: draft.label,
+                    itemCount,
+                    total,
+                    hasExchange: Boolean(draft.appliedExchange),
+                    isEmpty: isSaleDraftEmpty(draft),
+                };
+            }),
+        [draftTabs.drafts]
+    );
+    const handleCreateDraftTab = useCallback(() => {
+        setDraftTabs((currentTabs) => {
+            if (currentTabs.drafts.length >= MAX_SALE_DRAFT_TABS) {
+                toast.error(`Podés tener hasta ${MAX_SALE_DRAFT_TABS} ventas abiertas`);
+                return currentTabs;
+            }
+
+            const nextDraft = createSaleDraft(`Venta ${currentTabs.drafts.length + 1}`);
+
+            return {
+                drafts: [...currentTabs.drafts, nextDraft],
+                activeDraftId: nextDraft.id,
+            };
+        });
+    }, []);
+    const handleSwitchDraftTab = useCallback((draftId: string) => {
+        setDraftTabs((currentTabs) => {
+            if (currentTabs.activeDraftId === draftId) {
+                return currentTabs;
+            }
+
+            return {
+                ...currentTabs,
+                activeDraftId: draftId,
+            };
+        });
+    }, []);
+    const closeDraftTab = useCallback((draftId: string) => {
+        setDraftTabs((currentTabs) => {
+            if (currentTabs.drafts.length === 1) {
+                const replacementDraft = createSaleDraft("Venta 1");
+                return {
+                    drafts: [replacementDraft],
+                    activeDraftId: replacementDraft.id,
+                };
+            }
+
+            const closingIndex = currentTabs.drafts.findIndex((draft) => draft.id === draftId);
+            const remainingDrafts = currentTabs.drafts
+                .filter((draft) => draft.id !== draftId)
+                .map((draft, index) => ({
+                    ...draft,
+                    label: `Venta ${index + 1}`,
+                }));
+            const nextActiveDraftId =
+                currentTabs.activeDraftId === draftId
+                    ? remainingDrafts[Math.min(closingIndex, remainingDrafts.length - 1)]!.id
+                    : currentTabs.activeDraftId;
+
+            return {
+                drafts: remainingDrafts,
+                activeDraftId: nextActiveDraftId,
+            };
+        });
+        setDraftIdPendingClose(null);
+    }, []);
+    const handleCloseDraftTab = useCallback((draftId: string) => {
+        const draftToClose = draftTabs.drafts.find((draft) => draft.id === draftId);
+        if (!draftToClose) {
+            return;
+        }
+
+        if (draftToClose.cart.length > 0) {
+            setDraftIdPendingClose(draftId);
+            return;
+        }
+
+        closeDraftTab(draftId);
+    }, [closeDraftTab, draftTabs.drafts]);
+    const draftPendingClose = draftTabs.drafts.find((draft) => draft.id === draftIdPendingClose);
+    const pendingCloseItemCount =
+        draftPendingClose?.cart.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
+    const pendingCloseTotal =
+        draftPendingClose?.cart.reduce((sum, item) => {
+            const unitPrice =
+                draftPendingClose.priceMode === "wholesale"
+                    ? item.product.wholesalePrice
+                    : item.product.price;
+
+            return sum + unitPrice * item.quantity;
+        }, 0) ?? 0;
     const startBrowserPrint = ({
         hasGiftCopy,
         initialGiftCopy = false,
@@ -319,7 +596,7 @@ export default function NuevaVentaPage() {
         return () => {
             cancelled = true;
         };
-    }, [hasLoadedCatalogOnce, posDataSource]);
+    }, [hasLoadedCatalogOnce, posDataSource, setSelectedSellerId]);
 
     useEffect(() => {
         let cleanup: (() => void) | undefined;
@@ -388,7 +665,7 @@ export default function NuevaVentaPage() {
         return () => {
             window.removeEventListener("keydown", handleGlobalScannerInput, true);
         };
-    }, [checkoutOpen, exchangeDialogOpen, sellerSelectOpen]);
+    }, [checkoutOpen, exchangeDialogOpen, sellerSelectOpen, setSearchQuery]);
 
     useEffect(() => {
         const handleKeyboardShortcuts = (event: KeyboardEvent) => {
@@ -453,6 +730,13 @@ export default function NuevaVentaPage() {
     }, [
         checkoutOpen,
         exchangeDialogOpen,
+        setCheckoutOpen,
+        setExchangeDialogOpen,
+        setExchangeQuantities,
+        setExchangeSearchQuery,
+        setPriceMode,
+        setSelectedExchangeSale,
+        setSellerSelectOpen,
         sellerSelectOpen,
     ]);
 
@@ -544,9 +828,33 @@ export default function NuevaVentaPage() {
             .map(({ product }) => product);
     }, [filteredProducts, searchQuery]);
 
+    const getReservedQuantityInOtherDrafts = (variantId: string) =>
+        draftTabs.drafts.reduce((sum, draft) => {
+            if (draft.id === activeDraft.id) {
+                return sum;
+            }
+
+            return (
+                sum +
+                draft.cart.reduce(
+                    (itemSum, item) =>
+                        item.product.id === variantId ? itemSum + item.quantity : itemSum,
+                    0
+                )
+            );
+        }, 0);
+
+    const getAvailableStockForActiveDraft = (product: POSProduct) => {
+        const currentProduct = allProducts.find((item) => item.id === product.id);
+        const localStock = currentProduct?.stock ?? product.stock;
+        return Math.max(0, localStock - getReservedQuantityInOtherDrafts(product.id));
+    };
+
     const addToCart = (product: POSProduct) => {
         setCart((prev) => {
-            if (product.stock <= 0) {
+            const availableStock = getAvailableStockForActiveDraft(product);
+
+            if (availableStock <= 0) {
                 toast.error("Producto sin stock", {
                     description: product.name,
                 });
@@ -555,9 +863,9 @@ export default function NuevaVentaPage() {
 
             const existing = prev.find((item) => item.product.id === product.id);
             if (existing) {
-                if (existing.quantity >= product.stock) {
+                if (existing.quantity >= availableStock) {
                     toast.error("Sin stock suficiente", {
-                        description: `Solo quedan ${product.stock} unidades de ${product.name}`,
+                        description: `Solo quedan ${availableStock} unidades disponibles de ${product.name}`,
                     });
                     return prev;
                 }
@@ -583,8 +891,9 @@ export default function NuevaVentaPage() {
                 .map((item) => {
                     if (item.product.id !== productId) return item;
                     const newQty = item.quantity + delta;
+                    const availableStock = getAvailableStockForActiveDraft(item.product);
 
-                    if (newQty > item.product.stock) {
+                    if (newQty > availableStock) {
                         toast.error("Sin stock suficiente");
                         return item;
                     }
@@ -761,17 +1070,39 @@ export default function NuevaVentaPage() {
     };
 
     const loadExchangeSales = useCallback(async () => {
-        setIsLoadingExchangeSales(true);
+        const requestId = exchangeSalesRequestIdRef.current + 1;
+        exchangeSalesRequestIdRef.current = requestId;
+        const shouldShowLoading = !hasLoadedExchangeSalesOnce;
+
+        if (shouldShowLoading) {
+            setIsLoadingExchangeSales(true);
+        }
+
         try {
-            const sales = await posDataSource.getSalesHistory();
+            const sales = await posDataSource.getSalesHistory({
+                query: exchangeSearchQuery,
+                limit: 5,
+            });
+
+            if (exchangeSalesRequestIdRef.current !== requestId) {
+                return;
+            }
+
             setExchangeSales(sales);
+            setHasLoadedExchangeSalesOnce(true);
         } catch (error) {
+            if (exchangeSalesRequestIdRef.current !== requestId) {
+                return;
+            }
+
             toast.error("No se pudieron cargar las boletas");
             console.error(error);
         } finally {
-            setIsLoadingExchangeSales(false);
+            if (exchangeSalesRequestIdRef.current === requestId && shouldShowLoading) {
+                setIsLoadingExchangeSales(false);
+            }
         }
-    }, [posDataSource]);
+    }, [exchangeSearchQuery, hasLoadedExchangeSalesOnce, posDataSource]);
 
     const refreshCatalogData = useCallback(async () => {
         await loadCatalog({ background: true, reason: "data-sync-catalog" });
@@ -979,6 +1310,70 @@ export default function NuevaVentaPage() {
                             </div>
                         </div>
                     </div> */}
+
+                    <div className="rounded-[1.35rem] border border-border/70 bg-card/80 p-2 shadow-[0_16px_40px_-34px_rgba(0,0,0,0.45)] dark:border-white/10 dark:bg-slate-950/35">
+                        <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto">
+                            {draftTabSummaries.map((draft) => {
+                                const isActive = draft.id === activeDraft.id;
+
+                                return (
+                                    <div
+                                        key={draft.id}
+                                        className={cn(
+                                            "group flex min-w-[155px] items-center gap-2 rounded-2xl border px-3 py-2 transition-colors",
+                                            isActive
+                                                ? "border-emerald-500/70 bg-emerald-50 text-emerald-950 shadow-[0_14px_28px_-24px_rgba(5,150,105,0.55)] dark:border-emerald-400/45 dark:bg-emerald-950/45 dark:text-emerald-50"
+                                                : "border-transparent bg-muted/60 text-muted-foreground hover:bg-muted dark:bg-slate-900/70 dark:hover:bg-slate-800"
+                                        )}
+                                    >
+                                        <button
+                                            type="button"
+                                            className="min-w-0 flex-1 text-left"
+                                            onClick={() => handleSwitchDraftTab(draft.id)}
+                                        >
+                                            <span className="block truncate text-sm font-semibold">
+                                                {draft.label}
+                                            </span>
+                                            <span className="mt-0.5 block truncate text-xs">
+                                                {draft.itemCount} art. · {formatCurrency(draft.total)}
+                                                {draft.hasExchange ? " · cambio" : ""}
+                                            </span>
+                                        </button>
+                                        {draftTabs.drafts.length > 1 && (
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon-sm"
+                                                className={cn(
+                                                    "shrink-0 rounded-xl opacity-70 hover:opacity-100",
+                                                    isActive
+                                                        ? "text-emerald-900 hover:bg-emerald-100 dark:text-emerald-50 dark:hover:bg-emerald-900/70"
+                                                        : "text-muted-foreground hover:text-destructive"
+                                                )}
+                                                onClick={() => handleCloseDraftTab(draft.id)}
+                                                title={`Cerrar ${draft.label}`}
+                                            >
+                                                <X className="size-3.5" />
+                                            </Button>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                            {draftTabs.drafts.length < MAX_SALE_DRAFT_TABS && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-[58px] w-12 shrink-0 rounded-2xl border-border/70 bg-background/85"
+                                    onClick={handleCreateDraftTab}
+                                    title="Nueva venta"
+                                    aria-label="Nueva venta"
+                                >
+                                    <Plus className="size-4" />
+                                </Button>
+                            )}
+                        </div>
+                    </div>
 
                     <div className="items-start gap-5 min-[1400px]:grid min-[1400px]:grid-cols-[minmax(0,1fr)_380px]">
                         <div className="min-w-0">
@@ -1477,6 +1872,63 @@ export default function NuevaVentaPage() {
                         >
                             {isQuickCreating && <Loader2 className="mr-2 size-4 animate-spin" />}
                             Crear producto
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog
+                open={Boolean(draftIdPendingClose)}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setDraftIdPendingClose(null);
+                    }
+                }}
+            >
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Cerrar {draftPendingClose?.label ?? "venta"}</DialogTitle>
+                        <DialogDescription>
+                            Este borrador tiene datos cargados. Si cerrás la pestaña, se perderá
+                            esta venta en preparación.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="rounded-[1.25rem] border border-border/70 bg-muted/45 p-4">
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">Artículos</span>
+                            <span className="font-semibold">{pendingCloseItemCount}</span>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">Total parcial</span>
+                            <span className="font-semibold">{formatCurrency(pendingCloseTotal)}</span>
+                        </div>
+                        {draftPendingClose?.appliedExchange && (
+                            <div className="mt-2 flex items-center justify-between text-sm">
+                                <span className="text-muted-foreground">Cambio aplicado</span>
+                                <span className="font-semibold text-rose-600">Sí</span>
+                            </div>
+                        )}
+                    </div>
+
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setDraftIdPendingClose(null)}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="destructive"
+                            onClick={() => {
+                                if (draftIdPendingClose) {
+                                    closeDraftTab(draftIdPendingClose);
+                                }
+                            }}
+                        >
+                            Cerrar borrador
                         </Button>
                     </DialogFooter>
                 </DialogContent>

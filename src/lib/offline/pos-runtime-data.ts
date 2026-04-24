@@ -1,9 +1,10 @@
 "use client";
 
 import { getProductsForPOS, getSellers } from "@/app/actions/pos/pos-actions";
-import { getSalesHistory } from "@/app/actions/sales/sales-actions";
+import { findSalesForExchange, getSalesHistory } from "@/app/actions/sales/sales-actions";
 import { isOfflineModeEnabled } from "@/lib/offline-config";
 import { withOfflineReadFallback } from "@/lib/offline/runtime-fallback";
+import { barcodeFromTicketNumber } from "@/lib/printing/barcodes";
 import { db, initPowerSync } from "@/lib/powersync/db";
 
 export type PosCatalogProduct = {
@@ -54,7 +55,7 @@ export interface PosRuntimeDataSource {
     mode: PosRuntimeMode;
     getProducts(): Promise<PosCatalogProduct[]>;
     getSellers(): Promise<PosSeller[]>;
-    getSalesHistory(): Promise<PosSaleHistoryItem[]>;
+    getSalesHistory(options?: { query?: string; limit?: number }): Promise<PosSaleHistoryItem[]>;
 }
 
 type ProductRow = {
@@ -109,8 +110,10 @@ const serverDataSource: PosRuntimeDataSource = {
     async getSellers() {
         return (await getSellers()) as PosSeller[];
     },
-    async getSalesHistory() {
-        const sales = (await getSalesHistory()) as Array<
+    async getSalesHistory(options) {
+        const sales = (await (options?.query || options?.limit
+            ? findSalesForExchange(options)
+            : getSalesHistory())) as Array<
             Omit<PosSaleHistoryItem, "items"> & { items?: PosSaleHistoryItem["items"] }
         >;
 
@@ -234,6 +237,44 @@ function mapPowerSyncSales(sales: SaleRow[], items: SaleItemRow[]): PosSaleHisto
     }));
 }
 
+function normalizeTicketSearchValue(value: string) {
+    return value.trim().toUpperCase();
+}
+
+function ticketMatchesQuery(ticketNumber: string, query: string) {
+    const normalizedQuery = normalizeTicketSearchValue(query);
+    if (!normalizedQuery) {
+        return true;
+    }
+
+    const ticketValue = normalizeTicketSearchValue(ticketNumber);
+    const queryDigits = normalizedQuery.replace(/\D/g, "");
+    const ticketDigits = ticketValue.replace(/\D/g, "");
+    const ticketBarcode = barcodeFromTicketNumber(ticketNumber);
+
+    return (
+        ticketValue.includes(normalizedQuery) ||
+        (queryDigits.length > 0 && ticketDigits.includes(queryDigits)) ||
+        ticketBarcode.includes(queryDigits)
+    );
+}
+
+function filterSalesHistoryByQuery(
+    sales: PosSaleHistoryItem[],
+    options?: { query?: string; limit?: number }
+) {
+    const safeLimit = Math.max(1, Math.min(50, Math.trunc(options?.limit ?? 20)));
+    const normalizedQuery = options?.query?.trim() ?? "";
+
+    if (!normalizedQuery) {
+        return sales.slice(0, safeLimit);
+    }
+
+    return sales
+        .filter((sale) => ticketMatchesQuery(sale.ticketNumber, normalizedQuery))
+        .slice(0, safeLimit);
+}
+
 async function queryPowerSyncRows<T extends object>(sql: string, parameters: unknown[] = []): Promise<T[]> {
     const rows = await db.getAll(sql, parameters);
     return rows as T[];
@@ -319,7 +360,7 @@ const powerSyncDataSource: PosRuntimeDataSource = {
             () => serverDataSource.getSellers()
         );
     },
-    async getSalesHistory() {
+    async getSalesHistory(options) {
         return withPowerSyncFallback(
             "sales-history",
             async () => {
@@ -366,9 +407,9 @@ const powerSyncDataSource: PosRuntimeDataSource = {
                     ),
                 ]);
 
-                return mapPowerSyncSales(salesRows, itemRows);
+                return filterSalesHistoryByQuery(mapPowerSyncSales(salesRows, itemRows), options);
             },
-            () => serverDataSource.getSalesHistory()
+            () => serverDataSource.getSalesHistory(options)
         );
     },
 };

@@ -576,12 +576,15 @@ export async function findSalesForExchange({
 
     if (normalizedQuery) {
         const normalizedUpperQuery = normalizedQuery.toUpperCase();
+        const normalizedDigitsQuery = normalizedQuery.replace(/\D/g, "");
 
         return mappedSales.filter((sale) => {
             const ticketValue = sale.ticketNumber.toUpperCase();
+            const ticketDigits = ticketValue.replace(/\D/g, "");
             return (
                 ticketValue.includes(normalizedUpperQuery) ||
-                barcodeFromTicketNumber(sale.ticketNumber).includes(normalizedQuery)
+                (normalizedDigitsQuery.length > 0 && ticketDigits.includes(normalizedDigitsQuery)) ||
+                barcodeFromTicketNumber(sale.ticketNumber).includes(normalizedDigitsQuery)
             );
         }).slice(0, safeLimit);
     }

@@ -24,6 +24,7 @@ export function barcodeFromSku(sku: string): string {
 }
 
 export function barcodeFromTicketNumber(ticketNumber: string | number): string {
-    const body = String(ticketNumber).padStart(EAN13_BODY_LENGTH, "0").slice(-EAN13_BODY_LENGTH);
+    const digits = String(ticketNumber).replace(/\D/g, "");
+    const body = digits.padStart(EAN13_BODY_LENGTH, "0").slice(-EAN13_BODY_LENGTH);
     return `${body}${computeEan13CheckDigit(body)}`;
 }

@@ -1,19 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getProductsForPOS, getSellers } from "@/app/actions/pos-actions";
-import { createQuickProductWithStock } from "@/app/actions/inventory-actions";
+import { getProductsForPOS, getSellers } from "@/app/actions/pos/pos-actions";
+import { createQuickProductWithStock } from "@/app/actions/inventory/inventory-actions";
 import {
     createExchangeSale,
     createSale,
     findSalesForExchange,
-} from "@/app/actions/sales-actions";
-import { TicketReceipt } from "@/components/ticket-receipt";
+} from "@/app/actions/sales/sales-actions";
+import { TicketReceipt } from "@/components/printing/ticket-receipt";
 import {
     CheckoutDialog,
     type PaymentBreakdown,
     type PaymentMethod,
-} from "@/components/checkout-dialog";
+} from "@/components/sales/checkout-dialog";
 import {
     Search,
     Plus,
@@ -48,12 +48,12 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
-import { barcodeFromSku, barcodeFromTicketNumber } from "@/lib/barcodes";
-import type { ReceiptPrintData } from "@/lib/receipt-printing";
-import { printSaleReceipt } from "@/lib/printing";
-import { CACHE_TAGS } from "@/lib/cache-tags";
-import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
+import { cn } from "@/lib/core/utils";
+import { barcodeFromSku } from "@/lib/printing/barcodes";
+import type { ReceiptPrintData } from "@/lib/printing/receipt-printing";
+import { printSaleReceipt } from "@/lib/printing/printing";
+import { CACHE_TAGS } from "@/lib/core/cache-tags";
+import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
 
 export interface POSProduct {
     id: string;
@@ -178,7 +178,9 @@ function reconcileProductStocks(
 export default function NuevaVentaPage() {
     const searchInputRef = useRef<HTMLInputElement>(null); // NUEVO
     const exchangeSearchInputRef = useRef<HTMLInputElement>(null);
+    const sellerSelectTriggerRef = useRef<HTMLButtonElement>(null);
     const [exchangeDialogOpen, setExchangeDialogOpen] = useState(false);
+    const [sellerSelectOpen, setSellerSelectOpen] = useState(false);
     const [printGiftCopy, setPrintGiftCopy] = useState(false);
     const [activePrintIsGift, setActivePrintIsGift] = useState(false);
     const [receiptData, setReceiptData] = useState<ReceiptPrintData | null>(null);
@@ -411,12 +413,16 @@ export default function NuevaVentaPage() {
     useEffect(() => {
         const handleGlobalScannerInput = (event: KeyboardEvent) => {
             if (event.ctrlKey || event.metaKey || event.altKey) return;
-            if (checkoutOpen || exchangeDialogOpen) return;
+            if (checkoutOpen || exchangeDialogOpen || sellerSelectOpen) return;
 
             const searchInput = searchInputRef.current;
             if (!searchInput) return;
             if (document.activeElement === searchInput) return;
             if (isEditableTarget(event.target)) return;
+
+            if (["j", "k", "l", "Enter", "Escape"].includes(event.key)) {
+                return;
+            }
 
             if (event.key === "Enter") {
                 searchInput.focus();
@@ -434,7 +440,73 @@ export default function NuevaVentaPage() {
         return () => {
             window.removeEventListener("keydown", handleGlobalScannerInput, true);
         };
-    }, [checkoutOpen, exchangeDialogOpen]);
+    }, [checkoutOpen, exchangeDialogOpen, sellerSelectOpen]);
+
+    useEffect(() => {
+        const handleKeyboardShortcuts = (event: KeyboardEvent) => {
+            if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+            if (event.key === "Escape") {
+                if (checkoutOpen) {
+                    event.preventDefault();
+                    setCheckoutOpen(false);
+                    return;
+                }
+
+                if (exchangeDialogOpen) {
+                    event.preventDefault();
+                    setExchangeDialogOpen(false);
+                    return;
+                }
+
+                if (sellerSelectOpen) {
+                    event.preventDefault();
+                    setSellerSelectOpen(false);
+                }
+
+                return;
+            }
+
+            if (checkoutOpen || exchangeDialogOpen || sellerSelectOpen) return;
+            if (isEditableTarget(event.target)) return;
+
+            if (event.key === "j") {
+                event.preventDefault();
+                setExchangeSearchQuery("");
+                setSelectedExchangeSale(null);
+                setExchangeQuantities({});
+                setExchangeDialogOpen(true);
+                return;
+            }
+
+            if (event.key === "k") {
+                event.preventDefault();
+                setPriceMode((currentMode) =>
+                    currentMode === "retail" ? "wholesale" : "retail"
+                );
+                return;
+            }
+
+            if (event.key === "l") {
+                event.preventDefault();
+                setSellerSelectOpen(true);
+                setTimeout(() => {
+                    sellerSelectTriggerRef.current?.focus();
+                }, 0);
+                return;
+            }
+
+        };
+
+        window.addEventListener("keydown", handleKeyboardShortcuts, true);
+        return () => {
+            window.removeEventListener("keydown", handleKeyboardShortcuts, true);
+        };
+    }, [
+        checkoutOpen,
+        exchangeDialogOpen,
+        sellerSelectOpen,
+    ]);
 
     useEffect(() => {
         if (!exchangeDialogOpen) return;
@@ -705,6 +777,7 @@ export default function NuevaVentaPage() {
         );
         clearCart();
         setAppliedExchange(null);
+        setSelectedSellerId("");
         setReceiptData(nextReceiptData);
         console.log("[nueva-venta] notifyDataUpdated after sale");
         notifyDataUpdated([
@@ -1207,9 +1280,14 @@ export default function NuevaVentaPage() {
                                             </Label>
                                             <Select
                                                 value={selectedSellerId}
+                                                open={sellerSelectOpen}
+                                                onOpenChange={setSellerSelectOpen}
                                                 onValueChange={setSelectedSellerId}
                                             >
-                                                <SelectTrigger className="h-11 rounded-2xl bg-background/85">
+                                                <SelectTrigger
+                                                    ref={sellerSelectTriggerRef}
+                                                    className="h-11 rounded-2xl bg-background/85"
+                                                >
                                                     <SelectValue placeholder="Seleccionar vendedor" />
                                                 </SelectTrigger>
                                                 <SelectContent>

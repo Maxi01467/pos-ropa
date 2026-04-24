@@ -1,17 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { SessionRole } from "@/lib/permissions";
+import type { SessionRole } from "@/lib/core/permissions";
 import {
     createEmployee,
     deleteEmployee,
     getEmployees,
     setEmployeeStatus,
     updateEmployee,
-} from "@/app/actions/employee-actions";
-import { useSessionSnapshot } from "@/lib/session-client";
-import { CACHE_TAGS } from "@/lib/cache-tags";
-import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
+} from "@/app/actions/employees/employee-actions";
+import { useSessionSnapshot } from "@/lib/session/session-client";
+import { CACHE_TAGS } from "@/lib/core/cache-tags";
+import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
 import {
     Users,
     UserPlus,

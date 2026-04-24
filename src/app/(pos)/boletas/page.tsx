@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getCashSessionsHistory } from "@/app/actions/cash-actions";
+import { getCashSessionsHistory } from "@/app/actions/cash/cash-actions";
 import {
     ReceiptText,
     Wallet,
@@ -33,7 +33,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/core/utils";
 
 type CashSessionHistory = {
     id: string;

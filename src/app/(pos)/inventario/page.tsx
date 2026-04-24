@@ -8,7 +8,7 @@ import {
     updateProduct, 
     deleteProduct,
     markProductReviewed,
-} from "@/app/actions/inventory-actions";
+} from "@/app/actions/inventory/inventory-actions";
 import {
     AlertCircle,
     CheckCheck,
@@ -37,8 +37,8 @@ import {
     DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { CACHE_TAGS } from "@/lib/cache-tags";
-import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
+import { CACHE_TAGS } from "@/lib/core/cache-tags";
+import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
 
 // Interfaz adaptada a lo que devuelve nuestra BD
 export interface DBProduct {

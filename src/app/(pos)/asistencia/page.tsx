@@ -7,7 +7,7 @@ import {
     checkOutUser,
     getAttendanceDashboard,
     getAttendanceEmployees,
-} from "@/app/actions/attendance-actions";
+} from "@/app/actions/attendance/attendance-actions";
 import {
     CalendarClock,
     Clock3,
@@ -43,8 +43,8 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { CACHE_TAGS } from "@/lib/cache-tags";
-import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
+import { CACHE_TAGS } from "@/lib/core/cache-tags";
+import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
 type AttendanceEmployee = {
     id: string;
     name: string;

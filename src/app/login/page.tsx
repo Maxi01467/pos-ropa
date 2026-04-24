@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { authenticateUser } from "@/app/actions/auth-actions";
+import { authenticateUser } from "@/app/actions/auth/auth-actions";
 
 export default function LoginPage() {
     const [username, setUsername] = useState("");

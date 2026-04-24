@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { PwaIcon } from "@/lib/pwa-icon";
+import { PwaIcon } from "@/lib/pwa/pwa-icon";
 
 export const runtime = "edge";
 

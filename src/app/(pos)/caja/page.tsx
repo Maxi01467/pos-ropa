@@ -7,8 +7,8 @@ import {
     closeCashSession,
     closeCashSessionWithoutCount,
     addCashMovement,
-} from "@/app/actions/cash-actions";
-import { getSellers } from "@/app/actions/pos-actions";
+} from "@/app/actions/cash/cash-actions";
+import { getSellers } from "@/app/actions/pos/pos-actions";
 import {
     Wallet,
     ArrowUpCircle,
@@ -38,13 +38,13 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/core/utils";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { useSessionSnapshot } from "@/lib/session-client";
-import { notifyCashSessionUpdated } from "@/lib/cash-session-client";
-import { CACHE_TAGS } from "@/lib/cache-tags";
-import { notifyDataUpdated } from "@/lib/data-sync-client";
+import { useSessionSnapshot } from "@/lib/session/session-client";
+import { notifyCashSessionUpdated } from "@/lib/session/cash-session-client";
+import { CACHE_TAGS } from "@/lib/core/cache-tags";
+import { notifyDataUpdated } from "@/lib/sync/data-sync-client";
 
 type Seller = { id: string; name: string; role: string };
 

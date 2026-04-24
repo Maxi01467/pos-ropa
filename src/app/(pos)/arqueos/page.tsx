@@ -5,8 +5,8 @@ import {
     getPendingCountSessions,
     getClosedSessions,
     submitArqueo,
-} from "@/app/actions/cash-actions";
-import { getSellers } from "@/app/actions/pos-actions";
+} from "@/app/actions/cash/cash-actions";
+import { getSellers } from "@/app/actions/pos/pos-actions";
 import {
     ClipboardList,
     Loader2,
@@ -34,11 +34,11 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/core/utils";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { CACHE_TAGS } from "@/lib/cache-tags";
-import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
+import { CACHE_TAGS } from "@/lib/core/cache-tags";
+import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
 
 type Seller = { id: string; name: string; role: string };
 

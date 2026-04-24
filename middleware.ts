@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { AUTH_COOKIE_NAME, verifySessionToken } from "@/lib/auth-core";
-import { canAccessPath } from "@/lib/permissions";
+import { AUTH_COOKIE_NAME, verifySessionToken } from "@/lib/auth/auth-core";
+import { canAccessPath } from "@/lib/core/permissions";
 
 const PUBLIC_PATHS = new Set(["/login", "/offline"]);
 

@@ -1,7 +1,7 @@
 /**
  * Script de migración: Sistema viejo → POS nuevo
  *
- * Lee prisma/productos.json y prisma/codigobarras.json y crea en la BD:
+ * Lee data-migration/productos.json y data-migration/codigobarras.json y crea en la BD:
  *   - Product (nombre, precios)
  *   - ProductVariant (SKU generado, stock = cantidad de códigos activos)
  *   - StockMovement (ingreso inicial)
@@ -13,7 +13,6 @@
 import { PrismaClient } from "@prisma/client";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { barcodeFromSku } from "../src/lib/barcodes";
 
 const prisma = new PrismaClient();
 
@@ -36,7 +35,7 @@ interface CodigoBarraViejo {
 // ─── Carga de datos ──────────────────────────────────────────────────────────
 
 function loadJson<T>(filename: string): T {
-    const path = join(__dirname, filename);
+    const path = join(__dirname, "..", "data-migration", filename);
     const raw = readFileSync(path, "utf-8");
     return (JSON.parse(raw) as { rows: T }).rows;
 }

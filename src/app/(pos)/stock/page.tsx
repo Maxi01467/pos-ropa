@@ -6,7 +6,7 @@ import {
     registerStockEntries,
     reduceStockEntries,
     adjustStockEntries,
-} from "@/app/actions/stock-actions";
+} from "@/app/actions/stock/stock-actions";
 import {
     Barcode,
     CalendarDays,
@@ -25,7 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { BarcodeLabels } from "@/components/barcode-labels";
+import { BarcodeLabels } from "@/components/printing/barcode-labels";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -53,9 +53,9 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { CACHE_TAGS } from "@/lib/cache-tags";
-import { notifyDataUpdated } from "@/lib/data-sync-client";
-import { cn } from "@/lib/utils";
+import { CACHE_TAGS } from "@/lib/core/cache-tags";
+import { notifyDataUpdated } from "@/lib/sync/data-sync-client";
+import { cn } from "@/lib/core/utils";
 
 // Reemplazamos mockSizes por un array constante aquí
 const commonSizes = ["XS", "S", "M", "L", "XL", "XXL", "38", "40", "42", "44", "46", "48"];

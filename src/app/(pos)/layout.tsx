@@ -1,34 +1,17 @@
 import { redirect } from "next/navigation";
-import { RouteGuard } from "@/components/route-guard";
-import { POSLayoutClient } from "@/components/pos-layout-client";
-import { getServerSession } from "@/lib/auth";
+import { RouteGuard } from "@/components/layout/route-guard";
+import { POSLayoutClient } from "@/components/layout/pos-layout-client";
+import { getServerSession } from "@/lib/auth/auth";
 
 export default async function POSLayout({
     children,
 }: {
     children: React.ReactNode;
 }) {
+    let session;
+
     try {
-        const session = await getServerSession();
-
-        if (!session) {
-            redirect("/login");
-        }
-
-        if (session.role === "STAFF" && session.clientType !== "desktop") {
-            redirect("/login");
-        }
-
-        return (
-            <>
-                <div className="pos-shell-background fixed inset-0 -z-10" />
-                <POSLayoutClient role={session.role} userName={session.userName}>
-                    <RouteGuard>
-                        {children}
-                    </RouteGuard>
-                </POSLayoutClient>
-            </>
-        );
+        session = await getServerSession();
     } catch (error) {
         if (
             error &&
@@ -63,4 +46,23 @@ export default async function POSLayout({
 
         throw error;
     }
+
+    if (!session) {
+        redirect("/login");
+    }
+
+    if (session.role === "STAFF" && session.clientType !== "desktop") {
+        redirect("/login");
+    }
+
+    return (
+        <>
+            <div className="pos-shell-background fixed inset-0 -z-10" />
+            <POSLayoutClient role={session.role} userName={session.userName}>
+                <RouteGuard>
+                    {children}
+                </RouteGuard>
+            </POSLayoutClient>
+        </>
+    );
 }

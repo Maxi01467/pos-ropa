@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getSalesHistory } from "@/app/actions/sales-actions";
-import { getInventoryData } from "@/app/actions/inventory-actions";
+import { getSalesHistory } from "@/app/actions/sales/sales-actions";
+import { getInventoryData } from "@/app/actions/inventory/inventory-actions";
 import {
     ArrowDownLeft,
     ArrowUpRight,
@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/core/utils";
 
 type SaleHistoryItem = {
     id: string;

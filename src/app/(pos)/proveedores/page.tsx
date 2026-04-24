@@ -7,7 +7,7 @@ import {
     createSupplier, 
     updateSupplier, 
     deleteSupplier 
-} from "@/app/actions/supplier-actions";
+} from "@/app/actions/suppliers/supplier-actions";
 import {
     Plus,
     Truck,
@@ -33,8 +33,8 @@ import {
     DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { CACHE_TAGS } from "@/lib/cache-tags";
-import { notifyDataUpdated, useDataRefresh } from "@/lib/data-sync-client";
+import { CACHE_TAGS } from "@/lib/core/cache-tags";
+import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
 
 // Interfaz adaptada a la Base de Datos
 export interface DBSupplier {

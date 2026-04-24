@@ -28,5 +28,6 @@ export function canAccessPath(
     }
 
     if (role === "ADMIN") return true;
+
     return STAFF_ALLOWED_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }

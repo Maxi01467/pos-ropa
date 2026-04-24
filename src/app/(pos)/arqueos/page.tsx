@@ -29,8 +29,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { cn } from "@/lib/core/utils";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
+import { formatArgentinaDateTime, formatArgentinaTime } from "@/lib/core/datetime";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
 import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
 import {
@@ -54,6 +53,28 @@ function calcCashTotals(session: CashSession) {
     const manualIn = session.movements.filter((m) => m.type === "INGRESO").reduce((s, m) => s + m.amount, 0);
     const manualOut = session.movements.filter((m) => m.type === "EGRESO").reduce((s, m) => s + m.amount, 0);
     return { cashFromSales, manualIn, manualOut };
+}
+
+function formatArgentinaLongDate(date: string) {
+    return formatArgentinaDateTime(date, {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: undefined,
+        hour: undefined,
+        minute: undefined,
+    });
+}
+
+function formatArgentinaWeekdayDate(date: string) {
+    return formatArgentinaDateTime(date, {
+        weekday: "long",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: undefined,
+        minute: undefined,
+    });
 }
 
 export default function ArqueosPage() {
@@ -223,13 +244,13 @@ export default function ArqueosPage() {
                                         <div className="flex items-start justify-between">
                                             <div>
                                                 <CardTitle className="text-base">
-                                                    {format(new Date(s.openingDate), "EEEE d 'de' MMMM", { locale: es })}
+                                                    {formatArgentinaLongDate(s.openingDate)}
                                                 </CardTitle>
                                                 <CardDescription className="mt-1 flex items-center gap-1 text-xs">
                                                     <Clock className="size-3" />
-                                                    {format(new Date(s.openingDate), "HH:mm")} →{" "}
+                                                    {formatArgentinaTime(s.openingDate)} →{" "}
                                                     {s.closingDate
-                                                        ? format(new Date(s.closingDate), "HH:mm")
+                                                        ? formatArgentinaTime(s.closingDate)
                                                         : "?"}
                                                 </CardDescription>
                                             </div>
@@ -310,13 +331,13 @@ export default function ArqueosPage() {
                                             </div>
                                             <div>
                                                 <p className="font-semibold text-sm">
-                                                    {format(new Date(s.openingDate), "EEEE d/MM/yyyy", { locale: es })}
+                                                    {formatArgentinaWeekdayDate(s.openingDate)}
                                                 </p>
                                                 <p className="text-xs text-muted-foreground flex items-center gap-1">
                                                     <CalendarDays className="size-3" />
                                                     Arqueo:{" "}
                                                     {s.countingDate
-                                                        ? format(new Date(s.countingDate), "dd/MM HH:mm")
+                                                        ? formatArgentinaDateTime(s.countingDate, { year: undefined })
                                                         : "—"}
                                                     {s.countedBy && ` · por ${s.countedBy.name}`}
                                                 </p>
@@ -390,11 +411,7 @@ export default function ArqueosPage() {
                             {arqueoDialogSession && (
                                 <>
                                     Caja del{" "}
-                                    {format(
-                                        new Date(arqueoDialogSession.openingDate),
-                                        "EEEE d 'de' MMMM",
-                                        { locale: es }
-                                    )}
+                                    {formatArgentinaLongDate(arqueoDialogSession.openingDate)}
                                     . Contá los billetes de la bolsita y escribí el total.
                                 </>
                             )}

@@ -5,7 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { AppHeader } from "@/components/layout/app-header";
 import { Sidebar } from "@/components/layout/sidebar";
 import { canAccessPath, type SessionRole } from "@/lib/core/permissions";
-import { useSessionSnapshot } from "@/lib/session/session-client";
+import { setLocalSession, useSessionSnapshot } from "@/lib/session/session-client";
+import type { AuthSession } from "@/lib/auth/auth-core";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,8 +28,10 @@ import { toast } from "sonner";
 
 export function POSLayoutClient({
     children,
+    initialSession,
 }: {
     children: React.ReactNode;
+    initialSession: AuthSession | null;
 }) {
     const router = useRouter();
     const pathname = usePathname();
@@ -40,6 +43,15 @@ export function POSLayoutClient({
     const [terminalName, setTerminalName] = useState("Caja principal");
     const [isSavingTerminal, setIsSavingTerminal] = useState(false);
     const [isSyncingTerminal, setIsSyncingTerminal] = useState(false);
+    const effectiveSession = session.hasSession
+        ? session
+        : {
+            hasSession: Boolean(initialSession),
+            role: initialSession?.role ?? null,
+            userId: initialSession?.userId ?? null,
+            userName: initialSession?.userName ?? null,
+        };
+    const isDesktopClient = terminal.isDesktop || initialSession?.clientType === "desktop";
 
     useEffect(() => {
         void refreshOfflineBootstrapState().catch((error) => {
@@ -109,26 +121,43 @@ export function POSLayoutClient({
     }, [bootstrap.isOnline, terminal]);
 
     useEffect(() => {
+        if (session.hasSession || !initialSession) {
+            return;
+        }
+
+        setLocalSession({
+            userId: initialSession.userId,
+            userName: initialSession.userName,
+            role: initialSession.role,
+        });
+    }, [initialSession, session.hasSession]);
+
+    useEffect(() => {
         if (bootstrap.isOnline === false && bootstrap.state === "requires_initial_sync") {
             return;
         }
 
-        if (!session.hasSession || !session.role) {
-            router.replace("/login");
+        if (!effectiveSession.hasSession || !effectiveSession.role) {
+            if (pathname !== "/login") {
+                router.replace("/login");
+            }
             return;
         }
 
-        if (!canAccessPath(session.role, pathname, { isDesktop: terminal.isDesktop })) {
-            router.replace(session.role === "ADMIN" ? "/" : "/nueva-venta");
+        if (!canAccessPath(effectiveSession.role, pathname, { isDesktop: isDesktopClient })) {
+            const destination = effectiveSession.role === "ADMIN" ? "/" : "/nueva-venta";
+            if (pathname !== destination) {
+                router.replace(destination);
+            }
         }
     }, [
         bootstrap.isOnline,
         bootstrap.state,
+        effectiveSession.hasSession,
+        effectiveSession.role,
         pathname,
         router,
-        session.hasSession,
-        session.role,
-        terminal.isDesktop,
+        isDesktopClient,
     ]);
 
     if (bootstrap.isOnline === false && bootstrap.state === "requires_initial_sync") {
@@ -150,7 +179,7 @@ export function POSLayoutClient({
         );
     }
 
-    if (!session.hasSession || !session.role || !session.userName) {
+    if (!effectiveSession.hasSession || !effectiveSession.role || !effectiveSession.userName) {
         return (
             <div className="flex min-h-screen items-center justify-center">
                 <Loader2 className="size-10 animate-spin text-emerald-700" />
@@ -270,14 +299,15 @@ export function POSLayoutClient({
         );
     }
 
-    const role: SessionRole = session.role;
-    const userName = session.userName;
+    const role: SessionRole = effectiveSession.role;
+    const userName = effectiveSession.userName;
 
     return (
         <div className="flex min-h-screen bg-transparent">
             <Sidebar
                 role={role}
                 userName={userName}
+                isDesktopClient={isDesktopClient}
                 collapsed={collapsed}
                 onToggleCollapse={() => setCollapsed((c) => !c)}
             />

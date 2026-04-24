@@ -1,9 +1,8 @@
 // src/components/ticket-receipt.tsx
 "use client";
 
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
 import Barcode from "react-barcode";
+import { formatArgentinaDateTime } from "@/lib/core/datetime";
 import { barcodeFromTicketNumber } from "@/lib/printing/barcodes";
 import type { ReceiptPrintData } from "@/lib/printing/receipt-printing";
 
@@ -64,7 +63,7 @@ export function TicketReceipt({ data, isGift = false }: TicketReceiptProps) {
                 </div>
                 <div className="flex justify-between">
                     <span className="font-semibold">Fecha</span>
-                    <span>{format(data.date, "dd/MM/yyyy HH:mm", { locale: es })}</span>
+                    <span>{formatArgentinaDateTime(data.date)}</span>
                 </div>
                 {!isGift && (
                     <div className="flex justify-between">

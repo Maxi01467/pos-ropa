@@ -6,6 +6,7 @@ import { getEmployeesRuntime } from "@/lib/offline/employees-runtime";
 import { useSessionSnapshot } from "@/lib/session/session-client";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
 import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
+import { formatArgentinaDateTime } from "@/lib/core/datetime";
 import {
     Users,
     UserPlus,
@@ -71,10 +72,10 @@ const EMPTY_FORM: EmployeeFormState = {
 const employeesRuntime = getEmployeesRuntime();
 
 function formatDate(date: string) {
-    return new Intl.DateTimeFormat("es-AR", {
+    return formatArgentinaDateTime(date, {
         dateStyle: "short",
         timeStyle: "short",
-    }).format(new Date(date));
+    });
 }
 
 function sortEmployees(items: Employee[]) {

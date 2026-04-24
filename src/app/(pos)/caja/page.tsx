@@ -31,8 +31,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { cn } from "@/lib/core/utils";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
+import { formatArgentinaDateTime, formatArgentinaTime } from "@/lib/core/datetime";
 import { useSessionSnapshot } from "@/lib/session/session-client";
 import { notifyCashSessionUpdated } from "@/lib/session/cash-session-client";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
@@ -376,9 +375,7 @@ function StaffCajaView({
                                     {session.openedBy?.name}
                                 </p>
                                 <p className="mt-1 text-sm text-muted-foreground">
-                                    {format(new Date(session.openingDate), "dd/MM/yyyy · HH:mm", {
-                                        locale: es,
-                                    })}
+                                    {formatArgentinaDateTime(session.openingDate).replace(",", " ·")}
                                 </p>
                             </div>
                         }
@@ -618,7 +615,7 @@ function AdminCajaView({
                                     {session.openedBy?.name ?? "Sin responsable"}
                                 </p>
                                 <p className="mt-1 text-sm text-muted-foreground">
-                                    {format(new Date(session.openingDate), "dd/MM · HH:mm", { locale: es })}
+                                    {formatArgentinaDateTime(session.openingDate, { year: undefined }).replace(",", " ·")}
                                 </p>
                                 <div className="mt-4 rounded-2xl bg-emerald-950/8 p-3">
                                     <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/75 dark:text-emerald-100/75">
@@ -750,7 +747,7 @@ function AdminCajaView({
                                                     <div>
                                                         <p className="font-semibold text-sm">{mov.reason}</p>
                                                         <p className="text-xs text-muted-foreground">
-                                                            {format(new Date(mov.createdAt), "HH:mm")} hs
+                                                            {formatArgentinaTime(mov.createdAt)} hs
                                                         </p>
                                                     </div>
                                                 </div>

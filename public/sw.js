@@ -1,4 +1,4 @@
-const CACHE_NAME = "pos-ropa-v1";
+const CACHE_NAME = "pos-ropa-v2";
 const OFFLINE_URL = "/offline";
 const STATIC_ASSETS = [OFFLINE_URL, "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"];
 
@@ -41,6 +41,36 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (url.pathname.startsWith("/api/")) {
+    return;
+  }
+
+  const isNextAsset = url.pathname.startsWith("/_next/");
+  const isNextRscRequest = url.searchParams.has("_rsc") || request.headers.get("RSC") === "1";
+
+  if (isNextRscRequest) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  if (isNextAsset) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cachedResponse = await caches.match(request);
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          throw new Error("Next asset unavailable offline");
+        }),
+    );
+
     return;
   }
 

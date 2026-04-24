@@ -48,6 +48,10 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
+import {
+    formatArgentinaDateTimeWithSuffix,
+    formatArgentinaShortDate,
+} from "@/lib/core/datetime";
 import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
 import { cn } from "@/lib/core/utils";
 import { getStockRuntime } from "@/lib/offline/stock-runtime";
@@ -119,18 +123,12 @@ type StockMovement = {
     variants: StockEntry[];
 };
 
-// ... Funciones de fecha iguales ...
 function formatDate(dateStr: string): string {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("es-AR", {
-        day: "2-digit", month: "2-digit", year: "2-digit",
-        hour: "2-digit", minute: "2-digit",
-    });
+    return formatArgentinaDateTimeWithSuffix(dateStr, { year: "2-digit" });
 }
 
 function formatShortDate(dateStr: string): string {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" });
+    return formatArgentinaShortDate(dateStr);
 }
 
 function buildMovements(entries: StockEntry[]): StockMovement[] {
@@ -266,8 +264,41 @@ export default function StockPage() {
     }, []);
 
     const movements = useMemo(() => buildMovements(entries), [entries]);
-    const totalMovements = movements.length;
+    const filteredMovements = useMemo(() => {
+        return movements.filter((movement) => {
+            if (filterProduct !== "all" && movement.productId !== filterProduct) {
+                return false;
+            }
+
+            if (filterProvider !== "all" && movement.providerId !== filterProvider) {
+                return false;
+            }
+
+            const movementTime = new Date(movement.date).getTime();
+
+            if (filterDateFrom) {
+                const fromTime = new Date(`${filterDateFrom}T00:00:00`).getTime();
+                if (movementTime < fromTime) {
+                    return false;
+                }
+            }
+
+            if (filterDateTo) {
+                const toTime = new Date(`${filterDateTo}T23:59:59.999`).getTime();
+                if (movementTime > toTime) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+    }, [filterDateFrom, filterDateTo, filterProduct, filterProvider, movements]);
+    const totalMovements = filteredMovements.length;
     const totalMovementPages = Math.max(1, Math.ceil(totalMovements / STOCK_MOVEMENTS_PER_PAGE));
+    const paginatedMovements = useMemo(() => {
+        const start = (currentPage - 1) * STOCK_MOVEMENTS_PER_PAGE;
+        return filteredMovements.slice(start, start + STOCK_MOVEMENTS_PER_PAGE);
+    }, [currentPage, filteredMovements]);
 
     const isMovementSelectable = useCallback(
         (movement: StockMovement) =>
@@ -279,11 +310,11 @@ export default function StockPage() {
 
     const selectedMovements = useMemo(
         () =>
-            movements.filter(
+            filteredMovements.filter(
                 (movement) =>
                     selectedMovementIds.includes(movement.id) && isMovementSelectable(movement)
             ),
-        [isMovementSelectable, movements, selectedMovementIds]
+        [filteredMovements, isMovementSelectable, selectedMovementIds]
     );
 
     const printableVariants = useMemo(
@@ -903,7 +934,7 @@ export default function StockPage() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {movements.length === 0 ? (
+                        {filteredMovements.length === 0 ? (
                             <TableRow>
                                 <TableCell colSpan={6} className="py-16 text-center">
                                     <Package className="mx-auto mb-3 size-12 text-muted-foreground/30" />
@@ -920,7 +951,7 @@ export default function StockPage() {
                                 </TableCell>
                             </TableRow>
                         ) : (
-                            movements.map((movement) => {
+                            paginatedMovements.map((movement) => {
                                 const isSelected = selectedMovementIds.includes(movement.id);
                                 const isSelectable = isMovementSelectable(movement);
 

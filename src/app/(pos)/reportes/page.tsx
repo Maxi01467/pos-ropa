@@ -32,6 +32,11 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { cn } from "@/lib/core/utils";
+import {
+    formatArgentinaDateTimeWithSuffix,
+    formatArgentinaShortDate,
+    normalizeDateInput,
+} from "@/lib/core/datetime";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
 import { useDataRefresh } from "@/lib/sync/data-sync-client";
 import {
@@ -99,20 +104,11 @@ function formatCurrency(amount: number | null | undefined): string {
 }
 
 function formatDate(dateStr: string): string {
-    return new Date(dateStr).toLocaleDateString("es-AR", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-    });
+    return formatArgentinaDateTimeWithSuffix(dateStr);
 }
 
 function formatShortDate(dateStr: string): string {
-    return new Date(dateStr).toLocaleDateString("es-AR", {
-        day: "2-digit",
-        month: "2-digit",
-    });
+    return formatArgentinaShortDate(dateStr);
 }
 
 function formatHourRange(hour: number): string {
@@ -336,7 +332,13 @@ export default function ReportesPage() {
             dayCurrent.total += sale.total;
             byDayMap.set(dayKey, dayCurrent);
 
-            const saleHour = new Date(sale.date).getHours();
+            const saleHour = Number(
+                new Intl.DateTimeFormat("es-AR", {
+                    timeZone: "America/Argentina/Buenos_Aires",
+                    hour: "2-digit",
+                    hourCycle: "h23",
+                }).format(normalizeDateInput(sale.date))
+            );
             const hourCurrent = byHourMap.get(saleHour) ?? {
                 hour: saleHour,
                 tickets: 0,

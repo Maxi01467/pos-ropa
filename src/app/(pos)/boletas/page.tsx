@@ -33,12 +33,15 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/core/utils";
+import { formatArgentinaDateTimeWithSuffix } from "@/lib/core/datetime";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
 import { useDataRefresh } from "@/lib/sync/data-sync-client";
 import {
     getCashHistoryRuntime,
     type CashHistorySession as CashSessionHistory,
 } from "@/lib/offline/cash-history-runtime";
+
+const CASH_SESSIONS_PER_PAGE = 30;
 
 function formatCurrency(amount: number | null | undefined): string {
     return new Intl.NumberFormat("es-AR", {
@@ -49,15 +52,7 @@ function formatCurrency(amount: number | null | undefined): string {
 }
 
 function formatDate(dateStr: string | null): string {
-    if (!dateStr) return "—";
-
-    return new Date(dateStr).toLocaleDateString("es-AR", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-    });
+    return formatArgentinaDateTimeWithSuffix(dateStr);
 }
 
 export default function HistorialCajaPage() {
@@ -65,9 +60,6 @@ export default function HistorialCajaPage() {
     const [sessions, setSessions] = useState<CashSessionHistory[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize, setPageSize] = useState(30);
-    const [totalPages, setTotalPages] = useState(1);
-    const [totalSessions, setTotalSessions] = useState(0);
     const [selectedTicketsSession, setSelectedTicketsSession] = useState<CashSessionHistory | null>(null);
     const [selectedCashSession, setSelectedCashSession] = useState<CashSessionHistory | null>(null);
 
@@ -90,6 +82,19 @@ export default function HistorialCajaPage() {
     useDataRefresh([CACHE_TAGS.cash, CACHE_TAGS.sales], loadHistory, {
         pollIntervalMs: false,
     });
+
+    const totalSessions = sessions.length;
+    const totalPages = Math.max(1, Math.ceil(totalSessions / CASH_SESSIONS_PER_PAGE));
+    const paginatedSessions = useMemo(() => {
+        const start = (currentPage - 1) * CASH_SESSIONS_PER_PAGE;
+        return sessions.slice(start, start + CASH_SESSIONS_PER_PAGE);
+    }, [currentPage, sessions]);
+
+    useEffect(() => {
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [currentPage, totalPages]);
 
     const summary = useMemo(() => {
         const openSessions = sessions.filter((session) => session.status === "OPEN").length;
@@ -246,65 +251,70 @@ export default function HistorialCajaPage() {
                                 </TableCell>
                             </TableRow>
                         ) : (
-                            sessions.map((session, index) => (
-                                <TableRow key={session.id}>
-                                    <TableCell>
-                                        <Badge variant="outline" className="font-mono text-sm bg-background">
-                                            Caja #{Math.max(totalSessions - (currentPage - 1) * pageSize - index, 1)}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Badge
-                                            className={cn(
-                                                "gap-1",
-                                                session.status === "OPEN" && "bg-emerald-900 text-emerald-100 hover:bg-emerald-800",
-                                                session.status === "CLOSED" && "bg-slate-100 text-slate-700 hover:bg-slate-200",
-                                                session.status === "PENDING_COUNT" && "bg-orange-900 text-orange-100 hover:bg-orange-800"
-                                            )}
-                                        >
-                                            {session.status === "OPEN" ? <LockOpen className="size-3" /> : <Lock className="size-3" />}
-                                            {session.status === "PENDING_COUNT" ? "PENDIENTE" : session.status}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-sm text-muted-foreground">
-                                        <div className="flex items-center gap-1.5">
-                                            <Calendar className="size-3.5" />
-                                            {formatDate(session.openingDate)}
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="text-sm text-muted-foreground">
-                                        {formatDate(session.closingDate)}
-                                    </TableCell>
-                                    <TableCell className="text-sm font-medium">
-                                        {session.openedBy?.name ?? "—"}
-                                    </TableCell>
-                                    <TableCell className="text-right font-bold">
-                                        {session.sales.length}
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <div className="flex justify-end gap-2">
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="gap-2"
-                                                onClick={() => setSelectedCashSession(session)}
+                            paginatedSessions.map((session, index) => {
+                                const sessionNumber =
+                                    totalSessions - ((currentPage - 1) * CASH_SESSIONS_PER_PAGE + index);
+
+                                return (
+                                    <TableRow key={session.id}>
+                                        <TableCell>
+                                            <Badge variant="outline" className="font-mono text-sm bg-background">
+                                                Caja #{Math.max(sessionNumber, 1)}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Badge
+                                                className={cn(
+                                                    "gap-1",
+                                                    session.status === "OPEN" && "bg-emerald-900 text-emerald-100 hover:bg-emerald-800",
+                                                    session.status === "CLOSED" && "bg-slate-100 text-slate-700 hover:bg-slate-200",
+                                                    session.status === "PENDING_COUNT" && "bg-orange-900 text-orange-100 hover:bg-orange-800"
+                                                )}
                                             >
-                                                <Wallet className="size-4" />
-                                                Ver caja
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="gap-2"
-                                                onClick={() => setSelectedTicketsSession(session)}
-                                            >
-                                                <Eye className="size-4" />
-                                                Ver boletas
-                                            </Button>
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            ))
+                                                {session.status === "OPEN" ? <LockOpen className="size-3" /> : <Lock className="size-3" />}
+                                                {session.status === "PENDING_COUNT" ? "PENDIENTE" : session.status}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-sm text-muted-foreground">
+                                            <div className="flex items-center gap-1.5">
+                                                <Calendar className="size-3.5" />
+                                                {formatDate(session.openingDate)}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-sm text-muted-foreground">
+                                            {formatDate(session.closingDate)}
+                                        </TableCell>
+                                        <TableCell className="text-sm font-medium">
+                                            {session.openedBy?.name ?? "—"}
+                                        </TableCell>
+                                        <TableCell className="text-right font-bold">
+                                            {session.sales.length}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <div className="flex justify-end gap-2">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="gap-2"
+                                                    onClick={() => setSelectedCashSession(session)}
+                                                >
+                                                    <Wallet className="size-4" />
+                                                    Ver caja
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="gap-2"
+                                                    onClick={() => setSelectedTicketsSession(session)}
+                                                >
+                                                    <Eye className="size-4" />
+                                                    Ver boletas
+                                                </Button>
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                );
+                            })
                         )}
                     </TableBody>
                 </Table>

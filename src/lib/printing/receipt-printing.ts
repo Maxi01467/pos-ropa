@@ -1,7 +1,6 @@
 "use client";
 
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
+import { formatArgentinaDateTime } from "@/lib/core/datetime";
 import { barcodeFromTicketNumber } from "@/lib/printing/barcodes";
 
 export interface ReceiptPrintData {
@@ -149,7 +148,7 @@ export function renderReceiptHtml(data: ReceiptPrintData, isGift = false): strin
         isGift && data.giftItems && data.giftItems.length > 0 ? data.giftItems : data.items;
     const ticketBarcode = barcodeFromTicketNumber(data.ticketNumber);
     const barcodeSvg = buildEan13Svg(ticketBarcode);
-    const formattedDate = format(data.date, "dd/MM/yyyy HH:mm", { locale: es });
+    const formattedDate = formatArgentinaDateTime(data.date);
 
     const itemRows = printableItems
         .map((item) => {

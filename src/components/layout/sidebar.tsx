@@ -101,12 +101,14 @@ function countVisibleWorkspaceChildren(role: SessionRole, isDesktop: boolean) {
 function SidebarContent({
     role,
     userName,
+    isDesktopClient,
     collapsed,
     onToggleCollapse,
     onNavClick,
 }: {
     role: SessionRole;
     userName: string;
+    isDesktopClient: boolean;
     collapsed: boolean;
     onToggleCollapse?: () => void;
     onNavClick?: () => void;
@@ -114,11 +116,12 @@ function SidebarContent({
     const pathname = usePathname();
     const { hasOpenCashSession } = useCashSessionStatus();
     const terminal = useTerminalSnapshot();
+    const isDesktop = isDesktopClient || terminal.isDesktop;
     const [menuExpanded] = useState(true);
     const [workspaceExpanded, setWorkspaceExpanded] = useState(true);
 
     const visibleMainItems = mainItems.filter((item) =>
-        canAccessPath(role, item.href, { isDesktop: terminal.isDesktop })
+        canAccessPath(role, item.href, { isDesktop })
     );
     const visibleWorkspaceItems = workspaceItems.filter((item) => {
         if ("hidden" in item && item.hidden) {
@@ -127,11 +130,11 @@ function SidebarContent({
 
         if ("children" in item) {
             return item.children.some((child) =>
-                canAccessPath(role, child.href, { isDesktop: terminal.isDesktop })
+                canAccessPath(role, child.href, { isDesktop })
             );
         }
 
-        return canAccessPath(role, item.href, { isDesktop: terminal.isDesktop });
+        return canAccessPath(role, item.href, { isDesktop });
     });
 
     const initials = userName
@@ -281,7 +284,7 @@ function SidebarContent({
 
                                     if ("children" in item) {
                                         const visibleChildren = item.children.filter((child) =>
-                                            canAccessPath(role, child.href, { isDesktop: terminal.isDesktop })
+                                            canAccessPath(role, child.href, { isDesktop })
                                         );
 
                                         if (collapsed) {
@@ -333,7 +336,7 @@ function SidebarContent({
                                                     <Icon className="size-4.5" />
                                                     <span className="flex-1 text-left">{item.label}</span>
                                                     <span className="rounded-full bg-[linear-gradient(135deg,#6d28d9_0%,#4c1d95_100%)] px-2 py-0.5 text-xs text-white shadow-[0_12px_24px_-18px_rgba(76,29,149,0.9)]">
-                                                        {countVisibleWorkspaceChildren(role, terminal.isDesktop)}
+                                                        {countVisibleWorkspaceChildren(role, isDesktop)}
                                                     </span>
                                                 </button>
 
@@ -496,11 +499,13 @@ function SidebarContent({
 export function Sidebar({
     role,
     userName,
+    isDesktopClient,
     collapsed,
     onToggleCollapse,
 }: {
     role: SessionRole;
     userName: string;
+    isDesktopClient: boolean;
     collapsed: boolean;
     onToggleCollapse: () => void;
 }) {
@@ -520,7 +525,12 @@ export function Sidebar({
                     </SheetTrigger>
                     <SheetContent side="left" className="w-72 p-0">
                         <SheetTitle className="sr-only">Menú de navegación</SheetTitle>
-                        <SidebarContent role={role} userName={userName} collapsed={false} />
+                        <SidebarContent
+                            role={role}
+                            userName={userName}
+                            isDesktopClient={isDesktopClient}
+                            collapsed={false}
+                        />
                     </SheetContent>
                 </Sheet>
             </div>
@@ -535,6 +545,7 @@ export function Sidebar({
                 <SidebarContent
                     role={role}
                     userName={userName}
+                    isDesktopClient={isDesktopClient}
                     collapsed={collapsed}
                     onToggleCollapse={onToggleCollapse}
                 />

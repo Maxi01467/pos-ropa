@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { cn } from "@/lib/core/utils";
+import { formatArgentinaDateTime, formatArgentinaShortDate } from "@/lib/core/datetime";
 import { barcodeFromSku } from "@/lib/printing/barcodes";
 import type { ReceiptPrintData } from "@/lib/printing/receipt-printing";
 import { printSaleReceipt } from "@/lib/printing/printing";
@@ -1614,7 +1615,7 @@ function ExchangeDialog({
                                             Boleta #{sale.ticketNumber.toString().padStart(5, "0")}
                                         </p>
                                         <p className="text-xs text-muted-foreground">
-                                            {new Date(sale.date).toLocaleDateString("es-AR")}
+                                            {formatArgentinaShortDate(sale.date)}
                                         </p>
                                         <p className="text-xs text-muted-foreground">
                                             {sale.items.length} item(s)
@@ -1647,7 +1648,7 @@ function ExchangeDialog({
                                         </div>
                                     </div>
                                     <p className="text-sm text-muted-foreground dark:text-slate-300">
-                                        {selectedSale.sellerName} · {new Date(selectedSale.date).toLocaleString("es-AR")}
+                                        {selectedSale.sellerName} · {formatArgentinaDateTime(selectedSale.date)}
                                     </p>
                                 </div>
                                 <div className="rounded-[1.1rem] border border-dashed border-rose-200/70 bg-[linear-gradient(135deg,rgba(255,241,242,0.88),rgba(255,255,255,0.4))] px-4 py-3 text-sm text-rose-900 dark:border-rose-400/20 dark:bg-[linear-gradient(135deg,rgba(76,5,25,0.52),rgba(15,23,42,0.18))] dark:text-rose-100">

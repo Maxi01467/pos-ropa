@@ -32,6 +32,7 @@ import {
     type PosPalette,
 } from "@/lib/core/pos-palette";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
+import { formatArgentinaDateTime } from "@/lib/core/datetime";
 import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
 import type { SessionRole } from "@/lib/core/permissions";
 import {
@@ -153,7 +154,7 @@ export function AppHeader({
         bootstrap.state === "requires_initial_sync"
             ? "Este equipo necesita una sincronización inicial online."
             : bootstrap.lastSuccessfulSyncAt
-              ? `Ultima sync: ${new Date(bootstrap.lastSuccessfulSyncAt).toLocaleString("es-AR")}`
+              ? `Ultima sync: ${formatArgentinaDateTime(bootstrap.lastSuccessfulSyncAt)}`
               : bootstrap.isOnline
                 ? "Listo para sincronizar."
                 : "Trabajando con datos locales.";
@@ -279,7 +280,7 @@ export function AppHeader({
                                                         </p>
                                                         <p className="mt-1 text-xs text-muted-foreground">
                                                             {notification.quickCreatedAt
-                                                                ? new Date(notification.quickCreatedAt).toLocaleString("es-AR")
+                                                                ? formatArgentinaDateTime(notification.quickCreatedAt)
                                                                 : "Fecha no disponible"}
                                                         </p>
                                                     </div>

@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
+import { formatArgentinaDateTime } from "@/lib/core/datetime";
 import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
 import { getInventoryRuntime } from "@/lib/offline/inventory-runtime";
 
@@ -621,7 +622,7 @@ export default function InventarioPage() {
                                                 </p>
                                                 <p className="mt-1 text-sm font-medium text-foreground">
                                                     {product.quickCreatedAt
-                                                        ? new Date(product.quickCreatedAt).toLocaleString("es-AR")
+                                                        ? formatArgentinaDateTime(product.quickCreatedAt)
                                                         : "—"}
                                                 </p>
                                             </div>

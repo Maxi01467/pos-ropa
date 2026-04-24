@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
+import { formatArgentinaDateTime } from "@/lib/core/datetime";
 import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
 import {
     getAttendanceRuntime,
@@ -46,12 +47,13 @@ import {
 } from "@/lib/offline/attendance-runtime";
 
 function formatDateTime(date: string) {
-    return new Intl.DateTimeFormat("es-AR", {
+    return formatArgentinaDateTime(date, {
+        year: undefined,
         day: "2-digit",
         month: "2-digit",
         hour: "2-digit",
         minute: "2-digit",
-    }).format(new Date(date));
+    });
 }
 
 function formatHours(hours: number) {

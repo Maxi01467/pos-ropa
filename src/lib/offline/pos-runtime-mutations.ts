@@ -180,6 +180,20 @@ async function createLocalSaleRecord(
         originalSaleId?: string;
     }
 ): Promise<SaleResult> {
+    const isExchangeSale = Boolean(options?.originalSaleId);
+
+    if (input.total < 0 && !isExchangeSale) {
+        throw new Error("Una venta normal no puede tener total negativo");
+    }
+
+    if (!isExchangeSale && input.items.length === 0) {
+        throw new Error("La venta no tiene items");
+    }
+
+    if (isExchangeSale && (options?.returnedItems?.length ?? 0) === 0) {
+        throw new Error("Seleccioná al menos un producto de la boleta para cambiar");
+    }
+
     validateSalePayment(
         input.total,
         input.paymentMethod,
@@ -344,6 +358,33 @@ async function createLocalSaleRecord(
             );
         }
 
+        if (isExchangeSale && input.total < 0 && currentSession) {
+            await tx.execute(
+                `
+                    INSERT INTO "CashMovement" (
+                        id,
+                        sessionId,
+                        amount,
+                        type,
+                        reason,
+                        createdAt,
+                        updatedAt,
+                        deletedAt
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                `,
+                [
+                    crypto.randomUUID(),
+                    currentSession.id,
+                    Math.abs(input.total),
+                    "EGRESO",
+                    `Devolucion de dinero por cambio · ticket #${String(ticketNumber).padStart(5, "0")}`,
+                    timestamp,
+                    timestamp,
+                    null,
+                ]
+            );
+        }
+
         return Promise.resolve();
     });
 
@@ -388,6 +429,7 @@ const powerSyncMutations: PosRuntimeMutations = {
                     cashAmount: input.cashAmount,
                     transferAmount: input.transferAmount,
                     userId: input.userId,
+                    terminalPrefix: input.terminalPrefix,
                     items: input.items,
                 },
                 {

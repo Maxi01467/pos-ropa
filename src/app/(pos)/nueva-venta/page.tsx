@@ -210,6 +210,41 @@ function formatCurrency(amount: number): string {
     }).format(amount);
 }
 
+function normalizeProductCodeSearchValue(value: string): string {
+    return value.trim().toLowerCase();
+}
+
+function productCodeSearchValues(product: POSProduct): string[] {
+    return [
+        product.code,
+        barcodeFromSku(product.code),
+        ...(product.legacyBarcodes ?? []),
+    ]
+        .map(normalizeProductCodeSearchValue)
+        .filter(Boolean);
+}
+
+function productMatchesSearch(product: POSProduct, query: string): boolean {
+    const normalizedQuery = normalizeProductCodeSearchValue(query);
+    if (!normalizedQuery) {
+        return true;
+    }
+
+    return (
+        product.name.toLowerCase().includes(normalizedQuery) ||
+        productCodeSearchValues(product).some((code) => code.includes(normalizedQuery))
+    );
+}
+
+function productMatchesExactCode(product: POSProduct, query: string): boolean {
+    const normalizedQuery = normalizeProductCodeSearchValue(query);
+    if (!normalizedQuery) {
+        return false;
+    }
+
+    return productCodeSearchValues(product).includes(normalizedQuery);
+}
+
 function reconcileProductStocks(
     products: POSProduct[],
     soldItems: Array<{ variantId: string; quantity: number }>,
@@ -751,15 +786,12 @@ export default function NuevaVentaPage() {
 
             // Usamos e.currentTarget.value en vez del estado searchQuery porque 
             // el escáner dispara los eventos en milisegundos.
-            const scannedValue = e.currentTarget.value.trim().toLowerCase();
+            const scannedValue = e.currentTarget.value;
             if (!scannedValue) return;
 
             // Buscamos si el texto coincide EXACTAMENTE con el código de algún producto
-            const matchedProduct = allProducts.find(
-                (p) =>
-                    p.code.toLowerCase() === scannedValue ||
-                    barcodeFromSku(p.code) === scannedValue ||
-                    p.legacyBarcodes?.includes(scannedValue)  // ← códigos barras viejos
+            const matchedProduct = allProducts.find((product) =>
+                productMatchesExactCode(product, scannedValue)
             );
 
             if (matchedProduct) {
@@ -779,8 +811,11 @@ export default function NuevaVentaPage() {
                 });
             } else {
                 // Opcional: Si tipeó algo largo (ej: un código) y presionó Enter pero no existe
-                if (scannedValue.length >= 4) {
-                    toast.error("Código no encontrado", { description: scannedValue.toUpperCase() });
+                const normalizedScannedValue = normalizeProductCodeSearchValue(scannedValue);
+                if (normalizedScannedValue.length >= 4) {
+                    toast.error("Código no encontrado", {
+                        description: normalizedScannedValue.toUpperCase(),
+                    });
                     setSearchQuery(""); // Limpiamos para que no se trabe
                 }
             }
@@ -788,17 +823,10 @@ export default function NuevaVentaPage() {
     };
     const filteredProducts = useMemo(() => {
         if (!searchQuery.trim()) return allProducts;
-        const q = searchQuery.toLowerCase();
-        return allProducts.filter(
-            (product) =>
-                product.name.toLowerCase().includes(q) ||
-                product.code.toLowerCase().includes(q) ||
-                barcodeFromSku(product.code).includes(q) ||
-                product.legacyBarcodes?.some((b) => b.includes(q)) // ← códigos barras viejos
-        );
+        return allProducts.filter((product) => productMatchesSearch(product, searchQuery));
     }, [searchQuery, allProducts]);
     const searchSuggestions = useMemo(() => {
-        const q = searchQuery.trim().toLowerCase();
+        const q = normalizeProductCodeSearchValue(searchQuery);
         if (!q) return [];
 
         return filteredProducts
@@ -806,10 +834,13 @@ export default function NuevaVentaPage() {
                 const name = product.name.toLowerCase();
                 const code = product.code.toLowerCase();
                 const barcode = barcodeFromSku(product.code);
-                const legacyMatch = product.legacyBarcodes?.some((b) => b.includes(q));
+                const codeValues = productCodeSearchValues(product);
+                const legacyMatch = (product.legacyBarcodes ?? []).some((barcodeAlias) =>
+                    normalizeProductCodeSearchValue(barcodeAlias).includes(q)
+                );
                 let score = 10;
 
-                if (code === q || barcode === q || product.legacyBarcodes?.includes(q)) score = 0;
+                if (codeValues.includes(q)) score = 0;
                 else if (code.startsWith(q)) score = 1;
                 else if (name.startsWith(q)) score = 2;
                 else if (barcode.includes(q) || legacyMatch) score = 3;
@@ -952,10 +983,22 @@ export default function NuevaVentaPage() {
             throw new Error("Seleccioná un vendedor antes de cobrar");
         }
 
+        const isExchangeSale = Boolean(appliedExchange && appliedExchange.items.length > 0);
+        const saleTotal = isExchangeSale ? balanceAmount : payableAmount;
+        const shouldCloseAsExchangeCredit = isExchangeSale && saleTotal <= 0;
+
+        if (saleTotal < 0 && !isExchangeSale) {
+            throw new Error("Una venta normal no puede tener total negativo");
+        }
+
+        if (!shouldCloseAsExchangeCredit && !payment) {
+            throw new Error("Seleccioná un método de pago antes de cobrar");
+        }
+
         const paymentMethod: "EFECTIVO" | "TRANSFERENCIA" | "MIXTO" | "CAMBIO" =
-            payment?.paymentMethod
-                ? paymentMethodMap[payment.paymentMethod]
-                : "CAMBIO";
+            shouldCloseAsExchangeCredit
+                ? "CAMBIO"
+                : paymentMethodMap[payment!.paymentMethod];
 
         const saleItems: Array<{
             variantId: string;
@@ -970,20 +1013,20 @@ export default function NuevaVentaPage() {
         }));
 
         const exchangePayload = {
-            total: appliedExchange ? balanceAmount : payableAmount,
+            total: saleTotal,
             paymentMethod,
-            cashAmount: payment?.cashAmount ?? 0,
-            transferAmount: payment?.transferAmount ?? 0,
+            cashAmount: shouldCloseAsExchangeCredit ? 0 : payment!.cashAmount,
+            transferAmount: shouldCloseAsExchangeCredit ? 0 : payment!.transferAmount,
             userId: selectedSellerId,
             terminalPrefix: terminal.terminalPrefix ?? undefined,
             items: saleItems,
         };
 
-        const sale = appliedExchange
+        const sale = isExchangeSale
             ? await posMutations.createExchangeSale({
                 ...exchangePayload,
-                originalSaleId: appliedExchange.saleId,
-                returnedItems: appliedExchange.items.map((item) => ({
+                originalSaleId: appliedExchange!.saleId,
+                returnedItems: appliedExchange!.items.map((item) => ({
                     saleItemId: item.saleItemId,
                     quantity: item.quantity,
                 })),
@@ -1011,7 +1054,7 @@ export default function NuevaVentaPage() {
                     price: getUnitPrice(item.product),
                     subtotal: getUnitPrice(item.product) * item.quantity,
                 })),
-            total: appliedExchange ? balanceAmount : payableAmount,
+            total: saleTotal,
             paymentMethod,
             exchangeCredit: appliedExchange?.credit,
             exchangedTicketNumber: appliedExchange?.ticketNumber,
@@ -1745,7 +1788,7 @@ export default function NuevaVentaPage() {
                                         <Button
                                             size="lg"
                                             className="h-14 w-full rounded-2xl bg-[linear-gradient(135deg,#1c1c28_0%,#3f3f50_100%)] text-base font-semibold text-white shadow-[0_20px_36px_-22px_rgba(0,0,0,0.8)] hover:opacity-95 dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.98),rgba(30,41,59,0.98))] dark:text-slate-50 dark:shadow-[0_24px_40px_-24px_rgba(0,0,0,0.88)]"
-                                            disabled={cart.length === 0 || !selectedSellerId}
+                                            disabled={(cart.length === 0 && !appliedExchange) || !selectedSellerId}
                                             onClick={() =>
                                                 shouldFinalizeExchangeDirectly
                                                     ? void handleDirectExchangeCheckout()

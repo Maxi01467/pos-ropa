@@ -74,3 +74,29 @@ export async function logoutUser() {
     const cookieStore = await cookies();
     cookieStore.delete(AUTH_COOKIE_NAME);
 }
+
+export async function establishLocalStaffSessionCookie(session: {
+    userId: string;
+    userName: string;
+}) {
+    const isDesktopApp = process.env.POS_DESKTOP === "1";
+    if (!isDesktopApp) {
+        throw new Error("La sesión local solo está disponible en la app de escritorio");
+    }
+
+    const cookieStore = await cookies();
+    const token = await createSessionToken({
+        userId: session.userId,
+        userName: session.userName,
+        role: "STAFF",
+        clientType: "desktop",
+    });
+
+    cookieStore.set(AUTH_COOKIE_NAME, token, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: false,
+        path: "/",
+        maxAge: 60 * 60 * 24 * 7,
+    });
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { authenticateUser } from "@/app/actions/auth/auth-actions";
+import { authenticateUser, establishLocalStaffSessionCookie } from "@/app/actions/auth/auth-actions";
 import { isOfflineModeEnabled } from "@/lib/offline-config";
 import {
     getOfflineBootstrapRequiredMessage,
@@ -77,6 +77,17 @@ export async function authenticatePosUser(name: string, pin: string): Promise<Au
             if (localAuthReady) {
                 const localUser = await authenticateLocally(name, pin);
                 if (localUser) {
+                    if (localUser.role === "STAFF") {
+                        try {
+                            await establishLocalStaffSessionCookie({
+                                userId: localUser.id,
+                                userName: localUser.name,
+                            });
+                        } catch (error) {
+                            console.warn("[offline] could not establish staff session cookie", error);
+                        }
+                    }
+
                     return {
                         success: true,
                         user: localUser,

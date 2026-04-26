@@ -102,6 +102,10 @@ type SaleItemRow = {
     returnedQuantity: number | string | null;
 };
 
+type CountRow = {
+    count: number | string | null;
+};
+
 const serverDataSource: PosRuntimeDataSource = {
     mode: "server",
     async getProducts() {
@@ -301,42 +305,76 @@ const powerSyncDataSource: PosRuntimeDataSource = {
         return withPowerSyncFallback(
             "products",
             async () => {
-                const rows = await queryPowerSyncRows<ProductRow>(
-                    `
-                        SELECT
-                            p.id AS productId,
-                            p.name AS productName,
-                            p.priceNormal,
-                            p.priceWholesale,
-                            pv.id AS variantId,
-                            pv.sku,
-                            pv.size,
-                            pv.color,
-                            pv.stock,
-                            GROUP_CONCAT(ba.barcode, '||') AS legacyBarcodes
-                        FROM "Product" p
-                        LEFT JOIN "ProductVariant" pv
-                            ON pv.productId = p.id
-                           AND pv.deletedAt IS NULL
-                        LEFT JOIN "BarcodeAlias" ba
-                            ON ba.variantId = pv.id
-                           AND ba.deletedAt IS NULL
-                        WHERE p.deletedAt IS NULL
-                        GROUP BY
-                            p.id,
-                            p.name,
-                            p.priceNormal,
-                            p.priceWholesale,
-                            pv.id,
-                            pv.sku,
-                            pv.size,
-                            pv.color,
-                            pv.stock
-                        ORDER BY p.createdAt DESC, pv.createdAt DESC
-                    `
-                );
+                const [rows, aliasCountRows] = await Promise.all([
+                    queryPowerSyncRows<ProductRow>(
+                        `
+                            SELECT
+                                p.id AS productId,
+                                p.name AS productName,
+                                p.priceNormal,
+                                p.priceWholesale,
+                                pv.id AS variantId,
+                                pv.sku,
+                                pv.size,
+                                pv.color,
+                                pv.stock,
+                                GROUP_CONCAT(ba.barcode, '||') AS legacyBarcodes
+                            FROM "Product" p
+                            LEFT JOIN "ProductVariant" pv
+                                ON pv.productId = p.id
+                               AND pv.deletedAt IS NULL
+                            LEFT JOIN "BarcodeAlias" ba
+                                ON ba.variantId = pv.id
+                               AND ba.deletedAt IS NULL
+                            WHERE p.deletedAt IS NULL
+                            GROUP BY
+                                p.id,
+                                p.name,
+                                p.priceNormal,
+                                p.priceWholesale,
+                                pv.id,
+                                pv.sku,
+                                pv.size,
+                                pv.color,
+                                pv.stock
+                            ORDER BY p.createdAt DESC, pv.createdAt DESC
+                        `
+                    ),
+                    queryPowerSyncRows<CountRow>(
+                        `
+                            SELECT COUNT(*) AS count
+                            FROM "BarcodeAlias"
+                            WHERE deletedAt IS NULL
+                        `
+                    ),
+                ]);
 
-                return mapPowerSyncProducts(rows);
+                const localProducts = mapPowerSyncProducts(rows);
+                const localAliasCount = toNumber(aliasCountRows[0]?.count);
+
+                if (localProducts.length > 0 && localAliasCount === 0) {
+                    try {
+                        const serverProducts = await serverDataSource.getProducts();
+                        const serverAliasCount = serverProducts.reduce(
+                            (sum, product) => sum + (product.legacyBarcodes?.length ?? 0),
+                            0
+                        );
+
+                        if (serverAliasCount > 0) {
+                            console.warn(
+                                "[pos-runtime-data] PowerSync catalog has no BarcodeAlias rows; using server catalog with legacy barcodes"
+                            );
+                            return serverProducts;
+                        }
+                    } catch (error) {
+                        console.warn(
+                            "[pos-runtime-data] Could not verify server BarcodeAlias data; using local catalog",
+                            error
+                        );
+                    }
+                }
+
+                return localProducts;
             },
             () => serverDataSource.getProducts()
         );

@@ -56,7 +56,8 @@ export async function middleware(request: NextRequest) {
   }
 
   if (!canAccessPath(session.role, pathname, { isDesktop: session.clientType === "desktop" })) {
-    return NextResponse.redirect(new URL("/nueva-venta", request.url));
+    const destination = session.role === "ADMIN" ? "/" : "/nueva-venta";
+    return NextResponse.redirect(new URL(destination, request.url));
   }
 
   return NextResponse.next();

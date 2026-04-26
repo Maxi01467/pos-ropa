@@ -31,6 +31,13 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import { cn } from "@/lib/core/utils";
 import { formatArgentinaDateTimeWithSuffix } from "@/lib/core/datetime";
@@ -42,6 +49,15 @@ import {
 } from "@/lib/offline/cash-history-runtime";
 
 const CASH_SESSIONS_PER_PAGE = 30;
+const PAYMENT_METHOD_FILTERS = [
+    { value: "TODOS", label: "Todos los pagos" },
+    { value: "EFECTIVO", label: "Efectivo" },
+    { value: "TRANSFERENCIA", label: "Transferencia" },
+    { value: "MIXTO", label: "Mixto" },
+    { value: "CAMBIO", label: "Cambio" },
+] as const;
+
+type PaymentMethodFilter = (typeof PAYMENT_METHOD_FILTERS)[number]["value"];
 
 function formatCurrency(amount: number | null | undefined): string {
     return new Intl.NumberFormat("es-AR", {
@@ -62,6 +78,7 @@ export default function HistorialCajaPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [selectedTicketsSession, setSelectedTicketsSession] = useState<CashSessionHistory | null>(null);
     const [selectedCashSession, setSelectedCashSession] = useState<CashSessionHistory | null>(null);
+    const [ticketsPaymentFilter, setTicketsPaymentFilter] = useState<PaymentMethodFilter>("TODOS");
 
     const loadHistory = useCallback(async () => {
         try {
@@ -96,6 +113,12 @@ export default function HistorialCajaPage() {
         }
     }, [currentPage, totalPages]);
 
+    useEffect(() => {
+        if (!selectedTicketsSession) {
+            setTicketsPaymentFilter("TODOS");
+        }
+    }, [selectedTicketsSession]);
+
     const summary = useMemo(() => {
         const openSessions = sessions.filter((session) => session.status === "OPEN").length;
         const closedSessions = sessions.filter((session) => session.status === "CLOSED").length;
@@ -129,6 +152,20 @@ export default function HistorialCajaPage() {
             expectedCash,
         };
     };
+
+    const filteredTicketSales = useMemo(() => {
+        if (!selectedTicketsSession) {
+            return [];
+        }
+
+        if (ticketsPaymentFilter === "TODOS") {
+            return selectedTicketsSession.sales;
+        }
+
+        return selectedTicketsSession.sales.filter(
+            (sale) => sale.paymentMethod === ticketsPaymentFilter
+        );
+    }, [selectedTicketsSession, ticketsPaymentFilter]);
 
     if (isLoading) {
         return (
@@ -458,6 +495,32 @@ export default function HistorialCajaPage() {
                                 </div>
                             </div>
 
+                            <div className="flex flex-col gap-3 rounded-[1.25rem] border border-border/70 bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <p className="text-sm font-semibold text-foreground">Filtrar boletas</p>
+                                    <p className="text-sm text-muted-foreground">
+                                        Mostrando {filteredTicketSales.length} de {selectedTicketsSession.sales.length}
+                                    </p>
+                                </div>
+                                <Select
+                                    value={ticketsPaymentFilter}
+                                    onValueChange={(value) =>
+                                        setTicketsPaymentFilter(value as PaymentMethodFilter)
+                                    }
+                                >
+                                    <SelectTrigger className="w-full sm:w-[220px]">
+                                        <SelectValue placeholder="Tipo de pago" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {PAYMENT_METHOD_FILTERS.map((method) => (
+                                            <SelectItem key={method.value} value={method.value}>
+                                                {method.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
                             <div className="max-h-[50vh] overflow-auto rounded-[1.25rem] border border-border/70">
                                 <Table>
                                     <TableHeader>
@@ -476,8 +539,14 @@ export default function HistorialCajaPage() {
                                                     Esta caja todavía no tiene boletas registradas.
                                                 </TableCell>
                                             </TableRow>
+                                        ) : filteredTicketSales.length === 0 ? (
+                                            <TableRow>
+                                                <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
+                                                    No hay boletas para el tipo de pago seleccionado.
+                                                </TableCell>
+                                            </TableRow>
                                         ) : (
-                                            selectedTicketsSession.sales.map((sale) => (
+                                            filteredTicketSales.map((sale) => (
                                                 <TableRow key={sale.id}>
                                                     <TableCell>
                                                         <Badge variant="outline" className="font-mono text-sm bg-background">

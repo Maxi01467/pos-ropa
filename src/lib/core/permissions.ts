@@ -3,7 +3,12 @@ export type SessionRole = "ADMIN" | "STAFF";
 export const STAFF_ALLOWED_PATHS = ["/nueva-venta", "/caja", "/asistencia"] as const;
 
 function isDesktopOnlyPath(pathname: string) {
-    return pathname === "/reportes" || pathname.startsWith("/reportes/");
+    return (
+        pathname === "/nueva-venta" ||
+        pathname.startsWith("/nueva-venta/") ||
+        pathname === "/reportes" ||
+        pathname.startsWith("/reportes/")
+    );
 }
 
 export function getStoredRole(rawRole: string | null, rawUser: string | null): SessionRole {

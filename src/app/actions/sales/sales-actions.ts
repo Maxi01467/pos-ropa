@@ -307,10 +307,6 @@ export async function createSale(input: CreateSaleInput) {
 }
 
 export async function createExchangeSale(input: CreateExchangeSaleInput) {
-    if (input.items.length === 0) {
-        throw new Error("El cambio debe incluir al menos un producto nuevo");
-    }
-
     if (input.returnedItems.length === 0) {
         throw new Error("Seleccioná al menos un producto de la boleta para cambiar");
     }

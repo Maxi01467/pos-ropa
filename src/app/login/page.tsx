@@ -1,7 +1,7 @@
 // src/app/login/page.tsx
 "use client";
 
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Store, Loader2, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { toast } from "sonner";
 import { authenticatePosUser } from "@/lib/offline/auth-client";
 import { clearLocalSession, setLocalSession, useSessionSnapshot } from "@/lib/session/session-client";
-import { useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
     getOfflineBootstrapRequiredMessage,
@@ -18,7 +17,7 @@ import {
     useOfflineBootstrap,
 } from "@/lib/offline/offline-bootstrap";
 
-export default function LoginPage() {
+function LoginPageContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const session = useSessionSnapshot();
@@ -161,5 +160,19 @@ export default function LoginPage() {
                 </CardContent>
             </Card>
         </div>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense
+            fallback={
+                <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
+                    <Loader2 className="size-8 animate-spin text-emerald-700" />
+                </div>
+            }
+        >
+            <LoginPageContent />
+        </Suspense>
     );
 }

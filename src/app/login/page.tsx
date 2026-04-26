@@ -9,9 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { authenticatePosUser } from "@/lib/offline/auth-client";
-import { setLocalSession, useSessionSnapshot } from "@/lib/session/session-client";
+import { clearLocalSession, setLocalSession, useSessionSnapshot } from "@/lib/session/session-client";
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
     getOfflineBootstrapRequiredMessage,
     refreshOfflineBootstrapState,
@@ -20,19 +20,31 @@ import {
 
 export default function LoginPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const session = useSessionSnapshot();
     const bootstrap = useOfflineBootstrap();
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const isLoggedOutNavigation = searchParams.get("logged_out") === "1";
 
     useEffect(() => {
+        if (isLoggedOutNavigation) {
+            clearLocalSession();
+        }
+    }, [isLoggedOutNavigation]);
+
+    useEffect(() => {
+        if (isLoggedOutNavigation) {
+            return;
+        }
+
         if (!session.hasSession || !session.role) {
             return;
         }
 
         router.replace(session.role === "ADMIN" ? "/" : "/nueva-venta");
-    }, [router, session.hasSession, session.role]);
+    }, [isLoggedOutNavigation, router, session.hasSession, session.role]);
 
     useEffect(() => {
         void refreshOfflineBootstrapState().catch((error) => {

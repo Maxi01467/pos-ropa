@@ -72,7 +72,14 @@ export async function authenticateUser(name: string, pin: string) {
 
 export async function logoutUser() {
     const cookieStore = await cookies();
-    cookieStore.delete(AUTH_COOKIE_NAME);
+    cookieStore.set(AUTH_COOKIE_NAME, "", {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production" && process.env.POS_DESKTOP !== "1",
+        path: "/",
+        maxAge: 0,
+        expires: new Date(0),
+    });
 }
 
 export async function establishLocalStaffSessionCookie(session: {

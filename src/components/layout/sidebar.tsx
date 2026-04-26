@@ -38,7 +38,6 @@ import {
 import { cn } from "@/lib/core/utils";
 import { canAccessPath, type SessionRole } from "@/lib/core/permissions";
 import { useCashSessionStatus } from "@/lib/session/cash-session-client";
-import { logoutUser } from "@/app/actions/auth/auth-actions";
 import { clearLocalSession } from "@/lib/session/session-client";
 import { useTerminalSnapshot } from "@/lib/terminal/terminal-client";
 
@@ -148,14 +147,9 @@ function SidebarContent({
         "rounded-2xl transform-gpu transition-[background-color,color,box-shadow,transform] duration-150 ease-out";
     const navItemHoverClass = "text-muted-foreground hover:bg-muted/70 hover:text-foreground";
 
-    const handleLogout = async () => {
-        try {
-            await logoutUser();
-        } catch (error) {
-            console.warn("No se pudo cerrar la sesión remota, se cerrará la sesión local igual", error);
-        }
+    const handleLogout = () => {
         clearLocalSession();
-        window.location.href = "/login";
+        window.location.replace("/login?logged_out=1");
     };
 
     return (

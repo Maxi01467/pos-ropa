@@ -26,6 +26,19 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  if (pathname === "/login" && request.nextUrl.searchParams.get("logged_out") === "1") {
+    const response = NextResponse.next();
+    response.cookies.set(AUTH_COOKIE_NAME, "", {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production" && process.env.POS_DESKTOP !== "1",
+      path: "/",
+      maxAge: 0,
+      expires: new Date(0),
+    });
+    return response;
+  }
+
   const session = await verifySessionToken(
     request.cookies.get(AUTH_COOKIE_NAME)?.value,
   );

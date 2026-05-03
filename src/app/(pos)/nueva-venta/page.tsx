@@ -115,7 +115,7 @@ interface AppliedExchange {
 
 type PriceMode = "retail" | "wholesale";
 
-const MAX_SALE_DRAFT_TABS = 3;
+const MAX_SALE_DRAFT_TABS = 5;
 
 type SaleDraft = {
     id: string;
@@ -164,6 +164,14 @@ function createSaleDraft(label = "Venta 1"): SaleDraft {
         quickCreatePrice: "",
         quickCreateWholesalePrice: "",
         quickCreateInitialStock: "1",
+    };
+}
+
+function resetSaleDraft(draft: SaleDraft): SaleDraft {
+    return {
+        ...createSaleDraft(draft.label),
+        id: draft.id,
+        createdAt: draft.createdAt,
     };
 }
 
@@ -281,6 +289,16 @@ function reconcileProductStocks(
             stock: Math.max(0, product.stock + delta),
         };
     });
+}
+
+function upsertProduct(products: POSProduct[], product: POSProduct) {
+    const existingIndex = products.findIndex((item) => item.id === product.id);
+
+    if (existingIndex === -1) {
+        return [product, ...products];
+    }
+
+    return products.map((item, index) => (index === existingIndex ? product : item));
 }
 
 export default function NuevaVentaPage() {
@@ -493,6 +511,43 @@ export default function NuevaVentaPage() {
         });
         setDraftIdPendingClose(null);
     }, []);
+    const completeSaleDraft = useCallback((draftId: string) => {
+        setDraftTabs((currentTabs) => {
+            const completedDraftIndex = currentTabs.drafts.findIndex(
+                (draft) => draft.id === draftId
+            );
+
+            if (completedDraftIndex === -1) {
+                return currentTabs;
+            }
+
+            if (currentTabs.drafts.length === 1) {
+                return {
+                    drafts: [resetSaleDraft(currentTabs.drafts[completedDraftIndex]!)],
+                    activeDraftId: draftId,
+                };
+            }
+
+            const remainingDrafts = currentTabs.drafts
+                .filter((draft) => draft.id !== draftId)
+                .map((draft, index) => ({
+                    ...draft,
+                    label: `Venta ${index + 1}`,
+                }));
+            const nextActiveDraftId =
+                currentTabs.activeDraftId === draftId
+                    ? remainingDrafts[
+                        Math.min(completedDraftIndex, remainingDrafts.length - 1)
+                    ]!.id
+                    : currentTabs.activeDraftId;
+
+            return {
+                drafts: remainingDrafts,
+                activeDraftId: nextActiveDraftId,
+            };
+        });
+        setDraftIdPendingClose(null);
+    }, []);
     const handleCloseDraftTab = useCallback((draftId: string) => {
         const draftToClose = draftTabs.drafts.find((draft) => draft.id === draftId);
         if (!draftToClose) {
@@ -643,11 +698,6 @@ export default function NuevaVentaPage() {
             cleanup?.();
         };
     }, [loadCatalog]);
-
-    const reloadProducts = useCallback(async () => {
-        const products = await posDataSource.getProducts();
-        setAllProducts(products);
-    }, [posDataSource]);
 
     useEffect(() => {
         const handleAfterPrint = () => {
@@ -979,6 +1029,8 @@ export default function NuevaVentaPage() {
     };
 
     const finalizeSale = async (payment?: PaymentBreakdown) => {
+        const completedDraftId = activeDraft.id;
+
         if (!selectedSellerId) {
             throw new Error("Seleccioná un vendedor antes de cobrar");
         }
@@ -1073,11 +1125,9 @@ export default function NuevaVentaPage() {
                 })) ?? []
             )
         );
-        clearCart();
         const updatedProducts = await posDataSource.getProducts();
         setAllProducts(updatedProducts);
-        setAppliedExchange(null);
-        setSelectedSellerId("");
+        completeSaleDraft(completedDraftId);
         setReceiptData(nextReceiptData);
         notifyDataUpdated([
             CACHE_TAGS.sales,
@@ -1302,8 +1352,28 @@ export default function NuevaVentaPage() {
                 initialStock,
                 creatorUserId: selectedSellerId || undefined,
             });
+            const quickCreatedProduct: POSProduct = {
+                id: createdProduct.variantId,
+                code: createdProduct.sku,
+                name: normalizedName,
+                price,
+                wholesalePrice,
+                stock: initialStock,
+                sizes: ["Único"],
+                color: "Único",
+                productId: createdProduct.id,
+                legacyBarcodes: [],
+            };
 
-            await reloadProducts();
+            setAllProducts((currentProducts) =>
+                upsertProduct(currentProducts, quickCreatedProduct)
+            );
+            const reloadedProducts = await posDataSource.getProducts();
+            setAllProducts(
+                reloadedProducts.some((product) => product.id === createdProduct.variantId)
+                    ? reloadedProducts
+                    : upsertProduct(reloadedProducts, quickCreatedProduct)
+            );
             notifyDataUpdated([
                 CACHE_TAGS.inventory,
                 CACHE_TAGS.stock,

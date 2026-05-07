@@ -21,6 +21,8 @@ export interface ReceiptPrintData {
     }[];
     total: number;
     paymentMethod: string;
+    cashAmount?: number;
+    transferAmount?: number;
     exchangeCredit?: number;
     exchangedTicketNumber?: string;
 }
@@ -149,6 +151,10 @@ export function renderReceiptHtml(data: ReceiptPrintData, isGift = false): strin
     const ticketBarcode = barcodeFromTicketNumber(data.ticketNumber);
     const barcodeSvg = buildEan13Svg(ticketBarcode);
     const formattedDate = formatArgentinaDateTime(data.date);
+    const shouldShowPaymentBreakdown =
+        data.paymentMethod === "MIXTO" &&
+        typeof data.cashAmount === "number" &&
+        typeof data.transferAmount === "number";
 
     const itemRows = printableItems
         .map((item) => {
@@ -197,6 +203,18 @@ export function renderReceiptHtml(data: ReceiptPrintData, isGift = false): strin
                     <span>Pago</span>
                     <span>${escapeHtml(data.paymentMethod)}</span>
                 </div>
+                ${shouldShowPaymentBreakdown
+                    ? `
+                        <div class="row payment-detail">
+                            <span>Efectivo</span>
+                            <span>${escapeHtml(formatCurrency(data.cashAmount ?? 0))}</span>
+                        </div>
+                        <div class="row payment-detail">
+                            <span>Transferencia</span>
+                            <span>${escapeHtml(formatCurrency(data.transferAmount ?? 0))}</span>
+                        </div>
+                    `
+                    : ""}
             </section>
         `;
 
@@ -333,6 +351,10 @@ export function renderReceiptHtml(data: ReceiptPrintData, isGift = false): strin
 
                     .payment {
                         text-transform: uppercase;
+                    }
+
+                    .payment-detail {
+                        font-size: 10px;
                     }
 
                     .note {

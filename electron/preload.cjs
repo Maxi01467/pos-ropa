@@ -6,4 +6,5 @@ contextBridge.exposeInMainWorld("posDesktop", {
     printHtml: (payload) => ipcRenderer.invoke("pos-desktop:print-html", payload),
     getTerminalConfig: () => ipcRenderer.invoke("pos-desktop:get-terminal-config"),
     setTerminalConfig: (payload) => ipcRenderer.invoke("pos-desktop:set-terminal-config", payload),
+    resetTerminalConfig: () => ipcRenderer.invoke("pos-desktop:reset-terminal-config"),
 });

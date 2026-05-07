@@ -7,6 +7,8 @@ const TERMINAL_EVENT = "pos-terminal-config-updated";
 export type TerminalSnapshot = {
     isDesktop: boolean;
     isLoading: boolean;
+    /** true cuando hubo un error al leer el archivo de configuración local */
+    configReadError: boolean;
     deviceId: string | null;
     terminalId: string | null;
     terminalPrefix: string | null;
@@ -23,6 +25,7 @@ type TerminalStoragePayload = {
 const DEFAULT_TERMINAL_SNAPSHOT: TerminalSnapshot = {
     isDesktop: false,
     isLoading: false,
+    configReadError: false,
     deviceId: null,
     terminalId: null,
     terminalPrefix: null,
@@ -64,6 +67,7 @@ function normalizeDesktopPayload(payload: TerminalStoragePayload | null | undefi
     return {
         isDesktop: true,
         isLoading: false,
+        configReadError: false,
         deviceId: payload?.deviceId?.trim() || null,
         terminalId: payload?.terminalId?.trim() || null,
         terminalPrefix: payload?.terminalPrefix?.trim() || null,
@@ -102,9 +106,13 @@ export async function refreshTerminalSnapshot() {
         });
     } catch (error) {
         console.warn("No se pudo leer la configuración local de terminal", error);
+        // IMPORTANTE: no seteamos deviceId:null aquí para no forzar el formulario
+        // de registro. En cambio marcamos configReadError=true para que el layout
+        // muestre un mensaje de error diferenciado.
         return setSnapshot({
             isDesktop: true,
             isLoading: false,
+            configReadError: true,
             deviceId: null,
             terminalId: null,
             terminalPrefix: null,

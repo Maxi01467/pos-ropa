@@ -41,18 +41,17 @@ function getTerminalConfigPath() {
 }
 
 function readTerminalConfigFile() {
-    try {
-        if (!fs.existsSync(getTerminalConfigPath())) {
-            return null;
-        }
-
-        return JSON.parse(fs.readFileSync(getTerminalConfigPath(), "utf8"));
-    } catch (error) {
-        appendDesktopLog(
-            `terminal-config: read error ${error instanceof Error ? error.message : String(error)}`
-        );
+    const configPath = getTerminalConfigPath();
+    if (!fs.existsSync(configPath)) {
         return null;
     }
+
+    // El archivo existe — si no se puede parsear NO retornamos null (eso
+    // haría que getTerminalConfig() genere un UUID nuevo y pierda la identidad
+    // de la terminal). En su lugar propagamos el error para que el llamador
+    // decida qué hacer.
+    const raw = fs.readFileSync(configPath, "utf8");
+    return JSON.parse(raw);
 }
 
 function writeTerminalConfigFile(payload) {
@@ -62,24 +61,51 @@ function writeTerminalConfigFile(payload) {
 }
 
 function getTerminalConfig() {
-    const existing = readTerminalConfigFile() || {};
-    const deviceId =
-        typeof existing.deviceId === "string" && existing.deviceId.trim()
+    let existing = null;
+    let fileExisted = false;
+
+    try {
+        fileExisted = fs.existsSync(getTerminalConfigPath());
+        existing = fileExisted ? readTerminalConfigFile() : null;
+    } catch (error) {
+        // El archivo existe pero no se pudo leer/parsear (corrupción, bloqueo
+        // de antivirus, etc.). Registramos el error y ABORTAMOS en lugar de
+        // generar un UUID nuevo que haría perder la identidad de la terminal.
+        appendDesktopLog(
+            `terminal-config: CRITICAL read error — no se sobrescribe para preservar identidad. ` +
+            `path=${getTerminalConfigPath()} error=${error instanceof Error ? error.message : String(error)}`
+        );
+        throw error;
+    }
+
+    const existingDeviceId =
+        typeof existing?.deviceId === "string" && existing.deviceId.trim()
             ? existing.deviceId.trim()
-            : randomUUID();
+            : null;
+
+    let deviceId;
+    if (existingDeviceId) {
+        deviceId = existingDeviceId;
+        appendDesktopLog(`terminal-config: deviceId leído del archivo = ${deviceId}`);
+    } else {
+        deviceId = randomUUID();
+        appendDesktopLog(
+            `terminal-config: archivo ${fileExisted ? "existía pero sin deviceId válido" : "no existía"} — generando nuevo deviceId = ${deviceId}`
+        );
+    }
 
     const normalized = {
         deviceId,
         terminalId:
-            typeof existing.terminalId === "string" && existing.terminalId.trim()
+            typeof existing?.terminalId === "string" && existing.terminalId.trim()
                 ? existing.terminalId.trim()
                 : null,
         terminalPrefix:
-            typeof existing.terminalPrefix === "string" && existing.terminalPrefix.trim()
+            typeof existing?.terminalPrefix === "string" && existing.terminalPrefix.trim()
                 ? existing.terminalPrefix.trim().toUpperCase()
                 : null,
         terminalName:
-            typeof existing.terminalName === "string" && existing.terminalName.trim()
+            typeof existing?.terminalName === "string" && existing.terminalName.trim()
                 ? existing.terminalName.trim()
                 : null,
     };
@@ -107,6 +133,31 @@ function saveTerminalConfig(input) {
     };
 
     return writeTerminalConfigFile(next);
+}
+
+/**
+ * Elimina el archivo de configuración de terminal (con backup previo).
+ * Se usa como escape de emergencia cuando el archivo está corrupto y
+ * no puede ser reparado de otra forma. El próximo getTerminalConfig()
+ * generará un nuevo deviceId y la terminal deberá re-registrarse.
+ */
+function resetTerminalConfig() {
+    const configPath = getTerminalConfigPath();
+    if (fs.existsSync(configPath)) {
+        const backupPath = configPath + ".bak-" + Date.now();
+        try {
+            fs.copyFileSync(configPath, backupPath);
+            appendDesktopLog(`terminal-config: backup creado en ${backupPath}`);
+        } catch (backupError) {
+            appendDesktopLog(
+                `terminal-config: no se pudo crear backup antes del reset: ${
+                    backupError instanceof Error ? backupError.message : String(backupError)
+                }`
+            );
+        }
+        fs.unlinkSync(configPath);
+        appendDesktopLog("terminal-config: archivo eliminado por resetTerminalConfig()");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -774,13 +825,16 @@ async function printHtmlSilently({ html, jobName, printerName }) {
 // ---------------------------------------------------------------------------
 
 app.whenReady().then(() => {
-    appendDesktopLog("desktop app ready");
+    appendDesktopLog(`desktop app ready version=${app.getVersion()}`);
+    appendDesktopLog(`userData path=${app.getPath("userData")}`);
+    appendDesktopLog(`terminal-config path=${getTerminalConfigPath()}`);
     ipcMain.handle("pos-desktop:is-available", () => true);
     ipcMain.handle("pos-desktop:print-html", (_event, payload) => printHtmlSilently(payload));
     ipcMain.handle("pos-desktop:get-terminal-config", () => getTerminalConfig());
     ipcMain.handle("pos-desktop:set-terminal-config", (_event, payload) =>
         saveTerminalConfig(payload)
     );
+    ipcMain.handle("pos-desktop:reset-terminal-config", () => resetTerminalConfig());
 
     void createMainWindow().then((mainWindow) => {
         scheduleAutoUpdateCheck(mainWindow);

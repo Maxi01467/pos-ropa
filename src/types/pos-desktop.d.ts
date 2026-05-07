@@ -28,6 +28,7 @@ declare global {
                 terminalPrefix: string | null;
                 terminalName: string | null;
             }>;
+            resetTerminalConfig: () => Promise<void>;
         };
     }
 }

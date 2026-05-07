@@ -67,6 +67,7 @@ export interface POSProduct {
 }
 
 interface CartItem {
+    lineId: string;
     product: POSProduct;
     quantity: number;
     isGift: boolean;
@@ -222,6 +223,15 @@ function normalizeProductCodeSearchValue(value: string): string {
     return value.trim().toLowerCase();
 }
 
+function createCartItem(product: POSProduct, quantity = 1, isGift = false): CartItem {
+    return {
+        lineId: crypto.randomUUID(),
+        product,
+        quantity,
+        isGift,
+    };
+}
+
 function productCodeSearchValues(product: POSProduct): string[] {
     return [
         product.code,
@@ -305,6 +315,7 @@ export default function NuevaVentaPage() {
     const posDataSource = useMemo(() => getPosRuntimeDataSource(), []);
     const posMutations = useMemo(() => getPosRuntimeMutations(), []);
     const searchInputRef = useRef<HTMLInputElement>(null); // NUEVO
+    const searchBoxRef = useRef<HTMLDivElement>(null);
     const exchangeSearchInputRef = useRef<HTMLInputElement>(null);
     const exchangeSalesRequestIdRef = useRef(0);
     const sellerSelectTriggerRef = useRef<HTMLButtonElement>(null);
@@ -323,6 +334,7 @@ export default function NuevaVentaPage() {
     const [isLoadingExchangeSales, setIsLoadingExchangeSales] = useState(false);
     const [hasLoadedExchangeSalesOnce, setHasLoadedExchangeSalesOnce] = useState(false);
     const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+    const [isSearchFocused, setIsSearchFocused] = useState(false);
     const [hasLoadedCatalogOnce, setHasLoadedCatalogOnce] = useState(false);
     const [productsError, setProductsError] = useState<string | null>(null);
     const [sellers, setSellers] = useState<Seller[]>([]);
@@ -753,6 +765,22 @@ export default function NuevaVentaPage() {
     }, [checkoutOpen, exchangeDialogOpen, sellerSelectOpen, setSearchQuery]);
 
     useEffect(() => {
+        const handlePointerDown = (event: PointerEvent) => {
+            const searchBox = searchBoxRef.current;
+            if (!searchBox) return;
+            if (searchBox.contains(event.target as Node)) return;
+
+            setIsSearchFocused(false);
+            searchInputRef.current?.blur();
+        };
+
+        window.addEventListener("pointerdown", handlePointerDown, true);
+        return () => {
+            window.removeEventListener("pointerdown", handlePointerDown, true);
+        };
+    }, []);
+
+    useEffect(() => {
         const handleKeyboardShortcuts = (event: KeyboardEvent) => {
             if (event.ctrlKey || event.metaKey || event.altKey) return;
 
@@ -934,6 +962,10 @@ export default function NuevaVentaPage() {
     const addToCart = (product: POSProduct) => {
         setCart((prev) => {
             const availableStock = getAvailableStockForActiveDraft(product);
+            const quantityInCart = prev.reduce(
+                (sum, item) => item.product.id === product.id ? sum + item.quantity : sum,
+                0
+            );
 
             if (availableStock <= 0) {
                 toast.error("Producto sin stock", {
@@ -942,9 +974,11 @@ export default function NuevaVentaPage() {
                 return prev;
             }
 
-            const existing = prev.find((item) => item.product.id === product.id);
+            const existing = prev.find(
+                (item) => item.product.id === product.id && !item.isGift
+            ) ?? prev.find((item) => item.product.id === product.id);
             if (existing) {
-                if (existing.quantity >= availableStock) {
+                if (quantityInCart >= availableStock) {
                     toast.error("Sin stock suficiente", {
                         description: `Solo quedan ${availableStock} unidades disponibles de ${product.name}`,
                     });
@@ -952,7 +986,7 @@ export default function NuevaVentaPage() {
                 }
 
                 return prev.map((item) =>
-                    item.product.id === product.id
+                    item.lineId === existing.lineId
                         ? { ...item, quantity: item.quantity + 1 }
                         : item
                 );
@@ -962,19 +996,26 @@ export default function NuevaVentaPage() {
                 description: product.name,
                 duration: 1500,
             });
-            return [...prev, { product, quantity: 1, isGift: false }];
+            return [...prev, createCartItem(product)];
         });
     };
 
-    const updateQuantity = (productId: string, delta: number) => {
+    const updateQuantity = (lineId: string, delta: number) => {
         setCart((prev) =>
             prev
                 .map((item) => {
-                    if (item.product.id !== productId) return item;
+                    if (item.lineId !== lineId) return item;
                     const newQty = item.quantity + delta;
                     const availableStock = getAvailableStockForActiveDraft(item.product);
+                    const quantityInCart = prev.reduce(
+                        (sum, cartItem) =>
+                            cartItem.product.id === item.product.id
+                                ? sum + cartItem.quantity
+                                : sum,
+                        0
+                    );
 
-                    if (newQty > availableStock) {
+                    if (quantityInCart + delta > availableStock) {
                         toast.error("Sin stock suficiente");
                         return item;
                     }
@@ -986,18 +1027,25 @@ export default function NuevaVentaPage() {
         );
     };
 
-    const toggleGiftItem = (productId: string) => {
+    const toggleGiftItem = (lineId: string) => {
         setCart((prev) =>
-            prev.map((item) =>
-                item.product.id === productId
-                    ? { ...item, isGift: !item.isGift }
-                    : item
-            )
+            prev.flatMap((item) => {
+                if (item.lineId !== lineId) return [item];
+
+                if (item.quantity <= 1) {
+                    return [{ ...item, isGift: !item.isGift }];
+                }
+
+                return [
+                    { ...item, quantity: item.quantity - 1 },
+                    createCartItem(item.product, 1, !item.isGift),
+                ];
+            })
         );
     };
 
-    const removeFromCart = (productId: string) => {
-        setCart((prev) => prev.filter((item) => item.product.id !== productId));
+    const removeFromCart = (lineId: string) => {
+        setCart((prev) => prev.filter((item) => item.lineId !== lineId));
         toast("Producto eliminado del carrito", { duration: 1500 });
     };
 
@@ -1052,17 +1100,40 @@ export default function NuevaVentaPage() {
                 ? "CAMBIO"
                 : paymentMethodMap[payment!.paymentMethod];
 
+        const saleItemsByVariant = new Map<
+            string,
+            {
+                variantId: string;
+                quantity: number;
+                priceAtTime: number;
+                priceType: "WHOLESALE" | "NORMAL";
+            }
+        >();
+
+        for (const item of cart) {
+            const priceAtTime = getUnitPrice(item.product);
+            const priceType = priceMode === "wholesale" ? "WHOLESALE" : "NORMAL";
+            const key = `${item.product.id}:${priceAtTime}:${priceType}`;
+            const existing = saleItemsByVariant.get(key);
+
+            if (existing) {
+                existing.quantity += item.quantity;
+            } else {
+                saleItemsByVariant.set(key, {
+                    variantId: item.product.id,
+                    quantity: item.quantity,
+                    priceAtTime,
+                    priceType,
+                });
+            }
+        }
+
         const saleItems: Array<{
             variantId: string;
             quantity: number;
             priceAtTime: number;
             priceType: "WHOLESALE" | "NORMAL";
-        }> = cart.map((item) => ({
-            variantId: item.product.id,
-            quantity: item.quantity,
-            priceAtTime: getUnitPrice(item.product),
-            priceType: priceMode === "wholesale" ? "WHOLESALE" : "NORMAL",
-        }));
+        }> = Array.from(saleItemsByVariant.values());
 
         const exchangePayload = {
             total: saleTotal,
@@ -1108,6 +1179,8 @@ export default function NuevaVentaPage() {
                 })),
             total: saleTotal,
             paymentMethod,
+            cashAmount: shouldCloseAsExchangeCredit ? 0 : payment!.cashAmount,
+            transferAmount: shouldCloseAsExchangeCredit ? 0 : payment!.transferAmount,
             exchangeCredit: appliedExchange?.credit,
             exchangedTicketNumber: appliedExchange?.ticketNumber,
         };
@@ -1493,7 +1566,7 @@ export default function NuevaVentaPage() {
                             <Card className="overflow-hidden rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(30,41,59,0.94),rgba(15,23,42,0.96))] dark:shadow-[0_28px_70px_-40px_rgba(0,0,0,0.78)]">
                                 <CardContent className="flex min-w-0 flex-col p-5 sm:p-6">
                                     <div className="mb-5 flex flex-col gap-3 xl:flex-row">
-                                        <div className="relative min-w-0 flex-1">
+                                        <div ref={searchBoxRef} className="relative min-w-0 flex-1">
                                             <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4.5 -translate-y-1/2 text-muted-foreground" />
                                             <Input
                                                 ref={searchInputRef}
@@ -1501,11 +1574,13 @@ export default function NuevaVentaPage() {
                                                 placeholder="Escanear codigo o buscar por nombre..."
                                                 value={searchQuery}
                                                 onChange={(e) => setSearchQuery(e.target.value)}
+                                                onFocus={() => setIsSearchFocused(true)}
+                                                onBlur={() => setIsSearchFocused(false)}
                                                 onKeyDown={handleSearchKeyDown}
                                                 className="h-12 rounded-2xl border-border/70 bg-background/85 pl-11 text-base"
                                                 autoFocus
                                             />
-                                            {searchSuggestions.length > 0 && (
+                                            {isSearchFocused && searchSuggestions.length > 0 && (
                                                 <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-border/70 bg-background shadow-[0_22px_44px_-26px_rgba(0,0,0,0.45)] dark:border-white/10 dark:bg-slate-950">
                                                     {searchSuggestions.map((product) => (
                                                         <button
@@ -1633,7 +1708,7 @@ export default function NuevaVentaPage() {
 
                                                 {cart.map((item) => (
                                                     <div
-                                                        key={item.product.id}
+                                                        key={item.lineId}
                                                         className={cn(
                                                             "group flex h-[130px] flex-col justify-between rounded-[1.4rem] border border-border/70 bg-background/85 p-4 transition-colors",
                                                             item.isGift &&
@@ -1664,8 +1739,8 @@ export default function NuevaVentaPage() {
                                                                         ? "bg-amber-100 text-amber-800 hover:bg-amber-200 hover:text-amber-900 dark:bg-amber-400/15 dark:text-amber-200 dark:hover:bg-amber-400/25 dark:hover:text-amber-100"
                                                                         : "text-muted-foreground hover:text-amber-700 dark:hover:text-amber-300"
                                                                 )}
-                                                                onClick={() => toggleGiftItem(item.product.id)}
-                                                                title="Marcar como regalo"
+                                                                onClick={() => toggleGiftItem(item.lineId)}
+                                                                title={item.isGift ? "Quitar regalo" : "Marcar como regalo"}
                                                             >
                                                                 <Gift className="size-3.5" />
                                                             </Button>
@@ -1678,7 +1753,7 @@ export default function NuevaVentaPage() {
                                                                     size="icon-sm"
                                                                     className="rounded-xl"
                                                                     onClick={() =>
-                                                                        updateQuantity(item.product.id, -1)
+                                                                        updateQuantity(item.lineId, -1)
                                                                     }
                                                                 >
                                                                     <Minus className="size-3.5" />
@@ -1691,7 +1766,7 @@ export default function NuevaVentaPage() {
                                                                     size="icon-sm"
                                                                     className="rounded-xl"
                                                                     onClick={() =>
-                                                                        updateQuantity(item.product.id, +1)
+                                                                        updateQuantity(item.lineId, +1)
                                                                     }
                                                                 >
                                                                     <Plus className="size-3.5" />
@@ -1709,7 +1784,7 @@ export default function NuevaVentaPage() {
                                                                     size="icon-sm"
                                                                     className="rounded-xl text-muted-foreground hover:text-destructive"
                                                                     onClick={() =>
-                                                                        removeFromCart(item.product.id)
+                                                                        removeFromCart(item.lineId)
                                                                     }
                                                                 >
                                                                     <Trash2 className="size-3.5" />

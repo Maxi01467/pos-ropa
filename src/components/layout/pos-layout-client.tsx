@@ -190,7 +190,74 @@ export function POSLayoutClient({
     const needsTerminalSetup =
         terminal.isDesktop &&
         requiresTerminalConfiguration(pathname) &&
-        !isTerminalConfigured(terminal);
+        !isTerminalConfigured(terminal) &&
+        !terminal.configReadError;
+
+    // Error al leer el archivo de configuración local (distinto a "no configurada")
+    if (
+        terminal.isDesktop &&
+        terminal.configReadError &&
+        requiresTerminalConfiguration(pathname)
+    ) {
+        return (
+            <div className="flex min-h-screen items-center justify-center p-6">
+                <section className="w-full max-w-xl rounded-3xl border border-red-700/30 bg-[linear-gradient(135deg,rgba(239,68,68,0.10),rgba(220,38,38,0.04))] p-8 shadow-xl">
+                    <h1 className="text-2xl font-semibold text-red-200">
+                        Error al leer la configuración de terminal
+                    </h1>
+                    <p className="mt-3 text-sm text-red-100/80">
+                        La app no pudo leer el archivo de configuración local de esta PC.
+                        Puede ser un error transitorio (antivirus, lock del SO) o que el archivo
+                        quedó corrupto.
+                    </p>
+                    <p className="mt-3 text-sm text-red-100/70">
+                        Intentá <strong>reintentar</strong> primero. Si sigue fallando, el archivo
+                        puede estar dañado y necesitás restablecerlo — en ese caso la terminal
+                        deberá re-registrarse.
+                    </p>
+                    <div className="mt-6 flex flex-wrap items-center gap-3">
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => {
+                                void refreshTerminalSnapshot().catch((error) => {
+                                    console.warn("Reintento de lectura de terminal fallido", error);
+                                });
+                            }}
+                        >
+                            Reintentar lectura
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="destructive"
+                            onClick={() => {
+                                if (
+                                    window.confirm(
+                                        "¿Estás seguro? Esto borrará la configuración local y " +
+                                        "tendrás que volver a registrar la terminal en el sistema."
+                                    )
+                                ) {
+                                    void window.posDesktop
+                                        ?.resetTerminalConfig?.()
+                                        .then(() => refreshTerminalSnapshot())
+                                        .catch((error: unknown) => {
+                                            console.warn("No se pudo restablecer la terminal", error);
+                                            toast.error("No se pudo restablecer la configuración. Revisá desktop.log.");
+                                        });
+                                }
+                            }}
+                        >
+                            Restablecer terminal
+                        </Button>
+                    </div>
+                    <p className="mt-4 text-xs text-red-100/40">
+                        El archivo existente <em>no fue modificado</em> hasta que uses &ldquo;Restablecer terminal&rdquo;.
+                        Revisá <span className="font-mono">desktop.log</span> para ver el detalle del error.
+                    </p>
+                </section>
+            </div>
+        );
+    }
 
     const handleRegisterTerminal = async () => {
         if (!terminal.deviceId) {

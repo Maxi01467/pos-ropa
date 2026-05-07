@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "main": "electron/main.cjs",
   "private": true,
-  "packageManager": "traversal@0.0.0",
   "scripts": {
     "dev": "next dev",
     "dev:web": "next dev",
@@ -89,6 +88,14 @@
       "target": [
         "nsis"
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
     }
   }
 }

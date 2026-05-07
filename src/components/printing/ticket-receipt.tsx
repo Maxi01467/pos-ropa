@@ -28,6 +28,10 @@ export function TicketReceipt({ data, isGift = false }: TicketReceiptProps) {
     const printableItems =
         isGift && data.giftItems && data.giftItems.length > 0 ? data.giftItems : data.items;
     const ticketBarcode = barcodeFromTicketNumber(data.ticketNumber);
+    const shouldShowPaymentBreakdown =
+        data.paymentMethod === "MIXTO" &&
+        typeof data.cashAmount === "number" &&
+        typeof data.transferAmount === "number";
 
     return (
         <article
@@ -125,6 +129,18 @@ export function TicketReceipt({ data, isGift = false }: TicketReceiptProps) {
                         <span>Pago</span>
                         <span>{data.paymentMethod}</span>
                     </div>
+                    {shouldShowPaymentBreakdown ? (
+                        <>
+                            <div className="flex justify-between text-[10px]">
+                                <span>Efectivo</span>
+                                <span>{formatCurrency(data.cashAmount ?? 0)}</span>
+                            </div>
+                            <div className="flex justify-between text-[10px]">
+                                <span>Transferencia</span>
+                                <span>{formatCurrency(data.transferAmount ?? 0)}</span>
+                            </div>
+                        </>
+                    ) : null}
                 </section>
             ) : (
                 <section className="border-b border-dashed border-black py-4 text-center text-[10px] italic">

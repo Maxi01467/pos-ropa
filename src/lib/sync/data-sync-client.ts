@@ -75,7 +75,6 @@ export function useDataRefresh(
 ) {
     const refreshRef = useRef(refresh);
     const domainsKey = normalizeDomains(domains).join(":");
-    const debugLabel = options?.debugLabel ?? "anonymous";
     const refreshOnFocus = options?.refreshOnFocus !== false;
     const pollIntervalMs =
         options?.pollIntervalMs === false ? null : (options?.pollIntervalMs ?? 30000);
@@ -128,8 +127,6 @@ export function useDataRefresh(
         const channel = getBroadcastChannel();
         channel?.addEventListener("message", handleBroadcast);
 
-        const pollIntervalMs =
-            options?.pollIntervalMs === false ? null : (options?.pollIntervalMs ?? 30000);
         const intervalId =
             pollIntervalMs == null ? null : window.setInterval(runRefresh, pollIntervalMs);
 
@@ -144,5 +141,5 @@ export function useDataRefresh(
                 window.clearInterval(intervalId);
             }
         };
-    }, [domainsKey, options?.pollIntervalMs, options?.refreshOnFocus]);
+    }, [domainsKey, pollIntervalMs, refreshOnFocus]);
 }

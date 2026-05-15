@@ -11,6 +11,13 @@ function isDesktopOnlyPath(pathname: string) {
     );
 }
 
+function isDevReportsPreviewPath(pathname: string) {
+    return (
+        process.env.NODE_ENV !== "production" &&
+        (pathname === "/reportes" || pathname.startsWith("/reportes/"))
+    );
+}
+
 export function getStoredRole(rawRole: string | null, rawUser: string | null): SessionRole {
     if (rawRole === "ADMIN" || rawRole === "STAFF") {
         return rawRole;
@@ -28,7 +35,7 @@ export function canAccessPath(
 ): boolean {
     const isDesktop = options?.isDesktop === true;
 
-    if (isDesktopOnlyPath(pathname) && !isDesktop) {
+    if (isDesktopOnlyPath(pathname) && !isDesktop && !isDevReportsPreviewPath(pathname)) {
         return false;
     }
 

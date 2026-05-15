@@ -149,14 +149,17 @@ const quickLinks = [
     },
 ];
 
+const canPreviewReportsInDev = process.env.NODE_ENV !== "production";
+
 export default function InicioPage() {
     const terminal = useTerminalSnapshot();
+    const canShowReports = terminal.isDesktop || canPreviewReportsInDev;
     const visibleBoardColumns = boardColumns.map((column) => ({
         ...column,
-        items: column.items.filter((item) => terminal.isDesktop || item.href !== "/reportes"),
+        items: column.items.filter((item) => canShowReports || item.href !== "/reportes"),
     }));
     const visibleQuickLinks = quickLinks.filter(
-        (item) => terminal.isDesktop || item.href !== "/reportes"
+        (item) => canShowReports || item.href !== "/reportes"
     );
 
     return (

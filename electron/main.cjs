@@ -14,6 +14,7 @@ const PROD_PORT_MAX_ATTEMPTS = 5;
 const CREDENTIALS_FILENAME = "credentials.bin";
 const LOG_FILENAME = "desktop.log";
 const TERMINAL_CONFIG_FILENAME = "terminal-config.json";
+const TERMINAL_CONFIG_BACKUP_FILENAME = `${TERMINAL_CONFIG_FILENAME}.bak`;
 
 let localServerPromise;
 let updateReadyDialogShown = false;
@@ -40,8 +41,71 @@ function getTerminalConfigPath() {
     return path.join(app.getPath("userData"), TERMINAL_CONFIG_FILENAME);
 }
 
+function getTerminalConfigBackupPath() {
+    return path.join(app.getPath("userData"), TERMINAL_CONFIG_BACKUP_FILENAME);
+}
+
+function readJsonFile(filePath) {
+    const raw = fs.readFileSync(filePath, "utf8");
+    return JSON.parse(raw);
+}
+
+function fsyncPath(filePath, options = {}) {
+    const { logErrors = false } = options;
+    let fd = null;
+    try {
+        fd = fs.openSync(filePath, "r");
+        fs.fsyncSync(fd);
+    } catch (error) {
+        if (logErrors) {
+            appendDesktopLog(
+                `terminal-config: fsync omitido para ${filePath}: ${
+                    error instanceof Error ? error.message : String(error)
+                }`
+            );
+        }
+    } finally {
+        if (fd !== null) {
+            try {
+                fs.closeSync(fd);
+            } catch {
+                // Ignore close errors after fsync best-effort.
+            }
+        }
+    }
+}
+
+function atomicWriteJsonFile(filePath, payload) {
+    const dir = path.dirname(filePath);
+    const tempPath = path.join(
+        dir,
+        `.${path.basename(filePath)}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`
+    );
+    const serialized = JSON.stringify(payload, null, 2);
+
+    fs.mkdirSync(dir, { recursive: true });
+
+    try {
+        fs.writeFileSync(tempPath, serialized, "utf8");
+        fsyncPath(tempPath, { logErrors: true });
+        fs.renameSync(tempPath, filePath);
+        fsyncPath(dir);
+    } catch (error) {
+        try {
+            if (fs.existsSync(tempPath)) {
+                fs.unlinkSync(tempPath);
+            }
+        } catch {
+            // Ignore cleanup errors; the original write failure is more useful.
+        }
+        throw error;
+    }
+}
+
 function readTerminalConfigFile() {
     const configPath = getTerminalConfigPath();
+    const backupPath = getTerminalConfigBackupPath();
+
     if (!fs.existsSync(configPath)) {
         return null;
     }
@@ -50,14 +114,50 @@ function readTerminalConfigFile() {
     // haría que getTerminalConfig() genere un UUID nuevo y pierda la identidad
     // de la terminal). En su lugar propagamos el error para que el llamador
     // decida qué hacer.
-    const raw = fs.readFileSync(configPath, "utf8");
-    return JSON.parse(raw);
+    try {
+        return readJsonFile(configPath);
+    } catch (error) {
+        appendDesktopLog(
+            `terminal-config: error leyendo archivo principal; intento recuperar backup. ` +
+            `path=${configPath} error=${error instanceof Error ? error.message : String(error)}`
+        );
+
+        if (!fs.existsSync(backupPath)) {
+            throw error;
+        }
+
+        try {
+            const backup = readJsonFile(backupPath);
+            writeTerminalConfigFile(backup);
+            appendDesktopLog(
+                `terminal-config: archivo principal recuperado desde backup=${backupPath}`
+            );
+            return backup;
+        } catch (backupError) {
+            appendDesktopLog(
+                `terminal-config: backup ilegible; no se pudo recuperar. ` +
+                `backup=${backupPath} error=${
+                    backupError instanceof Error ? backupError.message : String(backupError)
+                }`
+            );
+            throw error;
+        }
+    }
 }
 
 function writeTerminalConfigFile(payload) {
-    fs.mkdirSync(path.dirname(getTerminalConfigPath()), { recursive: true });
-    fs.writeFileSync(getTerminalConfigPath(), JSON.stringify(payload, null, 2), "utf8");
+    atomicWriteJsonFile(getTerminalConfigPath(), payload);
+    atomicWriteJsonFile(getTerminalConfigBackupPath(), payload);
     return payload;
+}
+
+function isSameTerminalConfig(a, b) {
+    return (
+        a?.deviceId === b?.deviceId &&
+        a?.terminalId === b?.terminalId &&
+        a?.terminalPrefix === b?.terminalPrefix &&
+        a?.terminalName === b?.terminalName
+    );
 }
 
 function getTerminalConfig() {
@@ -110,7 +210,9 @@ function getTerminalConfig() {
                 : null,
     };
 
-    writeTerminalConfigFile(normalized);
+    if (!isSameTerminalConfig(existing, normalized) || !fs.existsSync(getTerminalConfigBackupPath())) {
+        writeTerminalConfigFile(normalized);
+    }
     return normalized;
 }
 

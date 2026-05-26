@@ -119,9 +119,10 @@ async function ensureReceiptRendered(html: string): Promise<string> {
 async function printReceiptCopy(
     receipt: ReceiptPrintData,
     jobName: string,
-    isGift: boolean
+    isGift: boolean,
+    giftGroup?: NonNullable<ReceiptPrintData["giftGroups"]>[number]
 ): Promise<PrintReceiptResult> {
-    let html = renderReceiptHtml(receipt, isGift);
+    let html = renderReceiptHtml(receipt, isGift, giftGroup);
 
     // Renderizar en el DOM para asegurar que está completo y obtener altura real
     html = await ensureReceiptRendered(html);
@@ -139,8 +140,18 @@ export async function printSaleReceipt(
 ): Promise<PrintReceiptResult> {
     const ticketLabel = receipt.ticketNumber.toString().padStart(5, "0");
     const firstCopy = await printReceiptCopy(receipt, `Boleta ${ticketLabel}`, false);
+    const giftGroups = receipt.giftGroups?.filter((group) => group.items.length > 0) ?? [];
 
-    if (receipt.giftItems && receipt.giftItems.length > 0) {
+    if (giftGroups.length > 0) {
+        for (const [index, giftGroup] of giftGroups.entries()) {
+            await printReceiptCopy(
+                receipt,
+                `Ticket cambio ${ticketLabel} ${giftGroup.label || index + 1}`,
+                true,
+                giftGroup
+            );
+        }
+    } else if (receipt.giftItems && receipt.giftItems.length > 0) {
         await printReceiptCopy(receipt, `Ticket cambio ${ticketLabel}`, true);
     }
 

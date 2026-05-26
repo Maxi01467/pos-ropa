@@ -4,7 +4,7 @@ export const POS_PALETTES = [
     {
         value: "current",
         label: "Actual",
-        swatches: ["#fb923c", "#6366f1", "#ede8e3"],
+        swatches: ["oklch(1.00 0.07 26)", "oklch(1.00 0.24 19)", "#ffffff"],
     },
     {
         value: "elegant-gray",
@@ -33,4 +33,3 @@ export type PosPalette = (typeof POS_PALETTES)[number]["value"];
 export function isPosPalette(value: string | null): value is PosPalette {
     return POS_PALETTES.some((palette) => palette.value === value);
 }
-

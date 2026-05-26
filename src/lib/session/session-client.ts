@@ -18,19 +18,31 @@ const EMPTY_SESSION_SNAPSHOT: SessionSnapshot = {
 };
 
 const SESSION_STORAGE_EVENT = "pos-session-updated";
+const SESSION_STORAGE_KEYS = ["pos_session", "pos_user", "pos_user_id", "pos_role"] as const;
+const SESSION_LOGOUT_BROADCAST_KEY = "pos_session_logout_at";
 
 let lastSnapshot: SessionSnapshot = EMPTY_SESSION_SNAPSHOT;
 let lastSnapshotKey = "false:";
 
-function getSnapshot(): SessionSnapshot {
+function getSessionStorage() {
     if (typeof window === "undefined") {
+        return null;
+    }
+
+    return window.sessionStorage;
+}
+
+function getSnapshot(): SessionSnapshot {
+    const storage = getSessionStorage();
+
+    if (!storage) {
         return EMPTY_SESSION_SNAPSHOT;
     }
 
-    const hasSession = localStorage.getItem("pos_session") === "true";
-    const storedUser = localStorage.getItem("pos_user");
-    const storedUserId = localStorage.getItem("pos_user_id");
-    const storedRole = localStorage.getItem("pos_role");
+    const hasSession = storage.getItem("pos_session") === "true";
+    const storedUser = storage.getItem("pos_user");
+    const storedUserId = storage.getItem("pos_user_id");
+    const storedRole = storage.getItem("pos_role");
     const role = hasSession ? getStoredRole(storedRole, storedUser) : null;
     const snapshotKey = `${hasSession}:${role ?? ""}:${storedUserId ?? ""}:${storedUser ?? ""}`;
 
@@ -50,10 +62,19 @@ function getSnapshot(): SessionSnapshot {
 }
 
 function subscribe(callback: () => void) {
-    window.addEventListener("storage", callback);
+    const handleStorage = (event: StorageEvent) => {
+        if (event.key === SESSION_LOGOUT_BROADCAST_KEY) {
+            const storage = getSessionStorage();
+            SESSION_STORAGE_KEYS.forEach((key) => storage?.removeItem(key));
+        }
+
+        callback();
+    };
+
+    window.addEventListener("storage", handleStorage);
     window.addEventListener(SESSION_STORAGE_EVENT, callback);
     return () => {
-        window.removeEventListener("storage", callback);
+        window.removeEventListener("storage", handleStorage);
         window.removeEventListener(SESSION_STORAGE_EVENT, callback);
     };
 }
@@ -71,17 +92,33 @@ export function setLocalSession(session: {
     userName: string;
     role: SessionRole;
 }) {
-    localStorage.setItem("pos_session", "true");
-    localStorage.setItem("pos_user", session.userName);
-    localStorage.setItem("pos_user_id", session.userId);
-    localStorage.setItem("pos_role", session.role);
+    const storage = getSessionStorage();
+
+    if (!storage) {
+        return;
+    }
+
+    SESSION_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
+    storage.setItem("pos_session", "true");
+    storage.setItem("pos_user", session.userName);
+    storage.setItem("pos_user_id", session.userId);
+    storage.setItem("pos_role", session.role);
     notifySessionUpdated();
 }
 
 export function clearLocalSession() {
-    localStorage.removeItem("pos_session");
-    localStorage.removeItem("pos_user");
-    localStorage.removeItem("pos_user_id");
-    localStorage.removeItem("pos_role");
+    const storage = getSessionStorage();
+
+    SESSION_STORAGE_KEYS.forEach((key) => {
+        storage?.removeItem(key);
+        if (typeof window !== "undefined") {
+            window.localStorage.removeItem(key);
+        }
+    });
+
+    if (typeof window !== "undefined") {
+        window.localStorage.setItem(SESSION_LOGOUT_BROADCAST_KEY, String(Date.now()));
+    }
+
     notifySessionUpdated();
 }

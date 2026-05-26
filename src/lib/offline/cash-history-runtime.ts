@@ -26,6 +26,20 @@ export type CashHistorySale = {
     transferAmount: number | null;
     createdAt: string;
     sellerName: string;
+    items: CashHistorySaleItem[];
+};
+
+export type CashHistorySaleItem = {
+    id: string;
+    variantId: string;
+    productName: string;
+    size: string;
+    color: string;
+    sku: string;
+    quantity: number;
+    priceAtTime: number;
+    priceType: string;
+    returnedQuantity: number;
 };
 
 export type CashHistoryMovement = {
@@ -95,6 +109,20 @@ type SaleRow = {
     sellerName: string | null;
 };
 
+type SaleItemRow = {
+    id: string;
+    saleId: string;
+    variantId: string;
+    productName: string;
+    size: string;
+    color: string;
+    sku: string;
+    quantity: number | string | null;
+    priceAtTime: number | string | null;
+    priceType: string;
+    returnedQuantity: number | string | null;
+};
+
 type UserRow = {
     id: string;
     name: string;
@@ -142,6 +170,7 @@ type ServerCashSession = {
         transferAmount: number | null;
         createdAt: string;
         sellerName?: string;
+        items?: CashHistorySaleItem[];
     }>;
 };
 
@@ -292,6 +321,35 @@ async function hydrateLocalSessions(sessionRows: SessionRow[]): Promise<CashHist
         ),
     ]);
 
+    const saleIds = saleRows.map((sale) => sale.id);
+    const saleItemRows = saleIds.length > 0
+        ? await queryRows<SaleItemRow>(
+            `
+                SELECT
+                    si.id,
+                    si.saleId,
+                    si.variantId,
+                    p.name AS productName,
+                    pv.size,
+                    pv.color,
+                    pv.sku,
+                    si.quantity,
+                    si.priceAtTime,
+                    si.priceType,
+                    si.returnedQuantity
+                FROM "SaleItem" si
+                INNER JOIN "ProductVariant" pv
+                    ON pv.id = si.variantId
+                INNER JOIN "Product" p
+                    ON p.id = pv.productId
+                WHERE si.deletedAt IS NULL
+                  AND si.saleId IN (${buildPlaceholders(saleIds.length)})
+                ORDER BY si.createdAt ASC
+            `,
+            saleIds
+        )
+        : [];
+
     const movementMap = new Map<string, CashHistoryMovement[]>();
     movementRows.forEach((movement) => {
         const list = movementMap.get(movement.sessionId) ?? [];
@@ -303,6 +361,24 @@ async function hydrateLocalSessions(sessionRows: SessionRow[]): Promise<CashHist
             createdAt: movement.createdAt,
         });
         movementMap.set(movement.sessionId, list);
+    });
+
+    const itemsMap = new Map<string, CashHistorySaleItem[]>();
+    saleItemRows.forEach((item) => {
+        const list = itemsMap.get(item.saleId) ?? [];
+        list.push({
+            id: item.id,
+            variantId: item.variantId,
+            productName: item.productName,
+            size: item.size,
+            color: item.color,
+            sku: item.sku,
+            quantity: toNumber(item.quantity),
+            priceAtTime: toNumber(item.priceAtTime),
+            priceType: item.priceType,
+            returnedQuantity: toNumber(item.returnedQuantity),
+        });
+        itemsMap.set(item.saleId, list);
     });
 
     const salesMap = new Map<string, CashHistorySale[]>();
@@ -317,6 +393,7 @@ async function hydrateLocalSessions(sessionRows: SessionRow[]): Promise<CashHist
             transferAmount: sale.transferAmount == null ? null : toNumber(sale.transferAmount),
             createdAt: sale.createdAt,
             sellerName: sale.sellerName ?? "Sin vendedor",
+            items: itemsMap.get(sale.id) ?? [],
         });
         salesMap.set(sale.sessionId, list);
     });
@@ -405,6 +482,7 @@ function mapServerSession(session: ServerCashSession): CashHistorySession {
             transferAmount: sale.transferAmount,
             createdAt: sale.createdAt,
             sellerName: sale.sellerName ?? "Sin vendedor",
+            items: sale.items ?? [],
         })),
     };
 }

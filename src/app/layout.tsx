@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { PwaRegister } from "@/components/layout/pwa-register";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { PowerSyncProvider } from "@/components/layout/powersync-provider";
+import { SmoothScroll } from "@/components/layout/smooth-scroll";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -32,6 +33,8 @@ export const metadata: Metadata = {
     telephone: false,
   },
   icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
     apple: "/apple-touch-icon.png",
   },
 };
@@ -64,11 +67,13 @@ export default function RootLayout({
       >
         <ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange>
           <PowerSyncProvider>
-            <PwaRegister />
-            <TooltipProvider delayDuration={300}>
-              {children}
-            </TooltipProvider>
-            <Toaster position="top-right" richColors closeButton />
+            <SmoothScroll>
+              <PwaRegister />
+              <TooltipProvider delayDuration={300}>
+                {children}
+              </TooltipProvider>
+              <Toaster position="top-center" closeButton />
+            </SmoothScroll>
           </PowerSyncProvider>
         </ThemeProvider>
       </body>

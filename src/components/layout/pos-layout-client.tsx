@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AppHeader } from "@/components/layout/app-header";
+import { SessionCloseGuard } from "@/components/layout/session-close-guard";
 import { Sidebar } from "@/components/layout/sidebar";
-import { canAccessPath, type SessionRole } from "@/lib/core/permissions";
+import { canAccessPath, getDefaultPathForRole, type SessionRole } from "@/lib/core/permissions";
 import { setLocalSession, useSessionSnapshot } from "@/lib/session/session-client";
 import type { AuthSession } from "@/lib/auth/auth-core";
 import { Button } from "@/components/ui/button";
@@ -145,7 +146,7 @@ export function POSLayoutClient({
         }
 
         if (!canAccessPath(effectiveSession.role, pathname, { isDesktop: isDesktopClient })) {
-            const destination = effectiveSession.role === "ADMIN" ? "/" : "/nueva-venta";
+            const destination = getDefaultPathForRole(effectiveSession.role, { isDesktop: isDesktopClient });
             if (pathname !== destination) {
                 router.replace(destination);
             }
@@ -371,6 +372,7 @@ export function POSLayoutClient({
 
     return (
         <div className="flex min-h-screen bg-transparent">
+            <SessionCloseGuard />
             <Sidebar
                 role={role}
                 userName={userName}

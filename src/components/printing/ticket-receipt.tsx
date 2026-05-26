@@ -12,6 +12,7 @@ const HORIZONTAL_PADDING_MM = 3;
 interface TicketReceiptProps {
     data: ReceiptPrintData | null;
     isGift?: boolean;
+    giftGroup?: NonNullable<ReceiptPrintData["giftGroups"]>[number];
 }
 
 function formatCurrency(amount: number): string {
@@ -22,11 +23,13 @@ function formatCurrency(amount: number): string {
     }).format(amount);
 }
 
-export function TicketReceipt({ data, isGift = false }: TicketReceiptProps) {
+export function TicketReceipt({ data, isGift = false, giftGroup }: TicketReceiptProps) {
     if (!data) return null;
 
     const printableItems =
-        isGift && data.giftItems && data.giftItems.length > 0 ? data.giftItems : data.items;
+        isGift
+            ? giftGroup?.items ?? data.giftItems ?? data.items
+            : data.items;
     const ticketBarcode = barcodeFromTicketNumber(data.ticketNumber);
     const shouldShowPaymentBreakdown =
         data.paymentMethod === "MIXTO" &&
@@ -54,7 +57,7 @@ export function TicketReceipt({ data, isGift = false }: TicketReceiptProps) {
                 </h1>
                 {isGift && (
                     <p className="mt-1 bg-black py-0.5 text-[12px] font-bold text-white">
-                        TICKET DE CAMBIO
+                        TICKET DE CAMBIO{giftGroup ? ` · ${giftGroup.label}` : ""}
                     </p>
                 )}
                 <p className="text-[11px]">Salta, Argentina</p>

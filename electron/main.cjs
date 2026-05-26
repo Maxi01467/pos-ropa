@@ -11,6 +11,7 @@ const DEV_URL = process.env.ELECTRON_RENDERER_URL || "http://localhost:3000";
 const PROD_HOST = "127.0.0.1";
 const PROD_PORT_START = 3210;
 const PROD_PORT_MAX_ATTEMPTS = 5;
+const AUTH_COOKIE_NAME = "pos_auth";
 const CREDENTIALS_FILENAME = "credentials.bin";
 const LOG_FILENAME = "desktop.log";
 const TERMINAL_CONFIG_FILENAME = "terminal-config.json";
@@ -683,12 +684,42 @@ function buildErrorPage(message) {
 // Windows
 // ---------------------------------------------------------------------------
 
+function installAuthCookieCleanup(window, appUrl) {
+    const browserSession = window.webContents.session;
+    let isClosing = false;
+
+    window.on("close", (event) => {
+        if (isClosing) {
+            return;
+        }
+
+        isClosing = true;
+        event.preventDefault();
+
+        void browserSession.cookies
+            .remove(appUrl, AUTH_COOKIE_NAME)
+            .catch((error) => {
+                appendDesktopLog(
+                    `No se pudo borrar la cookie de sesión al cerrar: ${
+                        error instanceof Error ? error.message : String(error)
+                    }`
+                );
+            })
+            .finally(() => {
+                if (!window.isDestroyed()) {
+                    window.destroy();
+                }
+            });
+    });
+}
+
 async function createMainWindow() {
     const window = new BrowserWindow({
         width: 1440,
         height: 960,
         minWidth: 1024,
         minHeight: 720,
+        icon: path.join(__dirname, "..", "assets", "icon.ico"),
         backgroundColor: "#f5efe4",
         autoHideMenuBar: true,
         webPreferences: {
@@ -711,6 +742,7 @@ async function createMainWindow() {
 
     try {
         const appUrl = await getAppUrl();
+        installAuthCookieCleanup(window, appUrl);
         await window.loadURL(appUrl);
     } catch (error) {
         const message =

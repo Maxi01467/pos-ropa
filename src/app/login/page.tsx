@@ -16,12 +16,15 @@ import {
     refreshOfflineBootstrapState,
     useOfflineBootstrap,
 } from "@/lib/offline/offline-bootstrap";
+import { getDefaultPathForRole } from "@/lib/core/permissions";
+import { refreshTerminalSnapshot, useTerminalSnapshot } from "@/lib/terminal/terminal-client";
 
 function LoginPageContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const session = useSessionSnapshot();
     const bootstrap = useOfflineBootstrap();
+    const terminal = useTerminalSnapshot();
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [isLoading, setIsLoading] = useState(false);
@@ -42,12 +45,19 @@ function LoginPageContent() {
             return;
         }
 
-        router.replace(session.role === "ADMIN" ? "/" : "/nueva-venta");
-    }, [isLoggedOutNavigation, router, session.hasSession, session.role]);
+        const isDesktopRuntime =
+            terminal.isDesktop ||
+            (typeof window !== "undefined" && Boolean(window.posDesktop));
+
+        router.replace(getDefaultPathForRole(session.role, { isDesktop: isDesktopRuntime }));
+    }, [isLoggedOutNavigation, router, session.hasSession, session.role, terminal.isDesktop]);
 
     useEffect(() => {
         void refreshOfflineBootstrapState().catch((error) => {
             console.warn("No se pudo calcular el bootstrap offline en login", error);
+        });
+        void refreshTerminalSnapshot().catch((error) => {
+            console.warn("No se pudo leer la configuración local de terminal en login", error);
         });
     }, []);
 
@@ -65,7 +75,10 @@ function LoginPageContent() {
             }
 
             const user = result.user;
-            const destination = user.role === "ADMIN" ? "/" : "/nueva-venta";
+            const isDesktopRuntime =
+                terminal.isDesktop ||
+                (typeof window !== "undefined" && Boolean(window.posDesktop));
+            const destination = getDefaultPathForRole(user.role, { isDesktop: isDesktopRuntime });
 
             setLocalSession({
                 userId: user.id,

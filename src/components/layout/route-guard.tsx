@@ -10,7 +10,7 @@ export function RouteGuard({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const pathname = usePathname();
     const { hasOpenCashSession } = useCashSessionStatus();
-    const isSalesRoute = pathname === "/nueva-venta";
+    const isSalesRoute = pathname === "/nueva-venta" || pathname.startsWith("/nueva-venta/");
 
     useEffect(() => {
         if (isSalesRoute && hasOpenCashSession === false) {

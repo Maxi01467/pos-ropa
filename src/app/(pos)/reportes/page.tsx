@@ -3,25 +3,29 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+    Area,
+    ComposedChart,
+    BarChart,
+    Bar,
+    PieChart,
+    Pie,
+    Cell,
+    CartesianGrid,
+    ResponsiveContainer,
+    Tooltip as RechartsTooltip,
+    XAxis,
+    YAxis,
+    Line,
+} from "recharts";
+import {
     Banknote,
     CreditCard,
     Loader2,
-    PackageX,
     ReceiptText,
-    ShieldAlert,
     TrendingUp,
     Wallet,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { cn } from "@/lib/core/utils";
@@ -39,28 +43,6 @@ import {
 import { db, initPowerSync } from "@/lib/powersync/db";
 import { useTerminalSnapshot } from "@/lib/terminal/terminal-client";
 import type { PosSaleHistoryItem } from "@/lib/offline/pos-runtime-data";
-
-type InventoryProduct = {
-    id: string;
-    code: string;
-    name: string;
-    price: number;
-    wholesalePrice: number;
-    costPrice?: number;
-    stock: number;
-};
-
-type LocalProductRow = {
-    id: string;
-    name: string;
-    priceNormal: number | string | null;
-    priceWholesale: number | string | null;
-};
-
-type LocalVariantRow = {
-    productId: string;
-    stock: number | string | null;
-};
 
 type LocalSaleRow = {
     id: string;
@@ -96,8 +78,6 @@ type ComparisonPreset = "last30" | "week" | "month" | "custom";
 type ProductRankingMetric = "money" | "units";
 type ProductRankingLimit = 10 | 20;
 
-const canPreviewReportsInDev = process.env.NODE_ENV !== "production";
-
 function formatCurrency(amount: number | null | undefined): string {
     return new Intl.NumberFormat("es-AR", {
         style: "currency",
@@ -114,6 +94,30 @@ function formatHourRange(hour: number): string {
     const start = hour.toString().padStart(2, "0");
     const end = ((hour + 1) % 24).toString().padStart(2, "0");
     return `${start}:00 - ${end}:00`;
+}
+
+function getArgentinaHour(dateStr: string): number {
+    return Number(
+        new Intl.DateTimeFormat("es-AR", {
+            timeZone: "America/Argentina/Buenos_Aires",
+            hour: "2-digit",
+            hourCycle: "h23",
+        }).format(normalizeDateInput(dateStr))
+    );
+}
+
+function getArgentinaDateKey(date: string | Date): string {
+    const parts = new Intl.DateTimeFormat("es-AR", {
+        timeZone: "America/Argentina/Buenos_Aires",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).formatToParts(normalizeDateInput(date));
+    const year = parts.find((part) => part.type === "year")?.value;
+    const month = parts.find((part) => part.type === "month")?.value;
+    const day = parts.find((part) => part.type === "day")?.value;
+
+    return `${year}-${month}-${day}`;
 }
 
 function toDateKey(date: Date): string {
@@ -205,6 +209,17 @@ function getComparisonPresetRanges(preset: Exclude<ComparisonPreset, "custom">):
     };
 }
 
+function normalizeRange(range: DateRange): DateRange {
+    const from = range.from || range.to;
+    const to = range.to || range.from;
+
+    if (!from || !to) {
+        return getDefaultDateRange();
+    }
+
+    return from <= to ? { from, to } : { from: to, to: from };
+}
+
 function toNumber(value: number | string | null | undefined): number {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
@@ -219,22 +234,7 @@ async function loadLocalReportsData() {
     await initPowerSync();
     assertOfflineBootstrapReady();
 
-    const [productRows, variantRows, salesRows, saleItemRows] = await Promise.all([
-        queryRows<LocalProductRow>(
-            `
-                SELECT id, name, priceNormal, priceWholesale
-                FROM "Product"
-                WHERE deletedAt IS NULL
-                ORDER BY createdAt DESC
-            `
-        ),
-        queryRows<LocalVariantRow>(
-            `
-                SELECT productId, stock
-                FROM "ProductVariant"
-                WHERE deletedAt IS NULL
-            `
-        ),
+    const [salesRows, saleItemRows] = await Promise.all([
         queryRows<LocalSaleRow>(
             `
                 SELECT
@@ -307,37 +307,17 @@ async function loadLocalReportsData() {
         items: itemsBySaleId.get(sale.id) ?? [],
     }));
 
-    const inventoryProductsMap = new Map<string, InventoryProduct>();
-    productRows.forEach((product) => {
-        inventoryProductsMap.set(product.id, {
-            id: product.id,
-            code: product.id.slice(-6).toUpperCase(),
-            name: product.name,
-            price: toNumber(product.priceNormal),
-            wholesalePrice: toNumber(product.priceWholesale),
-            stock: 0,
-        });
-    });
-
-    variantRows.forEach((variant) => {
-        const current = inventoryProductsMap.get(variant.productId);
-        if (!current) {
-            return;
-        }
-
-        current.stock += toNumber(variant.stock);
-    });
-
     return {
         sales,
-        inventoryProducts: Array.from(inventoryProductsMap.values()),
     };
 }
 
 export default function ReportesPage() {
     const router = useRouter();
     const terminal = useTerminalSnapshot();
-    const canOpenReports = terminal.isDesktop || canPreviewReportsInDev;
+    const canOpenReports =
+        terminal.isDesktop ||
+        (typeof window !== "undefined" && Boolean(window.posDesktop));
     const initialComparisonRanges = useMemo(() => getComparisonPresetRanges("last30"), []);
     const [isComparisonEnabled, setIsComparisonEnabled] = useState(false);
     const [comparisonPreset, setComparisonPreset] = useState<ComparisonPreset>("last30");
@@ -345,26 +325,45 @@ export default function ReportesPage() {
     const [dateTo, setDateTo] = useState(initialComparisonRanges.current.to);
     const [compareFrom, setCompareFrom] = useState(initialComparisonRanges.comparison.from);
     const [compareTo, setCompareTo] = useState(initialComparisonRanges.comparison.to);
+    const [isPeriodFilterEnabled, setIsPeriodFilterEnabled] = useState(false);
     const [productRankingMetric, setProductRankingMetric] = useState<ProductRankingMetric>("money");
     const [productRankingLimit, setProductRankingLimit] = useState<ProductRankingLimit>(10);
     const [sales, setSales] = useState<PosSaleHistoryItem[]>([]);
-    const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+
+    const applyDateRange = (range: DateRange, preset: ComparisonPreset = "custom") => {
+        const normalizedRange = normalizeRange(range);
+        const previousRange = getPreviousRange(normalizedRange);
+
+        setIsPeriodFilterEnabled(true);
+        setComparisonPreset(preset);
+        setDateFrom(normalizedRange.from);
+        setDateTo(normalizedRange.to);
+        setCompareFrom(previousRange.from);
+        setCompareTo(previousRange.to);
+    };
 
     const setPresetRanges = (preset: Exclude<ComparisonPreset, "custom">) => {
         const ranges = getComparisonPresetRanges(preset);
-        setComparisonPreset(preset);
-        setDateFrom(ranges.current.from);
-        setDateTo(ranges.current.to);
-        setCompareFrom(ranges.comparison.from);
-        setCompareTo(ranges.comparison.to);
+        applyDateRange(ranges.current, preset);
+    };
+
+    const setTodayRange = () => {
+        const today = getArgentinaDateKey(new Date());
+        applyDateRange({ from: today, to: today });
+    };
+
+    const clearPeriodFilter = () => {
+        setIsPeriodFilterEnabled(false);
+        setIsComparisonEnabled(false);
     };
 
     const enableComparison = () => {
-        const previousRange = getPreviousRange({
+        const previousRange = getPreviousRange(normalizeRange({
             from: dateFrom || initialComparisonRanges.current.from,
             to: dateTo || initialComparisonRanges.current.to,
-        });
+        }));
+        setIsPeriodFilterEnabled(true);
         setCompareFrom(previousRange.from);
         setCompareTo(previousRange.to);
         setIsComparisonEnabled(true);
@@ -378,7 +377,6 @@ export default function ReportesPage() {
         try {
             const localData = await loadLocalReportsData();
             setSales(localData.sales);
-            setInventoryProducts(localData.inventoryProducts);
         } catch (error) {
             console.error(error);
             toast.error(
@@ -408,40 +406,113 @@ export default function ReportesPage() {
         }
     );
 
-    const periodASales = useMemo(() => {
-        const from = dateFrom || initialComparisonRanges.current.from;
-        const to = dateTo || initialComparisonRanges.current.to;
-        const [start, end] = from <= to ? [from, to] : [to, from];
+    const selectedPeriodRange = useMemo(() => {
+        return normalizeRange({
+            from: dateFrom || initialComparisonRanges.current.from,
+            to: dateTo || initialComparisonRanges.current.to,
+        });
+    }, [dateFrom, dateTo, initialComparisonRanges]);
+
+    const filteredSales = useMemo(() => {
+        if (!isPeriodFilterEnabled) {
+            return sales;
+        }
 
         return sales.filter((sale) => {
-            const saleDay = sale.date.slice(0, 10);
-            return saleDay >= start && saleDay <= end;
+            const saleDay = getArgentinaDateKey(sale.date);
+            return saleDay >= selectedPeriodRange.from && saleDay <= selectedPeriodRange.to;
         });
-    }, [dateFrom, dateTo, initialComparisonRanges, sales]);
+    }, [isPeriodFilterEnabled, sales, selectedPeriodRange]);
+
+    const activePeriodRange = useMemo(() => {
+        if (isPeriodFilterEnabled) {
+            return selectedPeriodRange;
+        }
+
+        if (sales.length === 0) {
+            return initialComparisonRanges.current;
+        }
+
+        const days = sales
+            .map((sale) => getArgentinaDateKey(sale.date))
+            .sort((a, b) => a.localeCompare(b));
+
+        return {
+            from: days[0],
+            to: days[days.length - 1],
+        };
+    }, [initialComparisonRanges, isPeriodFilterEnabled, sales, selectedPeriodRange]);
+
+    const periodASales = useMemo(() => filteredSales, [filteredSales]);
 
     const periodBSales = useMemo(() => {
-        const from = compareFrom || initialComparisonRanges.comparison.from;
-        const to = compareTo || initialComparisonRanges.comparison.to;
-        const [start, end] = from <= to ? [from, to] : [to, from];
+        if (!isComparisonEnabled) {
+            return [];
+        }
+
+        const range = normalizeRange({
+            from: compareFrom || initialComparisonRanges.comparison.from,
+            to: compareTo || initialComparisonRanges.comparison.to,
+        });
 
         return sales.filter((sale) => {
-            const saleDay = sale.date.slice(0, 10);
-            return saleDay >= start && saleDay <= end;
+            const saleDay = getArgentinaDateKey(sale.date);
+            return saleDay >= range.from && saleDay <= range.to;
         });
-    }, [compareFrom, compareTo, initialComparisonRanges, sales]);
+    }, [compareFrom, compareTo, initialComparisonRanges, isComparisonEnabled, sales]);
+
+    const isSalesChartGroupedByHour =
+        isPeriodFilterEnabled && activePeriodRange.from === activePeriodRange.to;
 
     const comparisonChart = useMemo(() => {
-        const rangeAFrom = dateFrom || initialComparisonRanges.current.from;
-        const rangeATo = dateTo || initialComparisonRanges.current.to;
+        const rangeAFrom = activePeriodRange.from;
+        const rangeATo = activePeriodRange.to;
         const rangeBFrom = compareFrom || initialComparisonRanges.comparison.from;
         const rangeBTo = compareTo || initialComparisonRanges.comparison.to;
         const [startA, endA] = rangeAFrom <= rangeATo ? [rangeAFrom, rangeATo] : [rangeATo, rangeAFrom];
         const [startB, endB] = rangeBFrom <= rangeBTo ? [rangeBFrom, rangeBTo] : [rangeBTo, rangeBFrom];
+        if (isSalesChartGroupedByHour) {
+            const totalsByHour = new Map<number, { total: number; tickets: number }>();
+            const compareTotalsByHour = new Map<number, { total: number; tickets: number }>();
+
+            periodASales.forEach((sale) => {
+                const saleHour = getArgentinaHour(sale.date);
+                const current = totalsByHour.get(saleHour) ?? { total: 0, tickets: 0 };
+                current.total += sale.total;
+                current.tickets += 1;
+                totalsByHour.set(saleHour, current);
+            });
+
+            periodBSales.forEach((sale) => {
+                const saleHour = getArgentinaHour(sale.date);
+                const current = compareTotalsByHour.get(saleHour) ?? { total: 0, tickets: 0 };
+                current.total += sale.total;
+                current.tickets += 1;
+                compareTotalsByHour.set(saleHour, current);
+            });
+
+            return Array.from({ length: 24 }, (_, hour) => {
+                const current = totalsByHour.get(hour) ?? { total: 0, tickets: 0 };
+                const comparison = compareTotalsByHour.get(hour) ?? { total: 0, tickets: 0 };
+
+                return {
+                    index: hour,
+                    hour,
+                    dayA: startA,
+                    dayB: startB,
+                    totalA: current.total,
+                    ticketsA: current.tickets,
+                    totalB: comparison.total,
+                    ticketsB: comparison.tickets,
+                };
+            });
+        }
+
         const totalsByDay = new Map<string, { total: number; tickets: number }>();
         const compareTotalsByDay = new Map<string, { total: number; tickets: number }>();
 
         periodASales.forEach((sale) => {
-            const saleDay = sale.date.slice(0, 10);
+            const saleDay = getArgentinaDateKey(sale.date);
             const current = totalsByDay.get(saleDay) ?? { total: 0, tickets: 0 };
             current.total += sale.total;
             current.tickets += 1;
@@ -449,7 +520,7 @@ export default function ReportesPage() {
         });
 
         periodBSales.forEach((sale) => {
-            const saleDay = sale.date.slice(0, 10);
+            const saleDay = getArgentinaDateKey(sale.date);
             const current = compareTotalsByDay.get(saleDay) ?? { total: 0, tickets: 0 };
             current.total += sale.total;
             current.tickets += 1;
@@ -493,10 +564,10 @@ export default function ReportesPage() {
 
         return rows;
     }, [
+        activePeriodRange,
         compareFrom,
         compareTo,
-        dateFrom,
-        dateTo,
+        isSalesChartGroupedByHour,
         initialComparisonRanges,
         periodASales,
         periodBSales,
@@ -528,10 +599,10 @@ export default function ReportesPage() {
     }, [comparisonChart, isComparisonEnabled, periodASales, periodBSales]);
 
     const reportData = useMemo(() => {
-        const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);
-        const totalCash = sales.reduce((sum, sale) => sum + Number(sale.cashAmount || 0), 0);
-        const totalTransfer = sales.reduce((sum, sale) => sum + Number(sale.transferAmount || 0), 0);
-        const ticketAverage = sales.length > 0 ? totalSales / sales.length : 0;
+        const totalSales = filteredSales.reduce((sum, sale) => sum + sale.total, 0);
+        const totalCash = filteredSales.reduce((sum, sale) => sum + Number(sale.cashAmount || 0), 0);
+        const totalTransfer = filteredSales.reduce((sum, sale) => sum + Number(sale.transferAmount || 0), 0);
+        const ticketAverage = filteredSales.length > 0 ? totalSales / filteredSales.length : 0;
 
         const byHourMap = new Map<number, { hour: number; tickets: number; total: number }>();
         const byProductMap = new Map<
@@ -544,14 +615,8 @@ export default function ReportesPage() {
             }
         >();
 
-        sales.forEach((sale) => {
-            const saleHour = Number(
-                new Intl.DateTimeFormat("es-AR", {
-                    timeZone: "America/Argentina/Buenos_Aires",
-                    hour: "2-digit",
-                    hourCycle: "h23",
-                }).format(normalizeDateInput(sale.date))
-            );
+        filteredSales.forEach((sale) => {
+            const saleHour = getArgentinaHour(sale.date);
             const hourCurrent = byHourMap.get(saleHour) ?? {
                 hour: saleHour,
                 tickets: 0,
@@ -602,7 +667,7 @@ export default function ReportesPage() {
                 key: "cash",
                 label: "Efectivo",
                 amount: totalCash,
-                count: sales.filter((sale) => Number(sale.cashAmount || 0) > 0).length,
+                count: filteredSales.filter((sale) => Number(sale.cashAmount || 0) > 0).length,
                 icon: Banknote,
                 tone: "bg-emerald-900 text-emerald-100",
             },
@@ -610,20 +675,13 @@ export default function ReportesPage() {
                 key: "transfer",
                 label: "Transferencia",
                 amount: totalTransfer,
-                count: sales.filter((sale) => Number(sale.transferAmount || 0) > 0).length,
+                count: filteredSales.filter((sale) => Number(sale.transferAmount || 0) > 0).length,
                 icon: CreditCard,
                 tone: "bg-blue-900 text-blue-100",
             },
         ];
 
         const totalCollected = totalCash + totalTransfer;
-        const outOfStockRows = inventoryProducts
-            .filter((product) => product.stock <= 0)
-            .sort((a, b) => a.name.localeCompare(b.name));
-        const criticalStockRows = inventoryProducts
-            .filter((product) => product.stock > 0 && product.stock <= 3)
-            .sort((a, b) => a.stock - b.stock || a.name.localeCompare(b.name));
-
         return {
             totalSales,
             totalCash,
@@ -633,10 +691,8 @@ export default function ReportesPage() {
             paymentRows,
             hourRows,
             productRows,
-            criticalStockRows,
-            outOfStockRows,
         };
-    }, [inventoryProducts, sales]);
+    }, [filteredSales]);
 
     const productRankingRows = useMemo(() => {
         return [...reportData.productRows]
@@ -658,6 +714,91 @@ export default function ReportesPage() {
             .slice(0, productRankingLimit);
     }, [productRankingLimit, productRankingMetric, reportData.productRows]);
 
+    const periodFilterControls = (
+        <div className="flex flex-col gap-3 rounded-2xl border border-border/50 bg-muted/10 p-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                    type="button"
+                    onClick={clearPeriodFilter}
+                    className={cn(
+                        "h-8 rounded-lg border px-3 text-xs font-semibold transition-colors",
+                        !isPeriodFilterEnabled
+                            ? "border-slate-800 bg-slate-900 text-slate-50"
+                            : "border-transparent bg-transparent text-muted-foreground hover:bg-muted"
+                    )}
+                >
+                    Todo el tiempo
+                </button>
+                <div className="h-4 w-px bg-border/60 mx-1" />
+                <button
+                    type="button"
+                    onClick={setTodayRange}
+                    className="h-8 rounded-lg px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted"
+                >
+                    Hoy
+                </button>
+                {[
+                    { key: "week", label: "Esta semana" },
+                    { key: "month", label: "Este mes" },
+                    { key: "last30", label: "Últimos 30 días" },
+                ].map((preset) => (
+                    <button
+                        key={preset.key}
+                        type="button"
+                        onClick={() => setPresetRanges(preset.key as Exclude<ComparisonPreset, "custom">)}
+                        className={cn(
+                            "h-8 rounded-lg border px-3 text-xs font-semibold transition-colors",
+                            isPeriodFilterEnabled && comparisonPreset === preset.key
+                                ? "border-cyan-800/30 bg-cyan-900/10 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300"
+                                : "border-transparent bg-transparent text-muted-foreground hover:bg-muted"
+                        )}
+                    >
+                        {preset.label}
+                    </button>
+                ))}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+                <div className="flex h-9 items-center overflow-hidden rounded-xl border border-input bg-background shadow-sm transition-colors focus-within:border-ring focus-within:ring-[2px] focus-within:ring-ring/20">
+                    <span className="bg-muted/30 px-3 text-xs font-medium text-muted-foreground border-r border-border h-full flex items-center">
+                        Desde
+                    </span>
+                    <input
+                        type="date"
+                        value={dateFrom}
+                        onChange={(event) => {
+                            const nextFrom = event.target.value;
+                            setIsPeriodFilterEnabled(true);
+                            setComparisonPreset("custom");
+                            setDateFrom(nextFrom);
+                            setCompareFrom(getPreviousRange(normalizeRange({ from: nextFrom, to: dateTo })).from);
+                            setCompareTo(getPreviousRange(normalizeRange({ from: nextFrom, to: dateTo })).to);
+                        }}
+                        className="h-full border-0 bg-transparent px-2 text-sm text-foreground outline-none w-[130px]"
+                    />
+                </div>
+                <div className="flex h-9 items-center overflow-hidden rounded-xl border border-input bg-background shadow-sm transition-colors focus-within:border-ring focus-within:ring-[2px] focus-within:ring-ring/20">
+                    <span className="bg-muted/30 px-3 text-xs font-medium text-muted-foreground border-r border-border h-full flex items-center">
+                        Hasta
+                    </span>
+                    <input
+                        type="date"
+                        value={dateTo}
+                        onChange={(event) => {
+                            const nextTo = event.target.value;
+                            setIsPeriodFilterEnabled(true);
+                            setComparisonPreset("custom");
+                            setDateTo(nextTo);
+                            setCompareFrom(getPreviousRange(normalizeRange({ from: dateFrom, to: nextTo })).from);
+                            setCompareTo(getPreviousRange(normalizeRange({ from: dateFrom, to: nextTo })).to);
+                        }}
+                        className="h-full border-0 bg-transparent px-2 text-sm text-foreground outline-none w-[130px]"
+                    />
+                </div>
+            </div>
+        </div>
+    );
+
     if (isLoading) {
         return (
             <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-6">
@@ -669,7 +810,7 @@ export default function ReportesPage() {
                         <div>
                             <p className="text-base font-semibold text-foreground">Cargando reportes</p>
                             <p className="text-sm text-muted-foreground">
-                                Estamos consolidando ventas, productos e inventario.
+                                Estamos consolidando ventas y productos.
                             </p>
                         </div>
                     </div>
@@ -688,7 +829,7 @@ export default function ReportesPage() {
                             Reportes
                         </div>
                         <h1 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-foreground sm:text-3xl">
-                            Ventas, productos e inventario
+                            Ventas y productos
                         </h1>
                     </div>
                     <div className="inline-flex items-center gap-3 rounded-[1.25rem] border border-border/70 bg-card/90 px-4 py-3 shadow-sm">
@@ -696,7 +837,7 @@ export default function ReportesPage() {
                             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                                 Ventas
                             </p>
-                            <p className="mt-1 text-xl font-semibold text-foreground">{sales.length}</p>
+                            <p className="mt-1 text-xl font-semibold text-foreground">{filteredSales.length}</p>
                         </div>
                         <div className="rounded-xl bg-muted px-3 py-2 text-center">
                             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
@@ -760,19 +901,25 @@ export default function ReportesPage() {
                         <TabsTrigger value="medios">Transferencias vs efectivo</TabsTrigger>
                         <TabsTrigger value="horas">Horas pico</TabsTrigger>
                         <TabsTrigger value="productos">Productos estrella</TabsTrigger>
-                        <TabsTrigger value="stock">Stock crítico</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="ventas" className="mt-4 space-y-4">
                         <Card className="rounded-[1.5rem] border-border/70 bg-card/90 shadow-sm">
                             <CardHeader className="gap-4 xl:flex-row xl:items-start xl:justify-between">
                                 <div>
-                                    <CardTitle>Evolución de ventas diarias</CardTitle>
+                                    <CardTitle>
+                                        {isSalesChartGroupedByHour
+                                            ? "Evolución de ventas por hora"
+                                            : "Evolución de ventas diarias"}
+                                    </CardTitle>
                                     <CardDescription>
-                                        Facturación diaria del periodo seleccionado{isComparisonEnabled ? " con comparación activa." : "."}
+                                        {isSalesChartGroupedByHour
+                                            ? "Facturación por hora del día seleccionado"
+                                            : "Facturación diaria del periodo seleccionado"}
+                                        {isComparisonEnabled ? " con comparación activa." : "."}
                                     </CardDescription>
                                 </div>
-                                <div className="flex flex-wrap items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-1.5">
                                     <button
                                         type="button"
                                         onClick={() => {
@@ -784,34 +931,56 @@ export default function ReportesPage() {
                                             enableComparison();
                                         }}
                                         className={cn(
-                                            "h-9 rounded-xl border px-3 text-sm font-medium transition-colors",
+                                            "h-8 rounded-lg border px-3 text-xs font-semibold transition-colors",
                                             isComparisonEnabled
-                                                ? "border-violet-800 bg-violet-900 text-violet-50"
-                                                : "border-border bg-background text-muted-foreground hover:bg-muted"
+                                                ? "border-violet-800/30 bg-violet-900/10 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300"
+                                                : "border-transparent bg-transparent text-muted-foreground hover:bg-muted"
                                         )}
                                     >
                                         Comparar
                                     </button>
-                                    {isComparisonEnabled &&
-                                        [
-                                            { key: "last30", label: "30 días" },
-                                            { key: "week", label: "Semana" },
-                                            { key: "month", label: "Mes" },
-                                        ].map((preset) => (
-                                            <button
-                                                key={preset.key}
-                                                type="button"
-                                                onClick={() => setPresetRanges(preset.key as Exclude<ComparisonPreset, "custom">)}
-                                                className={cn(
-                                                    "h-9 rounded-xl border px-3 text-sm font-medium transition-colors",
-                                                    comparisonPreset === preset.key
-                                                        ? "border-cyan-800 bg-cyan-900 text-cyan-50"
-                                                        : "border-border bg-background text-muted-foreground hover:bg-muted"
-                                                )}
-                                            >
-                                                {preset.label}
-                                            </button>
-                                        ))}
+                                    
+                                    <div className="h-4 w-px bg-border/60 mx-1" />
+
+                                    <button
+                                        type="button"
+                                        onClick={clearPeriodFilter}
+                                        className={cn(
+                                            "h-8 rounded-lg border px-3 text-xs font-semibold transition-colors",
+                                            !isPeriodFilterEnabled
+                                                ? "border-slate-800 bg-slate-900 text-slate-50"
+                                                : "border-transparent bg-transparent text-muted-foreground hover:bg-muted"
+                                        )}
+                                    >
+                                        Todo el tiempo
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={setTodayRange}
+                                        className="h-8 rounded-lg px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted"
+                                    >
+                                        Hoy
+                                    </button>
+
+                                    {[
+                                        { key: "week", label: "Esta semana" },
+                                        { key: "month", label: "Este mes" },
+                                        { key: "last30", label: "Últimos 30 días" },
+                                    ].map((preset) => (
+                                        <button
+                                            key={preset.key}
+                                            type="button"
+                                            onClick={() => setPresetRanges(preset.key as Exclude<ComparisonPreset, "custom">)}
+                                            className={cn(
+                                                "h-8 rounded-lg border px-3 text-xs font-semibold transition-colors",
+                                                isPeriodFilterEnabled && comparisonPreset === preset.key
+                                                    ? "border-cyan-800/30 bg-cyan-900/10 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300"
+                                                    : "border-transparent bg-transparent text-muted-foreground hover:bg-muted"
+                                            )}
+                                        >
+                                            {preset.label}
+                                        </button>
+                                    ))}
                                 </div>
                             </CardHeader>
                             <CardContent className="space-y-5">
@@ -823,35 +992,37 @@ export default function ReportesPage() {
                                                 {isComparisonEnabled ? "Periodo A" : "Periodo"}
                                             </p>
                                         </div>
-                                        <div className="grid gap-3 sm:grid-cols-2">
-                                            <label className="space-y-1.5">
-                                                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                        <div className="flex flex-wrap items-center gap-3">
+                                            <div className="flex h-9 flex-1 sm:flex-none items-center overflow-hidden rounded-xl border border-cyan-800/20 bg-background shadow-sm transition-colors focus-within:border-cyan-600 focus-within:ring-[2px] focus-within:ring-cyan-600/20">
+                                                <span className="bg-cyan-950/5 px-3 text-xs font-medium text-cyan-800 border-r border-cyan-800/20 h-full flex items-center dark:text-cyan-400 dark:bg-cyan-900/20 dark:border-cyan-800/40">
                                                     Desde
                                                 </span>
                                                 <input
                                                     type="date"
                                                     value={dateFrom}
                                                     onChange={(event) => {
+                                                        setIsPeriodFilterEnabled(true);
                                                         setComparisonPreset("custom");
                                                         setDateFrom(event.target.value);
                                                     }}
-                                                    className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-colors focus:border-ring focus:ring-[3px] focus:ring-ring/20"
+                                                    className="h-full border-0 bg-transparent px-2 text-sm text-foreground outline-none w-full sm:w-[130px]"
                                                 />
-                                            </label>
-                                            <label className="space-y-1.5">
-                                                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                            </div>
+                                            <div className="flex h-9 flex-1 sm:flex-none items-center overflow-hidden rounded-xl border border-cyan-800/20 bg-background shadow-sm transition-colors focus-within:border-cyan-600 focus-within:ring-[2px] focus-within:ring-cyan-600/20">
+                                                <span className="bg-cyan-950/5 px-3 text-xs font-medium text-cyan-800 border-r border-cyan-800/20 h-full flex items-center dark:text-cyan-400 dark:bg-cyan-900/20 dark:border-cyan-800/40">
                                                     Hasta
                                                 </span>
                                                 <input
                                                     type="date"
                                                     value={dateTo}
                                                     onChange={(event) => {
+                                                        setIsPeriodFilterEnabled(true);
                                                         setComparisonPreset("custom");
                                                         setDateTo(event.target.value);
                                                     }}
-                                                    className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-colors focus:border-ring focus:ring-[3px] focus:ring-ring/20"
+                                                    className="h-full border-0 bg-transparent px-2 text-sm text-foreground outline-none w-full sm:w-[130px]"
                                                 />
-                                            </label>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -861,9 +1032,9 @@ export default function ReportesPage() {
                                                 <span className="size-3 rounded-full bg-violet-600" />
                                                 <p className="text-sm font-semibold text-foreground">Periodo B</p>
                                             </div>
-                                            <div className="grid gap-3 sm:grid-cols-2">
-                                                <label className="space-y-1.5">
-                                                    <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                            <div className="flex flex-wrap items-center gap-3">
+                                                <div className="flex h-9 flex-1 sm:flex-none items-center overflow-hidden rounded-xl border border-violet-800/20 bg-background shadow-sm transition-colors focus-within:border-violet-600 focus-within:ring-[2px] focus-within:ring-violet-600/20">
+                                                    <span className="bg-violet-950/5 px-3 text-xs font-medium text-violet-800 border-r border-violet-800/20 h-full flex items-center dark:text-violet-400 dark:bg-violet-900/20 dark:border-violet-800/40">
                                                         Desde
                                                     </span>
                                                     <input
@@ -873,11 +1044,11 @@ export default function ReportesPage() {
                                                             setComparisonPreset("custom");
                                                             setCompareFrom(event.target.value);
                                                         }}
-                                                        className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-colors focus:border-ring focus:ring-[3px] focus:ring-ring/20"
+                                                        className="h-full border-0 bg-transparent px-2 text-sm text-foreground outline-none w-full sm:w-[130px]"
                                                     />
-                                                </label>
-                                                <label className="space-y-1.5">
-                                                    <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                                </div>
+                                                <div className="flex h-9 flex-1 sm:flex-none items-center overflow-hidden rounded-xl border border-violet-800/20 bg-background shadow-sm transition-colors focus-within:border-violet-600 focus-within:ring-[2px] focus-within:ring-violet-600/20">
+                                                    <span className="bg-violet-950/5 px-3 text-xs font-medium text-violet-800 border-r border-violet-800/20 h-full flex items-center dark:text-violet-400 dark:bg-violet-900/20 dark:border-violet-800/40">
                                                         Hasta
                                                     </span>
                                                     <input
@@ -887,9 +1058,9 @@ export default function ReportesPage() {
                                                             setComparisonPreset("custom");
                                                             setCompareTo(event.target.value);
                                                         }}
-                                                        className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground shadow-sm outline-none transition-colors focus:border-ring focus:ring-[3px] focus:ring-ring/20"
+                                                        className="h-full border-0 bg-transparent px-2 text-sm text-foreground outline-none w-full sm:w-[130px]"
                                                     />
-                                                </label>
+                                                </div>
                                             </div>
                                         </div>
                                     )}
@@ -947,156 +1118,145 @@ export default function ReportesPage() {
                                     )}
                                 </div>
 
-                                <div className="h-[340px] rounded-[1.25rem] border border-border/70 bg-background p-4">
+                                <div className="h-[340px] rounded-[1.25rem] border border-border/70 bg-background p-4 flex flex-col">
                                     {comparisonChart.length === 0 ? (
                                         <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                                             Seleccioná un rango de fechas para ver la evolución.
                                         </div>
                                     ) : (
-                                        <svg
-                                            role="img"
-                                            aria-label="Evolución diaria de ventas"
-                                            viewBox="0 0 900 300"
-                                            className="h-full w-full overflow-visible"
-                                            preserveAspectRatio="none"
-                                        >
-                                            {(() => {
-                                                const chartWidth = 820;
-                                                const chartHeight = 210;
-                                                const offsetX = 58;
-                                                const offsetY = 24;
-                                                const maxTotal = chartMetrics.maxTotal || 1;
-                                                const pointGap = comparisonChart.length > 1 ? chartWidth / (comparisonChart.length - 1) : chartWidth;
-                                                const points = comparisonChart.map((day, index) => {
-                                                    const x = offsetX + index * pointGap;
-                                                    const yA = offsetY + chartHeight - (day.totalA / maxTotal) * chartHeight;
-                                                    const yB = offsetY + chartHeight - (day.totalB / maxTotal) * chartHeight;
-                                                    return { ...day, x, yA, yB };
-                                                });
-                                                const pathA = points
-                                                    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.yA.toFixed(2)}`)
-                                                    .join(" ");
-                                                const pathB = points
-                                                    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.yB.toFixed(2)}`)
-                                                    .join(" ");
-                                                const areaPath = `${pathA} L ${offsetX + (points.length - 1) * pointGap} ${offsetY + chartHeight} L ${offsetX} ${offsetY + chartHeight} Z`;
-                                                const guideValues = [1, 0.75, 0.5, 0.25, 0];
-                                                const visibleLabels = points.filter((_, index) => {
-                                                    if (points.length <= 8) {
-                                                        return true;
-                                                    }
-                                                    const step = Math.ceil(points.length / 6);
-                                                    return index === 0 || index === points.length - 1 || index % step === 0;
-                                                });
-
-                                                return (
-                                                    <>
-                                                        {guideValues.map((guide) => {
-                                                            const y = offsetY + chartHeight - guide * chartHeight;
-
-                                                            return (
-                                                                <g key={guide}>
-                                                                    <line
-                                                                        x1={offsetX}
-                                                                        x2={offsetX + chartWidth}
-                                                                        y1={y}
-                                                                        y2={y}
-                                                                        className="stroke-border"
-                                                                        strokeDasharray={guide === 0 ? "0" : "5 7"}
-                                                                    />
-                                                                    <text
-                                                                        x={0}
-                                                                        y={y + 4}
-                                                                        className="fill-muted-foreground text-[11px]"
-                                                                    >
-                                                                        {formatCurrency(maxTotal * guide)}
-                                                                    </text>
-                                                                </g>
-                                                            );
-                                                        })}
-
-                                                        <path d={areaPath} fill="url(#dailySalesArea)" opacity="0.28" />
-                                                        {isComparisonEnabled && (
-                                                            <path
-                                                                d={pathB}
-                                                                fill="none"
-                                                                stroke="#7c3aed"
-                                                                strokeWidth="3"
-                                                                strokeLinecap="round"
-                                                                strokeLinejoin="round"
-                                                                strokeDasharray="8 7"
-                                                            />
-                                                        )}
-                                                        <path
-                                                            d={pathA}
-                                                            fill="none"
-                                                            stroke="url(#dailySalesLine)"
-                                                            strokeWidth="4"
-                                                            strokeLinecap="round"
-                                                            strokeLinejoin="round"
+                                        <div className="flex-1 w-full mt-2">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <ComposedChart data={comparisonChart} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                                                    <defs>
+                                                        <linearGradient id="colorTotalA" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
+                                                            <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+                                                        </linearGradient>
+                                                    </defs>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                                                    <XAxis 
+                                                        dataKey="index" 
+                                                        tickFormatter={(v) =>
+                                                            isSalesChartGroupedByHour
+                                                                ? `${String(v).padStart(2, "0")}h`
+                                                                : `Día ${v + 1}`
+                                                        }
+                                                        axisLine={false} 
+                                                        tickLine={false} 
+                                                        tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} 
+                                                        dy={10}
+                                                        minTickGap={30}
+                                                    />
+                                                    <YAxis 
+                                                        yAxisId="left"
+                                                        tickFormatter={(v) => new Intl.NumberFormat("es-AR", { notation: "compact", compactDisplay: "short" }).format(v)}
+                                                        axisLine={false} 
+                                                        tickLine={false} 
+                                                        tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} 
+                                                    />
+                                                    <RechartsTooltip 
+                                                        content={({ active, payload }) => {
+                                                            if (active && payload && payload.length) {
+                                                                return (
+                                                                    <div className="rounded-xl border border-border/50 bg-background/95 p-3 shadow-lg backdrop-blur-sm">
+                                                                        <div className="grid gap-2">
+                                                                            {/* Periodo A */}
+                                                                            <div className="flex items-center justify-between gap-4">
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <div className="size-2.5 rounded-full bg-cyan-500"></div>
+                                                                                    <div>
+                                                                                        <p className="text-xs font-medium text-muted-foreground">{isComparisonEnabled ? "Periodo A" : isSalesChartGroupedByHour ? "Hora" : "Día"}</p>
+                                                                                        {isSalesChartGroupedByHour && typeof payload[0]?.payload.hour === "number" && (
+                                                                                            <p className="text-[10px] text-muted-foreground/70">
+                                                                                                {formatHourRange(payload[0].payload.hour)}
+                                                                                            </p>
+                                                                                        )}
+                                                                                        {payload[0]?.payload.dayA && (
+                                                                                            <p className="text-[10px] text-muted-foreground/70">
+                                                                                                {formatShortDate(payload[0].payload.dayA)}
+                                                                                            </p>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </div>
+                                                                                <div className="text-right">
+                                                                                    <p className="text-sm font-bold text-foreground">
+                                                                                        {formatCurrency(payload[0]?.value as number)}
+                                                                                    </p>
+                                                                                    <p className="text-[10px] text-muted-foreground">
+                                                                                        {payload[0]?.payload.ticketsA} boletas
+                                                                                    </p>
+                                                                                </div>
+                                                                            </div>
+                                                                            
+                                                                            {/* Periodo B */}
+                                                                            {isComparisonEnabled && payload[1] && (
+                                                                                <>
+                                                                                    <div className="h-px bg-border/50" />
+                                                                                    <div className="flex items-center justify-between gap-4">
+                                                                                        <div className="flex items-center gap-2">
+                                                                                            <div className="size-2.5 rounded-full bg-violet-500"></div>
+                                                                                            <div>
+                                                                                                <p className="text-xs font-medium text-muted-foreground">Periodo B</p>
+                                                                                                {isSalesChartGroupedByHour && typeof payload[1].payload.hour === "number" && (
+                                                                                                    <p className="text-[10px] text-muted-foreground/70">
+                                                                                                        {formatHourRange(payload[1].payload.hour)}
+                                                                                                    </p>
+                                                                                                )}
+                                                                                                {payload[1].payload.dayB && (
+                                                                                                    <p className="text-[10px] text-muted-foreground/70">
+                                                                                                        {formatShortDate(payload[1].payload.dayB)}
+                                                                                                    </p>
+                                                                                                )}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                        <div className="text-right">
+                                                                                            <p className="text-sm font-bold text-foreground">
+                                                                                                {formatCurrency(payload[1]?.value as number)}
+                                                                                            </p>
+                                                                                            <p className="text-[10px] text-muted-foreground">
+                                                                                                {payload[1]?.payload.ticketsB} boletas
+                                                                                            </p>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            return null;
+                                                        }}
+                                                    />
+                                                    
+                                                    {isComparisonEnabled && (
+                                                        <Line
+                                                            yAxisId="left"
+                                                            type="monotone"
+                                                            dataKey="totalB"
+                                                            stroke="#7c3aed"
+                                                            strokeWidth={2.5}
+                                                            strokeDasharray="5 5"
+                                                            dot={{ r: 3, fill: "var(--background)", strokeWidth: 2 }}
+                                                            activeDot={{ r: 5 }}
+                                                            name="Periodo B"
                                                         />
+                                                    )}
 
-                                                        {points.map((point) => (
-                                                            <g key={`${point.dayA}-${point.dayB}-${point.index}`}>
-                                                                {isComparisonEnabled && (
-                                                                    <circle
-                                                                        cx={point.x}
-                                                                        cy={point.yB}
-                                                                        r={point.totalB > 0 ? 4 : 3}
-                                                                        className="fill-background stroke-violet-600"
-                                                                        strokeWidth="3"
-                                                                    />
-                                                                )}
-                                                                <circle
-                                                                    cx={point.x}
-                                                                    cy={point.yA}
-                                                                    r={point.totalA > 0 ? 4.5 : 3}
-                                                                    className="fill-background stroke-cyan-700"
-                                                                    strokeWidth="3"
-                                                                />
-                                                                <title>
-                                                                    {isComparisonEnabled
-                                                                        ? `A ${point.dayA ? formatShortDate(point.dayA) : "Sin día"} · ${formatCurrency(point.totalA)} · ${point.ticketsA} boleta${point.ticketsA !== 1 ? "s" : ""} | B ${point.dayB ? formatShortDate(point.dayB) : "Sin día"} · ${formatCurrency(point.totalB)} · ${point.ticketsB} boleta${point.ticketsB !== 1 ? "s" : ""}`
-                                                                        : `${point.dayA ? formatShortDate(point.dayA) : "Sin día"} · ${formatCurrency(point.totalA)} · ${point.ticketsA} boleta${point.ticketsA !== 1 ? "s" : ""}`}
-                                                                </title>
-                                                            </g>
-                                                        ))}
-
-                                                        {visibleLabels.map((point) => (
-                                                            <text
-                                                                key={`${point.dayA}-${point.index}`}
-                                                                x={point.x}
-                                                                y={282}
-                                                                textAnchor="middle"
-                                                                className="fill-muted-foreground text-[11px]"
-                                                            >
-                                                                Día {point.index + 1}
-                                                            </text>
-                                                        ))}
-
-                                                        {isComparisonEnabled && (
-                                                            <g>
-                                                                <line x1={670} x2={704} y1={18} y2={18} stroke="#0891b2" strokeWidth="4" strokeLinecap="round" />
-                                                                <text x={712} y={22} className="fill-foreground text-[12px]">Periodo A</text>
-                                                                <line x1={670} x2={704} y1={42} y2={42} stroke="#7c3aed" strokeWidth="3" strokeLinecap="round" strokeDasharray="8 7" />
-                                                                <text x={712} y={46} className="fill-foreground text-[12px]">Periodo B</text>
-                                                            </g>
-                                                        )}
-
-                                                        <defs>
-                                                            <linearGradient id="dailySalesLine" x1="0" y1="0" x2="1" y2="0">
-                                                                <stop offset="0%" stopColor="#0f766e" />
-                                                                <stop offset="100%" stopColor="#06b6d4" />
-                                                            </linearGradient>
-                                                            <linearGradient id="dailySalesArea" x1="0" y1="0" x2="0" y2="1">
-                                                                <stop offset="0%" stopColor="#06b6d4" />
-                                                                <stop offset="100%" stopColor="#06b6d4" stopOpacity="0" />
-                                                            </linearGradient>
-                                                        </defs>
-                                                    </>
-                                                );
-                                            })()}
-                                        </svg>
+                                                    <Area
+                                                        yAxisId="left"
+                                                        type="monotone"
+                                                        dataKey="totalA"
+                                                        stroke="#06b6d4"
+                                                        strokeWidth={3}
+                                                        fillOpacity={1}
+                                                        fill="url(#colorTotalA)"
+                                                        dot={{ r: 4, fill: "var(--background)", strokeWidth: 2 }}
+                                                        activeDot={{ r: 6, strokeWidth: 0, fill: "#06b6d4" }}
+                                                        name="Periodo A"
+                                                    />
+                                                </ComposedChart>
+                                            </ResponsiveContainer>
+                                        </div>
                                     )}
                                 </div>
                             </CardContent>
@@ -1105,9 +1265,12 @@ export default function ReportesPage() {
 
                     <TabsContent value="medios" className="mt-4 space-y-4">
                         <Card className="rounded-[1.5rem] border-border/70 bg-card/90 shadow-sm">
-                            <CardHeader>
-                                <CardTitle>Transferencias vs efectivo</CardTitle>
-                                <CardDescription>Distribución del dinero ingresado por medio de pago.</CardDescription>
+                            <CardHeader className="gap-4">
+                                <div>
+                                    <CardTitle>Transferencias vs efectivo</CardTitle>
+                                    <CardDescription>Distribución del dinero ingresado por medio de pago.</CardDescription>
+                                </div>
+                                {periodFilterControls}
                             </CardHeader>
                             <CardContent>
                                 <div className="grid gap-6 xl:grid-cols-[420px_1fr] xl:items-center">
@@ -1116,54 +1279,76 @@ export default function ReportesPage() {
                                             const total = reportData.totalCollected;
                                             const cashPercentage = total > 0 ? (reportData.totalCash / total) * 100 : 0;
                                             const transferPercentage = total > 0 ? (reportData.totalTransfer / total) * 100 : 0;
-                                            const cashDash = `${cashPercentage} ${100 - cashPercentage}`;
-                                            const transferDash = `${transferPercentage} ${100 - transferPercentage}`;
+                                            const hasData = total > 0;
+                                            
+                                            const pieData = hasData ? [
+                                                { name: "Efectivo", value: reportData.totalCash, percentage: cashPercentage, fill: "url(#pieCash)", color: "#10b981" },
+                                                { name: "Transferencia", value: reportData.totalTransfer, percentage: transferPercentage, fill: "url(#pieTransfer)", color: "#3b82f6" }
+                                            ] : [
+                                                { name: "Sin datos", value: 1, fill: "var(--muted)", color: "var(--muted)", isPlaceholder: true }
+                                            ];
 
                                             return (
-                                                <>
-                                                    <svg
-                                                        role="img"
-                                                        aria-label="Distribución entre efectivo y transferencia"
-                                                        viewBox="0 0 120 120"
-                                                        className="h-full w-full -rotate-90"
-                                                    >
-                                                        <circle
-                                                            cx="60"
-                                                            cy="60"
-                                                            r="42"
-                                                            fill="none"
-                                                            className="stroke-muted"
-                                                            strokeWidth="18"
-                                                        />
-                                                        {total > 0 && (
-                                                            <>
-                                                                <circle
-                                                                    cx="60"
-                                                                    cy="60"
-                                                                    r="42"
-                                                                    fill="none"
-                                                                    stroke="#059669"
-                                                                    strokeWidth="18"
-                                                                    strokeDasharray={cashDash}
-                                                                    pathLength="100"
-                                                                    strokeLinecap="round"
+                                                <div className="h-full w-full relative">
+                                                    <ResponsiveContainer width="100%" height="100%">
+                                                        <PieChart>
+                                                            <defs>
+                                                                <linearGradient id="pieCash" x1="0" y1="0" x2="0" y2="1">
+                                                                    <stop offset="0%" stopColor="#34d399" />
+                                                                    <stop offset="100%" stopColor="#059669" />
+                                                                </linearGradient>
+                                                                <linearGradient id="pieTransfer" x1="0" y1="0" x2="0" y2="1">
+                                                                    <stop offset="0%" stopColor="#60a5fa" />
+                                                                    <stop offset="100%" stopColor="#2563eb" />
+                                                                </linearGradient>
+                                                            </defs>
+                                                            <Pie
+                                                                data={pieData}
+                                                                cx="50%"
+                                                                cy="50%"
+                                                                innerRadius="65%"
+                                                                outerRadius="95%"
+                                                                paddingAngle={hasData ? 4 : 0}
+                                                                dataKey="value"
+                                                                stroke="none"
+                                                                cornerRadius={hasData ? 10 : 0}
+                                                            >
+                                                                {pieData.map((entry, index) => (
+                                                                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                                                                ))}
+                                                            </Pie>
+                                                            {hasData && (
+                                                                <RechartsTooltip
+                                                                    content={({ active, payload }) => {
+                                                                        if (active && payload && payload.length && !payload[0].payload.isPlaceholder) {
+                                                                            const data = payload[0].payload;
+                                                                            return (
+                                                                                <div className="rounded-xl border border-border/50 bg-background/95 p-3 shadow-lg backdrop-blur-sm z-50">
+                                                                                    <div className="flex flex-col gap-1">
+                                                                                        <div className="flex items-center gap-2">
+                                                                                            <div className="size-3 rounded-full" style={{ backgroundColor: data.color }} />
+                                                                                            <p className="text-sm font-semibold text-foreground">{data.name}</p>
+                                                                                        </div>
+                                                                                        <div className="mt-2 flex items-center justify-between gap-6">
+                                                                                            <p className="text-sm font-medium text-muted-foreground">% del Total</p>
+                                                                                            <p className="text-sm font-semibold text-muted-foreground">{data.percentage.toFixed(1)}%</p>
+                                                                                        </div>
+                                                                                        <div className="flex items-center justify-between gap-6">
+                                                                                            <p className="text-sm font-medium text-foreground">Ingreso</p>
+                                                                                            <p className="text-sm font-bold text-foreground">{formatCurrency(data.value)}</p>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            );
+                                                                        }
+                                                                        return null;
+                                                                    }}
                                                                 />
-                                                                <circle
-                                                                    cx="60"
-                                                                    cy="60"
-                                                                    r="42"
-                                                                    fill="none"
-                                                                    stroke="#2563eb"
-                                                                    strokeWidth="18"
-                                                                    strokeDasharray={transferDash}
-                                                                    strokeDashoffset={-cashPercentage}
-                                                                    pathLength="100"
-                                                                    strokeLinecap="round"
-                                                                />
-                                                            </>
-                                                        )}
-                                                    </svg>
-                                                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                                                            )}
+                                                        </PieChart>
+                                                    </ResponsiveContainer>
+                                                    
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
                                                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                                                             Total
                                                         </p>
@@ -1171,7 +1356,7 @@ export default function ReportesPage() {
                                                             {formatCurrency(total)}
                                                         </p>
                                                     </div>
-                                                </>
+                                                </div>
                                             );
                                         })()}
                                     </div>
@@ -1212,109 +1397,78 @@ export default function ReportesPage() {
 
                     <TabsContent value="horas" className="mt-4 space-y-4">
                         <Card className="rounded-[1.5rem] border-border/70 bg-card/90 shadow-sm">
-                            <CardHeader>
-                                <CardTitle>Horas pico</CardTitle>
-                                <CardDescription>Cantidad de boletas emitidas por franja horaria.</CardDescription>
+                            <CardHeader className="gap-4">
+                                <div>
+                                    <CardTitle>Horas pico</CardTitle>
+                                    <CardDescription>Cantidad de boletas emitidas por franja horaria.</CardDescription>
+                                </div>
+                                {periodFilterControls}
                             </CardHeader>
                             <CardContent>
-                                <div className="h-[380px] rounded-[1.25rem] border border-border/70 bg-background p-4">
+                                <div className="h-[380px] rounded-[1.25rem] border border-border/70 bg-background p-4 flex flex-col">
                                     {reportData.hourRows.length === 0 ? (
                                         <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                                             Todavía no hay ventas registradas para analizar horarios.
                                         </div>
                                     ) : (
-                                        <svg
-                                            role="img"
-                                            aria-label="Boletas por hora"
-                                            viewBox="0 0 900 320"
-                                            className="h-full w-full overflow-visible"
-                                            preserveAspectRatio="none"
-                                        >
-                                            {(() => {
-                                                const chartWidth = 800;
-                                                const chartHeight = 220;
-                                                const offsetX = 64;
-                                                const offsetY = 28;
-                                                const sortedHours = [...reportData.hourRows].sort((a, b) => a.hour - b.hour);
-                                                const maxTickets = Math.max(...sortedHours.map((hour) => hour.tickets), 1);
-                                                const slotWidth = chartWidth / sortedHours.length;
-                                                const barWidth = Math.min(slotWidth * 0.58, 42);
-                                                const guideValues = [1, 0.75, 0.5, 0.25, 0];
-
-                                                return (
-                                                    <>
-                                                        {guideValues.map((guide) => {
-                                                            const y = offsetY + chartHeight - guide * chartHeight;
-
-                                                            return (
-                                                                <g key={guide}>
-                                                                    <line
-                                                                        x1={offsetX}
-                                                                        x2={offsetX + chartWidth}
-                                                                        y1={y}
-                                                                        y2={y}
-                                                                        className="stroke-border"
-                                                                        strokeDasharray={guide === 0 ? "0" : "5 7"}
-                                                                    />
-                                                                    <text
-                                                                        x={18}
-                                                                        y={y + 4}
-                                                                        className="fill-muted-foreground text-[11px]"
-                                                                    >
-                                                                        {Math.round(maxTickets * guide)}
-                                                                    </text>
-                                                                </g>
-                                                            );
-                                                        })}
-
-                                                        {sortedHours.map((hourRow, index) => {
-                                                            const height = (hourRow.tickets / maxTickets) * chartHeight;
-                                                            const x = offsetX + index * slotWidth + (slotWidth - barWidth) / 2;
-                                                            const y = offsetY + chartHeight - height;
-
-                                                            return (
-                                                                <g key={hourRow.hour}>
-                                                                    <rect
-                                                                        x={x}
-                                                                        y={y}
-                                                                        width={barWidth}
-                                                                        height={Math.max(height, 3)}
-                                                                        rx="8"
-                                                                        fill="url(#hourBarGradient)"
-                                                                    />
-                                                                    <text
-                                                                        x={x + barWidth / 2}
-                                                                        y={y - 8}
-                                                                        textAnchor="middle"
-                                                                        className="fill-foreground text-[12px] font-semibold"
-                                                                    >
-                                                                        {hourRow.tickets}
-                                                                    </text>
-                                                                    <text
-                                                                        x={x + barWidth / 2}
-                                                                        y={286}
-                                                                        textAnchor="middle"
-                                                                        className="fill-muted-foreground text-[11px]"
-                                                                    >
-                                                                        {hourRow.hour.toString().padStart(2, "0")}h
-                                                                    </text>
-                                                                    <title>
-                                                                        {`${formatHourRange(hourRow.hour)} · ${hourRow.tickets} boleta${hourRow.tickets !== 1 ? "s" : ""} · ${formatCurrency(hourRow.total)}`}
-                                                                    </title>
-                                                                </g>
-                                                            );
-                                                        })}
-
-                                                        <defs>
-                                                            <linearGradient id="hourBarGradient" x1="0" y1="0" x2="0" y2="1">
-                                                                <stop offset="0%" stopColor="#0891b2" />
-                                                                <stop offset="100%" stopColor="#0f766e" />
-                                                            </linearGradient>
-                                                        </defs>
-                                                    </>
-                                                );
-                                            })()}
-                                        </svg>
+                                        <div className="flex-1 w-full mt-2">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <BarChart data={[...reportData.hourRows].sort((a, b) => a.hour - b.hour)} margin={{ top: 20, right: 10, left: -20, bottom: 0 }} barSize={42}>
+                                                    <defs>
+                                                        <linearGradient id="colorTickets" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="0%" stopColor="#8b5cf6" />
+                                                            <stop offset="100%" stopColor="#5b21b6" />
+                                                        </linearGradient>
+                                                    </defs>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                                                    <XAxis 
+                                                        dataKey="hour" 
+                                                        tickFormatter={(v) => `${v.toString().padStart(2, "0")}h`}
+                                                        axisLine={false} 
+                                                        tickLine={false} 
+                                                        tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} 
+                                                        dy={10}
+                                                    />
+                                                    <YAxis 
+                                                        axisLine={false} 
+                                                        tickLine={false} 
+                                                        tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} 
+                                                    />
+                                                    <RechartsTooltip
+                                                        cursor={{ fill: "var(--muted)", opacity: 0.4 }}
+                                                        content={({ active, payload }) => {
+                                                            if (active && payload && payload.length) {
+                                                                const data = payload[0].payload;
+                                                                return (
+                                                                    <div className="rounded-xl border border-border/50 bg-background/95 p-3 shadow-lg backdrop-blur-sm">
+                                                                        <div className="flex flex-col gap-1">
+                                                                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+                                                                                {formatHourRange(data.hour)}
+                                                                            </p>
+                                                                            <div className="mt-2 flex items-center justify-between gap-6">
+                                                                                <p className="text-sm font-medium text-foreground">Boletas</p>
+                                                                                <p className="text-sm font-bold text-foreground">{data.tickets}</p>
+                                                                            </div>
+                                                                            <div className="flex items-center justify-between gap-6">
+                                                                                <p className="text-sm font-medium text-muted-foreground">Facturado</p>
+                                                                                <p className="text-sm font-semibold text-muted-foreground">{formatCurrency(data.total)}</p>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            return null;
+                                                        }}
+                                                    />
+                                                    <Bar 
+                                                        dataKey="tickets" 
+                                                        fill="url(#colorTickets)" 
+                                                        radius={[4, 4, 0, 0]}
+                                                        label={{ position: "top", fill: "var(--foreground)", fontSize: 12, fontWeight: 600, dy: -6 }}
+                                                    />
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
                                     )}
                                 </div>
                             </CardContent>
@@ -1323,107 +1477,141 @@ export default function ReportesPage() {
 
                     <TabsContent value="productos" className="mt-4 space-y-4">
                         <Card className="rounded-[1.5rem] border-border/70 bg-card/90 shadow-sm">
-                            <CardHeader className="gap-4 xl:flex-row xl:items-start xl:justify-between">
-                                <div>
-                                    <CardTitle>Productos estrella</CardTitle>
-                                    <CardDescription>
-                                        Ranking horizontal de productos por dinero facturado o unidades vendidas.
-                                    </CardDescription>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setProductRankingMetric("money")}
-                                        className={cn(
-                                            "h-9 rounded-xl border px-3 text-sm font-medium transition-colors",
-                                            productRankingMetric === "money"
-                                                ? "border-cyan-800 bg-cyan-900 text-cyan-50"
-                                                : "border-border bg-background text-muted-foreground hover:bg-muted"
-                                        )}
-                                    >
-                                        Más vendidos en $
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setProductRankingMetric("units")}
-                                        className={cn(
-                                            "h-9 rounded-xl border px-3 text-sm font-medium transition-colors",
-                                            productRankingMetric === "units"
-                                                ? "border-cyan-800 bg-cyan-900 text-cyan-50"
-                                                : "border-border bg-background text-muted-foreground hover:bg-muted"
-                                        )}
-                                    >
-                                        Más vendidos en unidades
-                                    </button>
-                                    {[10, 20].map((limit) => (
+                            <CardHeader className="gap-4">
+                                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                                    <div>
+                                        <CardTitle>Productos estrella</CardTitle>
+                                        <CardDescription>
+                                            Ranking horizontal de productos por dinero facturado o unidades vendidas.
+                                        </CardDescription>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-2">
                                         <button
-                                            key={limit}
                                             type="button"
-                                            onClick={() => setProductRankingLimit(limit as ProductRankingLimit)}
+                                            onClick={() => setProductRankingMetric("money")}
                                             className={cn(
                                                 "h-9 rounded-xl border px-3 text-sm font-medium transition-colors",
-                                                productRankingLimit === limit
-                                                    ? "border-emerald-800 bg-emerald-900 text-emerald-50"
+                                                productRankingMetric === "money"
+                                                    ? "border-cyan-800 bg-cyan-900 text-cyan-50"
                                                     : "border-border bg-background text-muted-foreground hover:bg-muted"
                                             )}
                                         >
-                                            Top {limit}
+                                            Más vendidos en $
                                         </button>
-                                    ))}
+                                        <button
+                                            type="button"
+                                            onClick={() => setProductRankingMetric("units")}
+                                            className={cn(
+                                                "h-9 rounded-xl border px-3 text-sm font-medium transition-colors",
+                                                productRankingMetric === "units"
+                                                    ? "border-cyan-800 bg-cyan-900 text-cyan-50"
+                                                    : "border-border bg-background text-muted-foreground hover:bg-muted"
+                                            )}
+                                        >
+                                            Más vendidos en unidades
+                                        </button>
+                                        {[10, 20].map((limit) => (
+                                            <button
+                                                key={limit}
+                                                type="button"
+                                                onClick={() => setProductRankingLimit(limit as ProductRankingLimit)}
+                                                className={cn(
+                                                    "h-9 rounded-xl border px-3 text-sm font-medium transition-colors",
+                                                    productRankingLimit === limit
+                                                        ? "border-emerald-800 bg-emerald-900 text-emerald-50"
+                                                        : "border-border bg-background text-muted-foreground hover:bg-muted"
+                                                )}
+                                            >
+                                                Top {limit}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
+                                {periodFilterControls}
                             </CardHeader>
                             <CardContent>
-                                <div className="rounded-[1.25rem] border border-border/70 bg-background p-4">
+                                <div 
+                                    className="rounded-[1.25rem] border border-border/70 bg-background p-4 flex flex-col"
+                                    style={{ height: Math.max(productRankingRows.length * 56 + 60, 260) }}
+                                >
                                     {productRankingRows.length === 0 ? (
-                                        <div className="flex min-h-[260px] items-center justify-center text-sm text-muted-foreground">
+                                        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                                             Todavía no hay productos vendidos para analizar.
                                         </div>
                                     ) : (
-                                        <div className="space-y-3">
-                                            {(() => {
-                                                const maxValue = Math.max(
-                                                    ...productRankingRows.map((product) =>
-                                                        productRankingMetric === "money" ? product.total : product.unitsSold
-                                                    ),
-                                                    1
-                                                );
-
-                                                return productRankingRows.map((product, index) => {
-                                                    const value = productRankingMetric === "money" ? product.total : product.unitsSold;
-                                                    const width = Math.max((value / maxValue) * 100, 3);
-
-                                                    return (
-                                                        <div
-                                                            key={product.productName}
-                                                            className="grid gap-2 rounded-xl border border-border/60 bg-muted/20 p-3 sm:grid-cols-[minmax(180px,280px)_1fr_auto] sm:items-center"
-                                                        >
-                                                            <div className="min-w-0">
-                                                                <p className="truncate text-sm font-semibold text-foreground" title={product.productName}>
-                                                                    {index + 1}. {product.productName}
-                                                                </p>
-                                                                <p className="text-xs text-muted-foreground">
-                                                                    {product.unitsSold} unidades · {product.tickets} boleta{product.tickets !== 1 ? "s" : ""}
-                                                                </p>
-                                                            </div>
-                                                            <div className="h-8 overflow-hidden rounded-full bg-muted">
-                                                                <div
-                                                                    className="flex h-full items-center justify-end rounded-full bg-[linear-gradient(90deg,#0f766e_0%,#06b6d4_100%)] px-3 text-xs font-bold text-white"
-                                                                    style={{ width: `${width}%` }}
-                                                                >
-                                                                    {productRankingMetric === "money"
-                                                                        ? formatCurrency(product.total)
-                                                                        : product.unitsSold}
-                                                                </div>
-                                                            </div>
-                                                            <p className="text-right text-sm font-bold text-foreground">
-                                                                {productRankingMetric === "money"
-                                                                    ? formatCurrency(product.total)
-                                                                    : `${product.unitsSold} u.`}
-                                                            </p>
-                                                        </div>
-                                                    );
-                                                });
-                                            })()}
+                                        <div className="flex-1 w-full mt-2 min-h-0">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <BarChart 
+                                                    data={productRankingRows} 
+                                                    layout="vertical" 
+                                                    margin={{ top: 0, right: 80, left: 0, bottom: 0 }} 
+                                                    barSize={32}
+                                                >
+                                                    <defs>
+                                                        <linearGradient id="colorProduct" x1="0" y1="0" x2="1" y2="0">
+                                                            <stop offset="0%" stopColor="#0284c7" />
+                                                            <stop offset="100%" stopColor="#0ea5e9" />
+                                                        </linearGradient>
+                                                    </defs>
+                                                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="var(--border)" />
+                                                    <XAxis 
+                                                        type="number" 
+                                                        hide={true}
+                                                    />
+                                                    <YAxis 
+                                                        type="category" 
+                                                        dataKey="productName" 
+                                                        axisLine={false} 
+                                                        tickLine={false} 
+                                                        width={140}
+                                                        tick={{ fill: "var(--foreground)", fontSize: 12, fontWeight: 500 }}
+                                                        tickFormatter={(v) => v.length > 20 ? v.substring(0, 18) + "..." : v}
+                                                    />
+                                                    <RechartsTooltip
+                                                        cursor={{ fill: "transparent" }}
+                                                        content={({ active, payload }) => {
+                                                            if (active && payload && payload.length) {
+                                                                const data = payload[0].payload;
+                                                                return (
+                                                                    <div className="rounded-xl border border-border/50 bg-background/95 p-3 shadow-lg backdrop-blur-sm z-50">
+                                                                        <div className="flex flex-col gap-1">
+                                                                            <p className="text-sm font-bold text-foreground max-w-[240px] break-words">
+                                                                                {data.productName}
+                                                                            </p>
+                                                                            <div className="mt-2 flex items-center justify-between gap-6">
+                                                                                <p className="text-sm font-medium text-muted-foreground">Unidades / Boletas</p>
+                                                                                <p className="text-sm font-semibold text-muted-foreground">{data.unitsSold} u. / {data.tickets} bol.</p>
+                                                                            </div>
+                                                                            <div className="flex items-center justify-between gap-6">
+                                                                                <p className="text-sm font-medium text-foreground">Facturado</p>
+                                                                                <p className="text-sm font-bold text-foreground">{formatCurrency(data.total)}</p>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            return null;
+                                                        }}
+                                                    />
+                                                    <Bar 
+                                                        dataKey={productRankingMetric === "money" ? "total" : "unitsSold"} 
+                                                        fill="url(#colorProduct)" 
+                                                        radius={[0, 6, 6, 0]}
+                                                        label={{ 
+                                                            position: "right", 
+                                                            fill: "var(--foreground)", 
+                                                            fontSize: 13, 
+                                                            fontWeight: 600,
+                                                            formatter: (value) => {
+                                                                const numericValue = Number(value);
+                                                                return productRankingMetric === "money"
+                                                                    ? formatCurrency(numericValue)
+                                                                    : `${numericValue} u.`;
+                                                            }
+                                                        }}
+                                                    />
+                                                </BarChart>
+                                            </ResponsiveContainer>
                                         </div>
                                     )}
                                 </div>
@@ -1431,116 +1619,6 @@ export default function ReportesPage() {
                         </Card>
                     </TabsContent>
 
-                    <TabsContent value="stock" className="mt-4 space-y-4">
-                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                            <Card className="rounded-[1.5rem] border-red-800/20 bg-[linear-gradient(135deg,rgba(220,38,38,0.14),rgba(153,27,27,0.04))] shadow-sm">
-                                <CardContent className="flex items-center gap-4 p-4">
-                                    <div className="flex size-10 items-center justify-center rounded-lg bg-red-900 text-red-100">
-                                        <PackageX className="size-5" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-muted-foreground">Sin stock</p>
-                                        <p className="text-2xl font-bold">{reportData.outOfStockRows.length}</p>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                            <Card className="rounded-[1.5rem] border-amber-800/20 bg-[linear-gradient(135deg,rgba(245,158,11,0.14),rgba(180,83,9,0.04))] shadow-sm">
-                                <CardContent className="flex items-center gap-4 p-4">
-                                    <div className="flex size-10 items-center justify-center rounded-lg bg-amber-900 text-amber-100">
-                                        <ShieldAlert className="size-5" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm text-muted-foreground">Stock crítico</p>
-                                        <p className="text-2xl font-bold">{reportData.criticalStockRows.length}</p>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </div>
-
-                        <div className="grid gap-4 xl:grid-cols-2">
-                            <Card className="rounded-[1.5rem] border-border/70 bg-card/90 shadow-sm">
-                                <CardHeader>
-                                    <CardTitle>Productos faltantes</CardTitle>
-                                    <CardDescription>Artículos con stock total en 0.</CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="overflow-hidden rounded-[1.25rem] border border-border/70">
-                                        <Table>
-                                            <TableHeader>
-                                                <TableRow className="hover:bg-transparent">
-                                                    <TableHead>Producto</TableHead>
-                                                    <TableHead>Código</TableHead>
-                                                    <TableHead className="text-right">Stock</TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {reportData.outOfStockRows.length === 0 ? (
-                                                    <TableRow>
-                                                        <TableCell colSpan={3} className="py-12 text-center text-muted-foreground">
-                                                            No hay productos faltantes.
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ) : (
-                                                    reportData.outOfStockRows.map((product) => (
-                                                        <TableRow key={product.id}>
-                                                            <TableCell className="font-medium">{product.name}</TableCell>
-                                                            <TableCell>
-                                                                <Badge variant="outline" className="bg-background font-mono text-xs">
-                                                                    {product.code}
-                                                                </Badge>
-                                                            </TableCell>
-                                                            <TableCell className="text-right font-bold text-red-700">0</TableCell>
-                                                        </TableRow>
-                                                    ))
-                                                )}
-                                            </TableBody>
-                                        </Table>
-                                    </div>
-                                </CardContent>
-                            </Card>
-
-                            <Card className="rounded-[1.5rem] border-border/70 bg-card/90 shadow-sm">
-                                <CardHeader>
-                                    <CardTitle>Stock crítico</CardTitle>
-                                    <CardDescription>Productos con entre 1 y 3 unidades disponibles.</CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="overflow-hidden rounded-[1.25rem] border border-border/70">
-                                        <Table>
-                                            <TableHeader>
-                                                <TableRow className="hover:bg-transparent">
-                                                    <TableHead>Producto</TableHead>
-                                                    <TableHead>Código</TableHead>
-                                                    <TableHead className="text-right">Stock</TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {reportData.criticalStockRows.length === 0 ? (
-                                                    <TableRow>
-                                                        <TableCell colSpan={3} className="py-12 text-center text-muted-foreground">
-                                                            No hay productos en nivel crítico.
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ) : (
-                                                    reportData.criticalStockRows.map((product) => (
-                                                        <TableRow key={product.id}>
-                                                            <TableCell className="font-medium">{product.name}</TableCell>
-                                                            <TableCell>
-                                                                <Badge variant="outline" className="bg-background font-mono text-xs">
-                                                                    {product.code}
-                                                                </Badge>
-                                                            </TableCell>
-                                                            <TableCell className="text-right font-bold text-amber-700">{product.stock}</TableCell>
-                                                        </TableRow>
-                                                    ))
-                                                )}
-                                            </TableBody>
-                                        </Table>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </div>
-                    </TabsContent>
                 </Tabs>
             </div>
         </div>

@@ -19,6 +19,15 @@ export interface ReceiptPrintData {
         price: number;
         subtotal: number;
     }[];
+    giftGroups?: {
+        label: string;
+        items: {
+            name: string;
+            quantity: number;
+            price: number;
+            subtotal: number;
+        }[];
+    }[];
     total: number;
     paymentMethod: string;
     cashAmount?: number;
@@ -145,9 +154,15 @@ function buildEan13Svg(value: string): string {
     `.trim();
 }
 
-export function renderReceiptHtml(data: ReceiptPrintData, isGift = false): string {
+export function renderReceiptHtml(
+    data: ReceiptPrintData,
+    isGift = false,
+    giftGroup?: NonNullable<ReceiptPrintData["giftGroups"]>[number]
+): string {
     const printableItems =
-        isGift && data.giftItems && data.giftItems.length > 0 ? data.giftItems : data.items;
+        isGift
+            ? giftGroup?.items ?? data.giftItems ?? data.items
+            : data.items;
     const ticketBarcode = barcodeFromTicketNumber(data.ticketNumber);
     const barcodeSvg = buildEan13Svg(ticketBarcode);
     const formattedDate = formatArgentinaDateTime(data.date);
@@ -389,7 +404,7 @@ export function renderReceiptHtml(data: ReceiptPrintData, isGift = false): strin
                 <article class="receipt">
                     <header class="divider center">
                         <h1>GANGAFITS</h1>
-                        ${isGift ? '<p class="gift-title">TICKET DE CAMBIO</p>' : ""}
+                        ${isGift ? `<p class="gift-title">TICKET DE CAMBIO${giftGroup ? ` · ${escapeHtml(giftGroup.label)}` : ""}</p>` : ""}
                         <p>Salta, Argentina</p>
                     </header>
 

@@ -58,7 +58,6 @@ export async function authenticateUser(name: string, pin: string) {
             sameSite: "lax",
             secure: process.env.NODE_ENV === "production" && !isDesktopApp,
             path: "/",
-            maxAge: 60 * 60 * 24 * 7,
         });
 
         return { success: true, user };
@@ -104,6 +103,5 @@ export async function establishLocalStaffSessionCookie(session: {
         sameSite: "lax",
         secure: false,
         path: "/",
-        maxAge: 60 * 60 * 24 * 7,
     });
 }

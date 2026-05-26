@@ -146,10 +146,10 @@ export function AppHeader({
               : "Offline";
     const bootstrapTone =
         bootstrap.state === "requires_initial_sync"
-            ? "bg-amber-500/15 text-amber-200 border-amber-400/30"
+            ? "border-amber-500/60 bg-amber-400/22 text-amber-900 shadow-[0_12px_26px_-20px_rgba(217,119,6,0.8)] dark:border-amber-300/45 dark:bg-amber-400/18 dark:text-amber-50"
             : bootstrap.isOnline
-              ? "bg-emerald-500/15 text-emerald-200 border-emerald-400/30"
-              : "bg-sky-500/15 text-sky-200 border-sky-400/30";
+              ? "border-emerald-500/60 bg-emerald-400/22 text-emerald-900 shadow-[0_12px_26px_-20px_rgba(5,150,105,0.8)] dark:border-emerald-300/45 dark:bg-emerald-400/18 dark:text-emerald-50"
+              : "border-rose-500/60 bg-rose-400/22 text-rose-900 shadow-[0_12px_26px_-20px_rgba(225,29,72,0.8)] dark:border-rose-300/45 dark:bg-rose-400/18 dark:text-rose-50";
     const bootstrapHint =
         bootstrap.state === "requires_initial_sync"
             ? "Este equipo necesita una sincronización inicial online."

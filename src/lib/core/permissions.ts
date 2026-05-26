@@ -2,19 +2,18 @@ export type SessionRole = "ADMIN" | "STAFF";
 
 export const STAFF_ALLOWED_PATHS = ["/nueva-venta", "/caja", "/asistencia"] as const;
 
-function isDesktopOnlyPath(pathname: string) {
-    return (
-        pathname === "/nueva-venta" ||
-        pathname.startsWith("/nueva-venta/") ||
-        pathname === "/reportes" ||
-        pathname.startsWith("/reportes/")
-    );
+function normalizePath(pathname: string) {
+    return pathname.split(/[?#]/, 1)[0] || "/";
 }
 
-function isDevReportsPreviewPath(pathname: string) {
+function isDesktopOnlyPath(pathname: string) {
+    const path = normalizePath(pathname);
+
     return (
-        process.env.NODE_ENV !== "production" &&
-        (pathname === "/reportes" || pathname.startsWith("/reportes/"))
+        path === "/nueva-venta" ||
+        path.startsWith("/nueva-venta/") ||
+        path === "/reportes" ||
+        path.startsWith("/reportes/")
     );
 }
 
@@ -34,12 +33,21 @@ export function canAccessPath(
     }
 ): boolean {
     const isDesktop = options?.isDesktop === true;
+    const path = normalizePath(pathname);
 
-    if (isDesktopOnlyPath(pathname) && !isDesktop && !isDevReportsPreviewPath(pathname)) {
+    if (isDesktopOnlyPath(path) && !isDesktop) {
         return false;
     }
 
     if (role === "ADMIN") return true;
 
-    return STAFF_ALLOWED_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+    return STAFF_ALLOWED_PATHS.some((allowedPath) => path === allowedPath || path.startsWith(`${allowedPath}/`));
+}
+
+export function getDefaultPathForRole(role: SessionRole, options?: { isDesktop?: boolean }) {
+    if (role === "ADMIN") {
+        return "/";
+    }
+
+    return options?.isDesktop === true ? "/nueva-venta" : "/caja";
 }

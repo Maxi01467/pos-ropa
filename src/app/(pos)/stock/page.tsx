@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
     Barcode,
     CalendarDays,
+    ChevronDown,
     ClipboardList,
     Eye,
     Filter,
@@ -13,8 +14,13 @@ import {
     Printer,
     Search,
     X,
-    Loader2
+    Loader2,
+    Check,
+    ChevronsUpDown,
+    CalendarIcon
 } from "lucide-react";
+import { format, subDays, startOfMonth, startOfWeek } from "date-fns";
+import { es } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +28,25 @@ import { Badge } from "@/components/ui/badge";
 import { BarcodeLabels } from "@/components/printing/barcode-labels";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Calendar } from "@/components/ui/calendar";
+import {
+    Collapsible,
+    CollapsibleContent,
+    CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from "@/components/ui/command";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
 import {
     Dialog,
     DialogContent,
@@ -207,9 +232,9 @@ export default function StockPage() {
     // ... Resto de tus estados se mantienen exactamente igual ...
     const [filterProduct, setFilterProduct] = useState("all");
     const [filterProvider, setFilterProvider] = useState("all");
-    const [filterDateFrom, setFilterDateFrom] = useState(() => getTodayInputDate());
-    const [filterDateTo, setFilterDateTo] = useState(() => getTodayInputDate());
-    const [showFilters, setShowFilters] = useState(false);
+    const [filterDateFrom, setFilterDateFrom] = useState<Date | undefined>(new Date());
+    const [filterDateTo, setFilterDateTo] = useState<Date | undefined>(new Date());
+    const [isFiltersOpen, setIsFiltersOpen] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [stockDialogOpen, setStockDialogOpen] = useState(false);
     const [stockAction, setStockAction] = useState<"add" | "remove" | "adjust">("add");
@@ -277,14 +302,14 @@ export default function StockPage() {
             const movementTime = new Date(movement.date).getTime();
 
             if (filterDateFrom) {
-                const fromTime = new Date(`${filterDateFrom}T00:00:00`).getTime();
+                const fromTime = new Date(filterDateFrom).setHours(0, 0, 0, 0);
                 if (movementTime < fromTime) {
                     return false;
                 }
             }
 
             if (filterDateTo) {
-                const toTime = new Date(`${filterDateTo}T23:59:59.999`).getTime();
+                const toTime = new Date(filterDateTo).setHours(23, 59, 59, 999);
                 if (movementTime > toTime) {
                     return false;
                 }
@@ -335,7 +360,7 @@ export default function StockPage() {
         (movement) => new Date(movement.date).toDateString() === new Date().toDateString()
     ).length;
 
-    const hasActiveFilters = filterProduct !== "all" || filterProvider !== "all" || filterDateFrom !== "" || filterDateTo !== "";
+    const hasActiveFilters = filterProduct !== "all" || filterProvider !== "all" || filterDateFrom !== undefined || filterDateTo !== undefined;
 
     useEffect(() => {
         setCurrentPage(1);
@@ -418,8 +443,8 @@ export default function StockPage() {
     const clearFilters = () => {
         setFilterProduct("all");
         setFilterProvider("all");
-        setFilterDateFrom("");
-        setFilterDateTo("");
+        setFilterDateFrom(undefined);
+        setFilterDateTo(undefined);
     };
 
     const resetStockForm = () => {
@@ -733,12 +758,7 @@ export default function StockPage() {
                         </h1>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        <div className="rounded-[1.1rem] border border-border/70 bg-card/90 px-4 py-3 shadow-sm">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                                Movimientos
-                            </p>
-                            <p className="mt-1 text-xl font-semibold text-foreground">{movements.length}</p>
-                        </div>
+                        
                         <Button
                             variant="outline"
                             size="lg"
@@ -820,100 +840,213 @@ export default function StockPage() {
 
                 <Card className="rounded-[1.75rem] border-border/70 bg-card/92 shadow-sm">
                     <CardContent className="p-4 sm:p-5">
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <Button
-                                    variant={showFilters ? "secondary" : "outline"}
-                                    size="sm"
-                                    className="gap-2 rounded-xl"
-                                    onClick={() => setShowFilters((current) => !current)}
-                                >
-                                    <Filter className="size-4" />
-                                    Filtros
-                                    {hasActiveFilters && (
-                                        <Badge
-                                            variant="default"
-                                            className="ml-1 flex size-5 items-center justify-center rounded-full p-0 text-xs"
-                                        >
-                                            !
-                                        </Badge>
+                        <Collapsible open={isFiltersOpen} onOpenChange={setIsFiltersOpen} className="w-full">
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                <div className="flex items-center gap-2">
+                                    <CollapsibleTrigger asChild>
+                                        <Button variant="outline" size="sm" className="gap-2 rounded-xl text-foreground font-medium h-9 px-3 border-border/70">
+                                            <Filter className="size-4" />
+                                            {hasActiveFilters ? "Filtros activos" : "Filtros"}
+                                            <div
+                                                className={cn(
+                                                    "ml-1 flex size-5 shrink-0 items-center justify-center rounded-full border border-border/40 bg-muted/40 transition-transform duration-200",
+                                                    isFiltersOpen && "rotate-180"
+                                                )}
+                                            >
+                                                <ChevronDown className="size-3" />
+                                            </div>
+                                        </Button>
+                                    </CollapsibleTrigger>
+                                                                
+                                    {/* Píldoras de Filtros Activos (visibles solo cuando los filtros están cerrados y hay filtros activos) */}
+                                    {!isFiltersOpen && hasActiveFilters && (
+                                        <div className="hidden sm:flex flex-wrap items-center gap-2">
+                                            {filterProduct !== "all" && (
+                                                <Badge variant="secondary" className="gap-1 px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200/50 cursor-pointer transition-colors" onClick={() => setFilterProduct("all")}>
+                                                    <span className="font-semibold">{products.find((p) => p.id === filterProduct)?.name}</span>
+                                                    <X className="size-3" />
+                                                </Badge>
+                                            )}
+                                            {filterProvider !== "all" && (
+                                                <Badge variant="secondary" className="gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/50 cursor-pointer transition-colors" onClick={() => setFilterProvider("all")}>
+                                                    <span className="font-semibold">{providers.find((p) => p.id === filterProvider)?.name}</span>
+                                                    <X className="size-3" />
+                                                </Badge>
+                                            )}
+                                            {(filterDateFrom || filterDateTo) && (
+                                                <Badge variant="secondary" className="gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200/50 cursor-pointer transition-colors" onClick={() => {setFilterDateFrom(undefined); setFilterDateTo(undefined);}}>
+                                                    <span className="font-semibold">
+                                                        {filterDateFrom ? format(filterDateFrom, "dd/MM/yyyy") : ""} 
+                                                        {filterDateFrom && filterDateTo ? " - " : ""}
+                                                        {filterDateTo ? format(filterDateTo, "dd/MM/yyyy") : ""}
+                                                    </span>
+                                                    <X className="size-3" />
+                                                </Badge>
+                                            )}
+                                        </div>
                                     )}
-                                </Button>
-                                {hasActiveFilters && (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="gap-1 rounded-xl text-muted-foreground"
-                                        onClick={clearFilters}
-                                    >
-                                        <X className="size-3.5" />
-                                        Limpiar filtros
-                                    </Button>
-                                )}
-                            </div>
-                            <div className="lg:ml-auto">
-                                <span className="text-sm text-muted-foreground">
-                                    {totalMovements} registro(s) en total
-                                </span>
-                            </div>
-                        </div>
-
-                        {showFilters && (
-                            <div className="mt-4 rounded-[1.5rem] border border-border/70 bg-muted/25 p-4">
-                                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                                    <div className="space-y-1.5">
-                                        <Label className="text-sm font-medium">Producto</Label>
-                                        <Select value={filterProduct} onValueChange={setFilterProduct}>
-                                            <SelectTrigger className="h-10">
-                                                <SelectValue placeholder="Todos" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">Todos los productos</SelectItem>
-                                                {products.map((product) => (
-                                                    <SelectItem key={product.id} value={product.id}>
-                                                        {product.name}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <Label className="text-sm font-medium">Proveedor</Label>
-                                        <Select value={filterProvider} onValueChange={setFilterProvider}>
-                                            <SelectTrigger className="h-10">
-                                                <SelectValue placeholder="Todos" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">Todos los proveedores</SelectItem>
-                                                {providers.map((provider) => (
-                                                    <SelectItem key={provider.id} value={provider.id}>
-                                                        {provider.name}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <Label className="text-sm font-medium">Desde</Label>
-                                        <Input
-                                            type="date"
-                                            value={filterDateFrom}
-                                            onChange={(event) => setFilterDateFrom(event.target.value)}
-                                            className="h-10"
-                                        />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <Label className="text-sm font-medium">Hasta</Label>
-                                        <Input
-                                            type="date"
-                                            value={filterDateTo}
-                                            onChange={(event) => setFilterDateTo(event.target.value)}
-                                            className="h-10"
-                                        />
-                                    </div>
+                                </div>
+                                <div className="lg:ml-auto">
+                                    <span className="text-sm font-medium text-foreground tracking-tight bg-muted px-2.5 py-1 rounded-lg">
+                                        {totalMovements} registro(s) encontrados
+                                    </span>
                                 </div>
                             </div>
-                        )}
+
+                            <CollapsibleContent className="space-y-4 pt-4">
+                                <div className="rounded-[1.5rem] border border-border/70 bg-muted/25 p-4">
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 items-end">
+                                {/* Producto Combobox */}
+                                <div className="space-y-1.5">
+                                    <Label className="text-sm font-medium">Producto</Label>
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button variant="outline" role="combobox" className={cn("w-full justify-between h-10 font-normal", filterProduct === "all" && "text-muted-foreground")}>
+                                                <span className="truncate">{filterProduct === "all" ? "Todos los productos" : products.find((p) => p.id === filterProduct)?.name ?? "Producto no encontrado"}</span>
+                                                <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent align="start" className="w-[300px] sm:w-[380px] p-0 rounded-xl">
+                                            <Command>
+                                                <CommandInput placeholder="Buscar producto..." className="h-9" />
+                                                <CommandList className="max-h-[220px]">
+                                                    <CommandEmpty>No se encontraron productos.</CommandEmpty>
+                                                    <CommandGroup>
+                                                        <CommandItem
+                                                            onSelect={() => { setFilterProduct("all"); }}
+                                                            className="rounded-lg"
+                                                        >
+                                                            <Check className={cn("mr-2 size-4", filterProduct === "all" ? "opacity-100" : "opacity-0")} />
+                                                            Todos los productos
+                                                        </CommandItem>
+                                                        {products.map((p) => (
+                                                            <CommandItem
+                                                                key={p.id}
+                                                                onSelect={() => { setFilterProduct(p.id); }}
+                                                                className="rounded-lg"
+                                                            >
+                                                                <Check className={cn("mr-2 size-4", filterProduct === p.id ? "opacity-100" : "opacity-0")} />
+                                                                {p.name}
+                                                            </CommandItem>
+                                                        ))}
+                                                    </CommandGroup>
+                                                </CommandList>
+                                            </Command>
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+
+                                {/* Proveedor Combobox */}
+                                <div className="space-y-1.5">
+                                    <Label className="text-sm font-medium">Proveedor</Label>
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button variant="outline" role="combobox" className={cn("w-full justify-between h-10 font-normal", filterProvider === "all" && "text-muted-foreground")}>
+                                                <span className="truncate">{filterProvider === "all" ? "Todos los proveedores" : providers.find((p) => p.id === filterProvider)?.name ?? "Proveedor no encontrado"}</span>
+                                                <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent align="start" className="w-[300px] sm:w-[380px] p-0 rounded-xl">
+                                            <Command>
+                                                <CommandInput placeholder="Buscar proveedor..." className="h-9" />
+                                                <CommandList className="max-h-[220px]">
+                                                    <CommandEmpty>No se encontraron proveedores.</CommandEmpty>
+                                                    <CommandGroup>
+                                                        <CommandItem
+                                                            onSelect={() => { setFilterProvider("all"); }}
+                                                            className="rounded-lg"
+                                                        >
+                                                            <Check className={cn("mr-2 size-4", filterProvider === "all" ? "opacity-100" : "opacity-0")} />
+                                                            Todos los proveedores
+                                                        </CommandItem>
+                                                        {providers.map((p) => (
+                                                            <CommandItem
+                                                                key={p.id}
+                                                                onSelect={() => { setFilterProvider(p.id); }}
+                                                                className="rounded-lg"
+                                                            >
+                                                                <Check className={cn("mr-2 size-4", filterProvider === p.id ? "opacity-100" : "opacity-0")} />
+                                                                {p.name}
+                                                            </CommandItem>
+                                                        ))}
+                                                    </CommandGroup>
+                                                </CommandList>
+                                            </Command>
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+
+                                {/* Fecha Desde */}
+                                <div className="space-y-1.5">
+                                    <Label className="text-sm font-medium">Desde</Label>
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                className={cn("w-full justify-start text-left h-10 font-normal", !filterDateFrom && "text-muted-foreground")}
+                                            >
+                                                <CalendarIcon className="mr-2 size-4" />
+                                                {filterDateFrom ? format(filterDateFrom, "PPP", { locale: es }) : "Seleccionar fecha"}
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-0 rounded-xl" align="start">
+                                            <Calendar
+                                                mode="single"
+                                                locale={es}
+                                                selected={filterDateFrom}
+                                                onSelect={setFilterDateFrom}
+                                            />
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+
+                                {/* Fecha Hasta */}
+                                <div className="space-y-1.5">
+                                    <Label className="text-sm font-medium">Hasta</Label>
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                className={cn("w-full justify-start text-left h-10 font-normal", !filterDateTo && "text-muted-foreground")}
+                                            >
+                                                <CalendarIcon className="mr-2 size-4" />
+                                                {filterDateTo ? format(filterDateTo, "PPP", { locale: es }) : "Seleccionar fecha"}
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-0 rounded-xl" align="start">
+                                            <Calendar
+                                                mode="single"
+                                                locale={es}
+                                                selected={filterDateTo}
+                                                onSelect={setFilterDateTo}
+                                            />
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+                                
+                                <div className="col-span-full pt-2 flex items-center justify-between">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className="text-sm text-muted-foreground mr-2 font-medium">Filtros rápidos:</span>
+                                        <Button size="sm" variant="secondary" className="text-xs h-8 rounded-lg" onClick={() => { setFilterDateFrom(new Date()); setFilterDateTo(new Date()); }}>Hoy</Button>
+                                        <Button size="sm" variant="secondary" className="text-xs h-8 rounded-lg" onClick={() => { setFilterDateFrom(subDays(new Date(), 7)); setFilterDateTo(new Date()); }}>Últimos 7 días</Button>
+                                        <Button size="sm" variant="secondary" className="text-xs h-8 rounded-lg" onClick={() => { setFilterDateFrom(startOfMonth(new Date())); setFilterDateTo(new Date()); }}>Este mes</Button>
+                                    </div>
+                                    {hasActiveFilters && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="gap-1 rounded-xl text-muted-foreground"
+                                            onClick={clearFilters}
+                                        >
+                                            <X className="size-3.5" />
+                                            Limpiar filtros
+                                        </Button>
+                                    )}
+                                </div>
+                                </div>
+                                </div>
+                            </CollapsibleContent>
+                        </Collapsible>
                     </CardContent>
                 </Card>
 
@@ -1415,8 +1548,7 @@ export default function StockPage() {
 
             <Dialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
                 <DialogContent
-                    overlayClassName="bg-black/34 backdrop-blur-[2px] transform-gpu will-change-[opacity,backdrop-filter]"
-                    className="print:hidden max-h-[90vh] max-w-[calc(100%-1rem)] sm:max-w-6xl xl:max-w-7xl transform-gpu will-change-[opacity,transform]"
+                    className="print:hidden max-h-[90vh] max-w-[calc(100%-1rem)] sm:max-w-6xl xl:max-w-7xl transform-gpu"
                 >
                     <DialogHeader>
                         <DialogTitle>Imprimir etiquetas</DialogTitle>

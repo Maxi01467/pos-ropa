@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { AUTH_COOKIE_NAME, verifySessionToken } from "@/lib/auth/auth-core";
-import { canAccessPath } from "@/lib/core/permissions";
+import { canAccessPath, getDefaultPathForRole } from "@/lib/core/permissions";
 
 const PUBLIC_PATHS = new Set(["/login", "/offline"]);
 
@@ -52,24 +52,23 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname === "/login") {
-    if (session.role === "STAFF" && session.clientType !== "desktop") {
-      return NextResponse.next();
-    }
-
-    const destination = session.role === "ADMIN" ? "/" : "/nueva-venta";
+    const destination = getDefaultPathForRole(session.role, {
+      isDesktop: session.clientType === "desktop",
+    });
     return NextResponse.redirect(new URL(destination, request.url));
   }
 
-  if (session.role === "STAFF" && session.clientType !== "desktop") {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
-
   if (session.role === "STAFF" && pathname === "/") {
-    return NextResponse.redirect(new URL("/nueva-venta", request.url));
+    const destination = getDefaultPathForRole(session.role, {
+      isDesktop: session.clientType === "desktop",
+    });
+    return NextResponse.redirect(new URL(destination, request.url));
   }
 
   if (!canAccessPath(session.role, pathname, { isDesktop: session.clientType === "desktop" })) {
-    const destination = session.role === "ADMIN" ? "/" : "/nueva-venta";
+    const destination = getDefaultPathForRole(session.role, {
+      isDesktop: session.clientType === "desktop",
+    });
     return NextResponse.redirect(new URL(destination, request.url));
   }
 

@@ -11,6 +11,7 @@ import {
     Search,
     Plus,
     Minus,
+    Check,
     Trash2,
     Gift,
     ShoppingBag,
@@ -25,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
     Dialog,
     DialogContent,
@@ -71,6 +72,7 @@ interface CartItem {
     product: POSProduct;
     quantity: number;
     isGift: boolean;
+    giftGroupLabel?: string;
 }
 
 interface Seller {
@@ -134,6 +136,10 @@ type SaleDraft = {
     exchangeQuantities: Record<string, string>;
     appliedExchange: AppliedExchange | null;
     selectedSellerId: string;
+    manualGiftGroupingActive: boolean;
+    manualGiftSelectedLineIds: string[];
+    manualGiftTargetGroupLabel: string | null;
+    nextGiftGroupNumber: number;
     quickCreateOpen: boolean;
     quickCreateName: string;
     quickCreatePrice: string;
@@ -160,6 +166,10 @@ function createSaleDraft(label = "Venta 1"): SaleDraft {
         exchangeQuantities: {},
         appliedExchange: null,
         selectedSellerId: "",
+        manualGiftGroupingActive: false,
+        manualGiftSelectedLineIds: [],
+        manualGiftTargetGroupLabel: null,
+        nextGiftGroupNumber: 1,
         quickCreateOpen: false,
         quickCreateName: "",
         quickCreatePrice: "",
@@ -188,6 +198,10 @@ function isSaleDraftEmpty(draft: SaleDraft) {
         !draft.appliedExchange &&
         !draft.searchQuery.trim() &&
         !draft.selectedSellerId &&
+        !draft.manualGiftGroupingActive &&
+        draft.manualGiftSelectedLineIds.length === 0 &&
+        !draft.manualGiftTargetGroupLabel &&
+        draft.nextGiftGroupNumber === 1 &&
         draft.priceMode === "retail" &&
         !draft.exchangeSearchQuery.trim() &&
         !draft.selectedExchangeSale &&
@@ -219,6 +233,63 @@ function formatCurrency(amount: number): string {
     }).format(amount);
 }
 
+function AnimatedValue({
+    value,
+    children,
+    className,
+}: {
+    value: string | number;
+    children?: React.ReactNode;
+    className?: string;
+}) {
+    return (
+        <span className={cn("inline-block tabular-nums", className)}>
+            <span key={String(value)} className="inline-block animate-pos-value-change">
+                {children ?? value}
+            </span>
+        </span>
+    );
+}
+
+function AnimatedSizeContainer({
+    children,
+    className,
+}: {
+    children: React.ReactNode;
+    className?: string;
+}) {
+    const contentRef = useRef<HTMLDivElement | null>(null);
+    const [height, setHeight] = useState<number | null>(null);
+
+    useEffect(() => {
+        const content = contentRef.current;
+        if (!content) return;
+
+        const resizeObserver = new ResizeObserver(([entry]) => {
+            if (!entry) return;
+            setHeight(entry.contentRect.height);
+        });
+
+        resizeObserver.observe(content);
+
+        return () => {
+            resizeObserver.disconnect();
+        };
+    }, []);
+
+    return (
+        <div
+            className={cn(
+                "overflow-hidden transition-[height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                className
+            )}
+            style={height == null ? undefined : { height }}
+        >
+            <div ref={contentRef}>{children}</div>
+        </div>
+    );
+}
+
 function normalizeProductCodeSearchValue(value: string): string {
     return value.trim().toLowerCase();
 }
@@ -230,6 +301,97 @@ function createCartItem(product: POSProduct, quantity = 1, isGift = false): Cart
         quantity,
         isGift,
     };
+}
+
+function getGiftGroupLabelMap(cart: CartItem[]) {
+    const labelMap = new Map<string, string>();
+
+    for (const item of cart) {
+        if (!item.giftGroupLabel || labelMap.has(item.giftGroupLabel)) {
+            continue;
+        }
+
+        labelMap.set(item.giftGroupLabel, `Regalo ${labelMap.size + 1}`);
+    }
+
+    return labelMap;
+}
+
+function normalizeGiftGroupLabels(cart: CartItem[]): CartItem[] {
+    const labelMap = getGiftGroupLabelMap(cart);
+
+    return cart.map((item) => {
+        if (!item.giftGroupLabel) {
+            return item.isGift ? { ...item, isGift: false } : item;
+        }
+
+        const normalizedLabel = labelMap.get(item.giftGroupLabel) ?? item.giftGroupLabel;
+
+        if (item.giftGroupLabel === normalizedLabel && item.isGift) {
+            return item;
+        }
+
+        return {
+            ...item,
+            isGift: true,
+            giftGroupLabel: normalizedLabel,
+        };
+    });
+}
+
+function getNextGiftGroupNumber(cart: CartItem[]) {
+    return new Set(cart.map((item) => item.giftGroupLabel).filter(Boolean)).size + 1;
+}
+
+function mergeGiftGroupItems(cart: CartItem[]): CartItem[] {
+    const mergedCart: CartItem[] = [];
+
+    for (const item of cart) {
+        if (!item.giftGroupLabel) {
+            mergedCart.push({ ...item });
+            continue;
+        }
+
+        const existingGiftItem = mergedCart.find(
+            (currentItem) =>
+                currentItem.giftGroupLabel === item.giftGroupLabel &&
+                currentItem.product.id === item.product.id
+        );
+
+        if (existingGiftItem) {
+            existingGiftItem.quantity = existingGiftItem.quantity + item.quantity;
+            continue;
+        }
+
+        mergedCart.push({ ...item });
+    }
+
+    return mergedCart;
+}
+
+function mergeUngroupedCartItems(cart: CartItem[]): CartItem[] {
+    const mergedCart: CartItem[] = [];
+
+    for (const item of cart) {
+        if (item.giftGroupLabel) {
+            mergedCart.push({ ...item });
+            continue;
+        }
+
+        const existingCartItem = mergedCart.find(
+            (currentItem) =>
+                !currentItem.giftGroupLabel && currentItem.product.id === item.product.id
+        );
+
+        if (existingCartItem) {
+            existingCartItem.quantity = existingCartItem.quantity + item.quantity;
+            continue;
+        }
+
+        mergedCart.push({ ...item });
+    }
+
+    return mergedCart;
 }
 
 function productCodeSearchValues(product: POSProduct): string[] {
@@ -328,6 +490,7 @@ export default function NuevaVentaPage() {
     });
     const [printGiftCopy, setPrintGiftCopy] = useState(false);
     const [activePrintIsGift, setActivePrintIsGift] = useState(false);
+    const [activePrintGiftGroupIndex, setActivePrintGiftGroupIndex] = useState(0);
     const [receiptData, setReceiptData] = useState<ReceiptPrintData | null>(null);
     const [allProducts, setAllProducts] = useState<POSProduct[]>([]);
     const [exchangeSales, setExchangeSales] = useState<ExchangeSaleTicket[]>([]);
@@ -372,6 +535,10 @@ export default function NuevaVentaPage() {
     const exchangeQuantities = activeDraft.exchangeQuantities;
     const appliedExchange = activeDraft.appliedExchange;
     const selectedSellerId = activeDraft.selectedSellerId;
+    const manualGiftGroupingActive = activeDraft.manualGiftGroupingActive;
+    const manualGiftSelectedLineIds = activeDraft.manualGiftSelectedLineIds;
+    const manualGiftTargetGroupLabel = activeDraft.manualGiftTargetGroupLabel;
+    const nextGiftGroupNumber = activeDraft.nextGiftGroupNumber;
     const quickCreateOpen = activeDraft.quickCreateOpen;
     const quickCreateName = activeDraft.quickCreateName;
     const quickCreatePrice = activeDraft.quickCreatePrice;
@@ -381,10 +548,33 @@ export default function NuevaVentaPage() {
         (action: SetStateAction<string>) => updateDraftField("searchQuery", action),
         [updateDraftField]
     );
-    const setCart = useCallback(
-        (action: SetStateAction<CartItem[]>) => updateDraftField("cart", action),
-        [updateDraftField]
-    );
+    const setCart = useCallback((action: SetStateAction<CartItem[]>) => {
+        setDraftTabs((currentTabs) => ({
+            ...currentTabs,
+            drafts: currentTabs.drafts.map((draft) => {
+                if (draft.id !== currentTabs.activeDraftId) {
+                    return draft;
+                }
+
+                const nextCartBeforeNormalize = applyStateAction(draft.cart, action);
+                const giftGroupLabelMap = getGiftGroupLabelMap(nextCartBeforeNormalize);
+                const nextCart = mergeGiftGroupItems(
+                    normalizeGiftGroupLabels(nextCartBeforeNormalize)
+                );
+                const nextTargetGroupLabel = draft.manualGiftTargetGroupLabel
+                    ? giftGroupLabelMap.get(draft.manualGiftTargetGroupLabel) ?? null
+                    : null;
+
+                return {
+                    ...draft,
+                    cart: nextCart,
+                    manualGiftTargetGroupLabel: nextTargetGroupLabel,
+                    nextGiftGroupNumber: getNextGiftGroupNumber(nextCart),
+                    updatedAt: new Date().toISOString(),
+                };
+            }),
+        }));
+    }, []);
     const setCheckoutOpen = useCallback(
         (action: SetStateAction<boolean>) => updateDraftField("checkoutOpen", action),
         [updateDraftField]
@@ -421,6 +611,22 @@ export default function NuevaVentaPage() {
     );
     const setSelectedSellerId = useCallback(
         (action: SetStateAction<string>) => updateDraftField("selectedSellerId", action),
+        [updateDraftField]
+    );
+    const setManualGiftGroupingActive = useCallback(
+        (action: SetStateAction<boolean>) => updateDraftField("manualGiftGroupingActive", action),
+        [updateDraftField]
+    );
+    const setManualGiftSelectedLineIds = useCallback(
+        (action: SetStateAction<string[]>) => updateDraftField("manualGiftSelectedLineIds", action),
+        [updateDraftField]
+    );
+    const setManualGiftTargetGroupLabel = useCallback(
+        (action: SetStateAction<string | null>) => updateDraftField("manualGiftTargetGroupLabel", action),
+        [updateDraftField]
+    );
+    const setNextGiftGroupNumber = useCallback(
+        (action: SetStateAction<number>) => updateDraftField("nextGiftGroupNumber", action),
         [updateDraftField]
     );
     const setQuickCreateOpen = useCallback(
@@ -470,7 +676,9 @@ export default function NuevaVentaPage() {
     const handleCreateDraftTab = useCallback(() => {
         setDraftTabs((currentTabs) => {
             if (currentTabs.drafts.length >= MAX_SALE_DRAFT_TABS) {
-                toast.error(`Podés tener hasta ${MAX_SALE_DRAFT_TABS} ventas abiertas`);
+                toast.error(`Podés tener hasta ${MAX_SALE_DRAFT_TABS} ventas abiertas`, {
+                    id: "max-sale-draft-tabs",
+                });
                 return currentTabs;
             }
 
@@ -593,6 +801,7 @@ export default function NuevaVentaPage() {
         initialGiftCopy?: boolean;
     }) => {
         setPrintGiftCopy(hasGiftCopy && !initialGiftCopy);
+        setActivePrintGiftGroupIndex(0);
         setActivePrintIsGift(initialGiftCopy);
 
         setTimeout(() => {
@@ -602,7 +811,8 @@ export default function NuevaVentaPage() {
 
     const triggerPrint = async (currentReceipt: ReceiptPrintData) => {
         const hasGiftCopy = Boolean(
-            currentReceipt.giftItems && currentReceipt.giftItems.length > 0
+            currentReceipt.giftGroups?.some((group) => group.items.length > 0) ||
+            (currentReceipt.giftItems && currentReceipt.giftItems.length > 0)
         );
         let regularReceiptPrinted = false;
 
@@ -713,8 +923,26 @@ export default function NuevaVentaPage() {
 
     useEffect(() => {
         const handleAfterPrint = () => {
-            if (printGiftCopy && !activePrintIsGift) {
+            const printableGiftGroups =
+                receiptData?.giftGroups?.filter((group) => group.items.length > 0) ?? [];
+            const giftCopyCount =
+                printableGiftGroups.length > 0
+                    ? printableGiftGroups.length
+                    : receiptData?.giftItems?.length
+                        ? 1
+                        : 0;
+
+            if (printGiftCopy && !activePrintIsGift && giftCopyCount > 0) {
                 setActivePrintIsGift(true);
+                setActivePrintGiftGroupIndex(0);
+                setTimeout(() => {
+                    window.print();
+                }, 250);
+                return;
+            }
+
+            if (activePrintIsGift && activePrintGiftGroupIndex + 1 < giftCopyCount) {
+                setActivePrintGiftGroupIndex((current) => current + 1);
                 setTimeout(() => {
                     window.print();
                 }, 250);
@@ -723,6 +951,7 @@ export default function NuevaVentaPage() {
 
             setPrintGiftCopy(false);
             setActivePrintIsGift(false);
+            setActivePrintGiftGroupIndex(0);
             setReceiptData(null);
         };
 
@@ -730,7 +959,7 @@ export default function NuevaVentaPage() {
         return () => {
             window.removeEventListener("afterprint", handleAfterPrint);
         };
-    }, [activePrintIsGift, printGiftCopy]);
+    }, [activePrintGiftGroupIndex, activePrintIsGift, printGiftCopy, receiptData]);
 
     useEffect(() => {
         const handleGlobalScannerInput = (event: KeyboardEvent) => {
@@ -970,88 +1199,225 @@ export default function NuevaVentaPage() {
             if (availableStock <= 0) {
                 toast.error("Producto sin stock", {
                     description: product.name,
+                    id: `add-to-cart-no-stock-${product.id}`,
                 });
                 return prev;
             }
 
-            const existing = prev.find(
-                (item) => item.product.id === product.id && !item.isGift
-            ) ?? prev.find((item) => item.product.id === product.id);
-            if (existing) {
-                if (quantityInCart >= availableStock) {
-                    toast.error("Sin stock suficiente", {
-                        description: `Solo quedan ${availableStock} unidades disponibles de ${product.name}`,
-                    });
-                    return prev;
-                }
-
-                return prev.map((item) =>
-                    item.lineId === existing.lineId
-                        ? { ...item, quantity: item.quantity + 1 }
-                        : item
-                );
+            if (quantityInCart >= availableStock) {
+                toast.error("Sin stock suficiente", {
+                    description: `Solo quedan ${availableStock} unidades disponibles de ${product.name}`,
+                    id: `add-to-cart-insufficient-stock-${product.id}`,
+                });
+                return prev;
             }
 
             toast.success("Producto agregado", {
                 description: product.name,
                 duration: 1500,
+                id: `add-to-cart-${product.id}`,
             });
+
+            if (!manualGiftGroupingActive) {
+                const existingCartItem = prev.find(
+                    (item) => item.product.id === product.id && !item.giftGroupLabel
+                );
+
+                if (existingCartItem) {
+                    return prev.map((item) =>
+                        item.lineId === existingCartItem.lineId
+                            ? { ...item, quantity: item.quantity + 1 }
+                            : item
+                    );
+                }
+            }
+
             return [...prev, createCartItem(product)];
         });
     };
 
-    const updateQuantity = (lineId: string, delta: number) => {
+    const increaseCartItemQuantity = (lineId: string) => {
         setCart((prev) =>
-            prev
-                .map((item) => {
-                    if (item.lineId !== lineId) return item;
-                    const newQty = item.quantity + delta;
-                    const availableStock = getAvailableStockForActiveDraft(item.product);
-                    const quantityInCart = prev.reduce(
-                        (sum, cartItem) =>
-                            cartItem.product.id === item.product.id
-                                ? sum + cartItem.quantity
-                                : sum,
-                        0
-                    );
+            prev.map((item) => {
+                if (item.lineId !== lineId) return item;
 
-                    if (quantityInCart + delta > availableStock) {
-                        toast.error("Sin stock suficiente");
-                        return item;
-                    }
+                const availableStock = getAvailableStockForActiveDraft(item.product);
+                const quantityInCart = prev.reduce(
+                    (sum, cartItem) =>
+                        cartItem.product.id === item.product.id
+                            ? sum + cartItem.quantity
+                            : sum,
+                    0
+                );
 
-                    if (newQty <= 0) return null;
-                    return { ...item, quantity: newQty };
-                })
-                .filter(Boolean) as CartItem[]
-        );
-    };
-
-    const toggleGiftItem = (lineId: string) => {
-        setCart((prev) =>
-            prev.flatMap((item) => {
-                if (item.lineId !== lineId) return [item];
-
-                if (item.quantity <= 1) {
-                    return [{ ...item, isGift: !item.isGift }];
+                if (quantityInCart >= availableStock) {
+                    toast.error("Sin stock suficiente", {
+                        description: `Solo quedan ${availableStock} unidades disponibles de ${item.product.name}`,
+                        id: `increase-cart-insufficient-stock-${item.product.id}`,
+                    });
+                    return item;
                 }
 
-                return [
-                    { ...item, quantity: item.quantity - 1 },
-                    createCartItem(item.product, 1, !item.isGift),
-                ];
+                return { ...item, quantity: item.quantity + 1 };
             })
         );
     };
 
+    const decreaseCartItemQuantity = (lineId: string) => {
+        let shouldRemoveLineFromSelection = false;
+
+        setCart((prev) =>
+            prev
+                .map((item) => {
+                    if (item.lineId !== lineId) return item;
+
+                    const nextQuantity = item.quantity - 1;
+                    if (nextQuantity <= 0) {
+                        shouldRemoveLineFromSelection = true;
+                        return null;
+                    }
+
+                    return { ...item, quantity: nextQuantity };
+                })
+                .filter(Boolean) as CartItem[]
+        );
+
+        if (shouldRemoveLineFromSelection) {
+            setManualGiftSelectedLineIds((current) =>
+                current.filter((selectedLineId) => selectedLineId !== lineId)
+            );
+        }
+    };
+
+    const decreaseGiftGroupItemQuantity = (lineId: string) => {
+        setCart((prev) => {
+            const giftItem = prev.find((item) => item.lineId === lineId);
+            if (!giftItem?.giftGroupLabel) {
+                return prev;
+            }
+
+            const nextCart = prev.map((item) => {
+                if (item.lineId !== lineId) return item;
+
+                if (item.quantity <= 1) {
+                    return { ...item, isGift: false, giftGroupLabel: undefined };
+                }
+
+                return { ...item, quantity: item.quantity - 1 };
+            });
+
+            if (giftItem.quantity <= 1) {
+                return nextCart;
+            }
+
+            return [...nextCart, createCartItem(giftItem.product, 1, false)];
+        });
+    };
+
     const removeFromCart = (lineId: string) => {
         setCart((prev) => prev.filter((item) => item.lineId !== lineId));
+        setManualGiftSelectedLineIds((current) =>
+            current.filter((selectedLineId) => selectedLineId !== lineId)
+        );
         toast("Producto eliminado del carrito", { duration: 1500 });
+    };
+
+    const toggleManualGiftSelection = (lineId: string) => {
+        setManualGiftSelectedLineIds((current) =>
+            current.includes(lineId)
+                ? current.filter((selectedLineId) => selectedLineId !== lineId)
+                : [...current, lineId]
+        );
+    };
+
+    const handleCreateGiftGroup = () => {
+        const selectedLineIds = manualGiftSelectedLineIds.filter((lineId) =>
+            cart.some((item) => item.lineId === lineId && !item.giftGroupLabel)
+        );
+
+        if (selectedLineIds.length === 0) {
+            toast.error("Seleccioná productos sin grupo para crear un regalo");
+            return;
+        }
+
+        const giftGroupLabel = manualGiftTargetGroupLabel ?? `Regalo ${nextGiftGroupNumber}`;
+        setCart((prev) =>
+            prev.map((item) =>
+                selectedLineIds.includes(item.lineId)
+                    ? { ...item, isGift: true, giftGroupLabel }
+                    : item
+            )
+        );
+        setManualGiftSelectedLineIds([]);
+        setManualGiftTargetGroupLabel(null);
+        toast.success(
+            manualGiftTargetGroupLabel
+                ? `Productos agregados a ${giftGroupLabel}`
+                : `${giftGroupLabel} creado`
+        );
+    };
+
+    const handleAddToGiftGroup = (giftGroupLabel: string) => {
+        if (manualGiftTargetGroupLabel === giftGroupLabel) {
+            setManualGiftTargetGroupLabel(null);
+            setManualGiftSelectedLineIds([]);
+            return;
+        }
+
+        setManualGiftGroupingActive(true);
+        setManualGiftTargetGroupLabel(giftGroupLabel);
+        setManualGiftSelectedLineIds([]);
+        toast.info(`Seleccioná productos para agregar a ${giftGroupLabel}`);
+    };
+
+    const removeFromGiftGroup = (lineId: string) => {
+        setCart((prev) =>
+            prev.map((item) =>
+                item.lineId === lineId
+                    ? { ...item, isGift: false, giftGroupLabel: undefined }
+                    : item
+            )
+        );
+        setManualGiftSelectedLineIds((current) =>
+            current.filter((selectedLineId) => selectedLineId !== lineId)
+        );
+    };
+
+    const handleToggleGiftGrouping = () => {
+        if (manualGiftGroupingActive) {
+            setCart(mergeUngroupedCartItems);
+            setManualGiftGroupingActive(false);
+            setManualGiftSelectedLineIds([]);
+            setManualGiftTargetGroupLabel(null);
+            return;
+        }
+
+        setCart((prev) =>
+            prev.flatMap((item) => {
+                if (item.giftGroupLabel || item.quantity <= 1) {
+                    return [item];
+                }
+
+                return Array.from({ length: item.quantity }, (_, index) =>
+                    index === 0
+                        ? { ...item, quantity: 1 }
+                        : createCartItem(item.product, 1, false)
+                );
+            })
+        );
+        setManualGiftGroupingActive(true);
+        setManualGiftSelectedLineIds([]);
+        setManualGiftTargetGroupLabel(null);
+        toast.info("Seleccioná los productos del carrito para crear grupos de regalo");
     };
 
     const clearCart = () => {
         setCart([]);
         setAppliedExchange(null);
+        setManualGiftGroupingActive(false);
+        setManualGiftSelectedLineIds([]);
+        setManualGiftTargetGroupLabel(null);
+        setNextGiftGroupNumber(1);
     };
 
     const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -1061,6 +1427,18 @@ export default function NuevaVentaPage() {
         (sum, item) => sum + getUnitPrice(item.product) * item.quantity,
         0
     );
+    const ungroupedCartItems = cart.filter((item) => !item.giftGroupLabel);
+    const giftGroups = cart.reduce<Array<{ label: string; items: CartItem[] }>>((groups, item) => {
+        if (!item.giftGroupLabel) return groups;
+
+        const existingGroup = groups.find((group) => group.label === item.giftGroupLabel);
+        if (existingGroup) {
+            existingGroup.items.push(item);
+            return groups;
+        }
+
+        return [...groups, { label: item.giftGroupLabel, items: [item] }];
+    }, []);
     const exchangeCredit = appliedExchange?.credit ?? 0;
     const balanceAmount = totalAmount - exchangeCredit;
     const payableAmount = Math.max(balanceAmount, 0);
@@ -1177,6 +1555,15 @@ export default function NuevaVentaPage() {
                     price: getUnitPrice(item.product),
                     subtotal: getUnitPrice(item.product) * item.quantity,
                 })),
+            giftGroups: giftGroups.map((group) => ({
+                label: group.label,
+                items: group.items.map((item) => ({
+                    name: item.product.name,
+                    quantity: item.quantity,
+                    price: getUnitPrice(item.product),
+                    subtotal: getUnitPrice(item.product) * item.quantity,
+                })),
+            })),
             total: saleTotal,
             paymentMethod,
             cashAmount: shouldCloseAsExchangeCredit ? 0 : payment!.cashAmount,
@@ -1497,75 +1884,95 @@ export default function NuevaVentaPage() {
                         </div>
                     </div> */}
 
-                    <div className="rounded-[1.35rem] border border-border/70 bg-card/80 p-2 shadow-[0_16px_40px_-34px_rgba(0,0,0,0.45)] dark:border-white/10 dark:bg-slate-950/35">
-                        <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto">
-                            {draftTabSummaries.map((draft) => {
-                                const isActive = draft.id === activeDraft.id;
+                    <div className="rounded-2xl border border-border/60 bg-muted/30 p-1.5 shadow-sm dark:border-white/5 dark:bg-slate-950/20">
+                        <ScrollArea className="w-full">
+                            <div 
+                                role="tablist" 
+                                aria-label="Pestañas de venta"
+                                className="flex min-w-max items-center gap-1.5 p-0.5"
+                            >
+                                {draftTabSummaries.map((draft) => {
+                                    const isActive = draft.id === activeDraft.id;
 
-                                return (
-                                    <div
-                                        key={draft.id}
-                                        className={cn(
-                                            "group flex min-w-[155px] items-center gap-2 rounded-2xl border px-3 py-2 transition-colors",
-                                            isActive
-                                                ? "border-emerald-500/70 bg-emerald-50 text-emerald-950 shadow-[0_14px_28px_-24px_rgba(5,150,105,0.55)] dark:border-emerald-400/45 dark:bg-emerald-950/45 dark:text-emerald-50"
-                                                : "border-transparent bg-muted/60 text-muted-foreground hover:bg-muted dark:bg-slate-900/70 dark:hover:bg-slate-800"
-                                        )}
-                                    >
-                                        <button
-                                            type="button"
-                                            className="min-w-0 flex-1 text-left"
-                                            onClick={() => handleSwitchDraftTab(draft.id)}
+                                    return (
+                                        <div
+                                            key={draft.id}
+                                            role="presentation"
+                                            className={cn(
+                                                "group relative flex min-w-[140px] max-w-[200px] items-center gap-1.5 rounded-xl px-3 py-1.5 transition-all text-sm",
+                                                isActive
+                                                    ? "bg-background text-foreground shadow-sm ring-1 ring-border/50 dark:ring-white/10"
+                                                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground dark:hover:bg-slate-900/50"
+                                            )}
                                         >
-                                            <span className="block truncate text-sm font-semibold">
-                                                {draft.label}
-                                            </span>
-                                            <span className="mt-0.5 block truncate text-xs">
-                                                {draft.itemCount} art. · {formatCurrency(draft.total)}
-                                                {draft.hasExchange ? " · cambio" : ""}
-                                            </span>
-                                        </button>
-                                        {draftTabs.drafts.length > 1 && (
-                                            <Button
+                                            <button
                                                 type="button"
-                                                variant="ghost"
-                                                size="icon-sm"
-                                                className={cn(
-                                                    "shrink-0 rounded-xl opacity-70 hover:opacity-100",
-                                                    isActive
-                                                        ? "text-emerald-900 hover:bg-emerald-100 dark:text-emerald-50 dark:hover:bg-emerald-900/70"
-                                                        : "text-muted-foreground hover:text-destructive"
-                                                )}
-                                                onClick={() => handleCloseDraftTab(draft.id)}
-                                                title={`Cerrar ${draft.label}`}
+                                                role="tab"
+                                                aria-selected={isActive}
+                                                className="min-w-0 flex-1 text-left outline-none"
+                                                onClick={() => handleSwitchDraftTab(draft.id)}
                                             >
-                                                <X className="size-3.5" />
-                                            </Button>
-                                        )}
+                                                <span className="block truncate font-medium">
+                                                    {draft.label}
+                                                </span>
+                                                <span className={cn(
+                                                    "mt-0.5 block truncate text-[11px] opacity-80 transition-colors",
+                                                    isActive ? "text-muted-foreground" : "text-muted-foreground/80"
+                                                )}>
+                                                    <AnimatedValue value={`${draft.itemCount}-${draft.total}`}>
+                                                        {draft.itemCount} art. · {formatCurrency(draft.total)}
+                                                    </AnimatedValue>
+                                                    {draft.hasExchange ? " · camb" : ""}
+                                                </span>
+                                            </button>
+                                            
+                                            {draftTabs.drafts.length > 1 && (
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className={cn(
+                                                        "h-6 w-6 shrink-0 rounded-md transition-all",
+                                                        isActive
+                                                            ? "opacity-60 hover:bg-destructive/10 hover:text-destructive hover:opacity-100 dark:hover:bg-destructive/20"
+                                                            : "opacity-0 group-hover:opacity-60 hover:!bg-destructive/10 hover:!text-destructive group-hover:hover:opacity-100"
+                                                    )}
+                                                    onClick={() => handleCloseDraftTab(draft.id)}
+                                                    title={`Cerrar ${draft.label}`}
+                                                    aria-label={`Cerrar ${draft.label}`}
+                                                >
+                                                    <X className="h-3.5 w-3.5" />
+                                                </Button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+
+                                {draftTabs.drafts.length < MAX_SALE_DRAFT_TABS && (
+                                    <div className="pl-1">
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-10 w-10 shrink-0 rounded-xl text-muted-foreground transition-all hover:bg-background hover:text-foreground hover:shadow-sm ring-1 ring-transparent hover:ring-border/50 dark:hover:bg-slate-900/60"
+                                            onClick={handleCreateDraftTab}
+                                            title="Nueva venta"
+                                            aria-label="Nueva venta"
+                                        >
+                                            <Plus className="h-4 w-4" />
+                                        </Button>
                                     </div>
-                                );
-                            })}
-                            {draftTabs.drafts.length < MAX_SALE_DRAFT_TABS && (
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-[58px] w-12 shrink-0 rounded-2xl border-border/70 bg-background/85"
-                                    onClick={handleCreateDraftTab}
-                                    title="Nueva venta"
-                                    aria-label="Nueva venta"
-                                >
-                                    <Plus className="size-4" />
-                                </Button>
-                            )}
-                        </div>
+                                )}
+                            </div>
+                            <ScrollBar orientation="horizontal" className="hidden h-1.5 sm:flex" />
+                        </ScrollArea>
                     </div>
 
                     <div className="items-start gap-5 min-[1400px]:grid min-[1400px]:grid-cols-[minmax(0,1fr)_380px]">
                         <div className="min-w-0">
-                            <Card className="overflow-hidden rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(30,41,59,0.94),rgba(15,23,42,0.96))] dark:shadow-[0_28px_70px_-40px_rgba(0,0,0,0.78)]">
+                            <Card className="overflow-visible rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(30,41,59,0.94),rgba(15,23,42,0.96))] dark:shadow-[0_28px_70px_-40px_rgba(0,0,0,0.78)]">
                                 <CardContent className="flex min-w-0 flex-col p-5 sm:p-6">
-                                    <div className="mb-5 flex flex-col gap-3 xl:flex-row">
+                                    <div className="relative z-30 mb-5 flex flex-col gap-3 xl:flex-row">
                                         <div ref={searchBoxRef} className="relative min-w-0 flex-1">
                                             <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4.5 -translate-y-1/2 text-muted-foreground" />
                                             <Input
@@ -1581,7 +1988,7 @@ export default function NuevaVentaPage() {
                                                 autoFocus
                                             />
                                             {isSearchFocused && searchSuggestions.length > 0 && (
-                                                <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-border/70 bg-background shadow-[0_22px_44px_-26px_rgba(0,0,0,0.45)] dark:border-white/10 dark:bg-slate-950">
+                                                <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden rounded-2xl border border-border/70 bg-background shadow-[0_22px_44px_-26px_rgba(0,0,0,0.45)] dark:border-white/10 dark:bg-slate-950">
                                                     {searchSuggestions.map((product) => (
                                                         <button
                                                             key={product.id}
@@ -1638,8 +2045,9 @@ export default function NuevaVentaPage() {
                                         </div>
                                     </div>
 
-                                    <ScrollArea className="max-w-full overflow-hidden min-[1400px]:max-h-[calc(100vh-16rem)]">
-                                        {isLoadingProducts ? (
+                                    <ScrollArea className="relative max-w-full overflow-hidden min-[1400px]:max-h-[calc(100vh-16rem)]">
+                                        <AnimatedSizeContainer>
+                                            {isLoadingProducts ? (
                                             <div className="flex flex-col items-center justify-center py-24 text-center">
                                                 <Loader2 className="mb-3 size-10 animate-spin text-muted-foreground" />
                                                 <p className="text-lg font-medium text-muted-foreground">
@@ -1669,132 +2077,343 @@ export default function NuevaVentaPage() {
                                                 </p>
                                             </div>
                                         ) : (
-                                            <div className="grid grid-cols-1 gap-3 pr-2 lg:grid-cols-2">
-                                                {appliedExchange?.items.map((item) => (
-                                                    <div
-                                                        key={item.saleItemId}
-                                                        className="flex h-[130px] flex-col justify-between rounded-[1.4rem] border border-rose-300/75 bg-[linear-gradient(135deg,rgba(255,241,242,0.98),rgba(255,228,230,0.92))] p-4 text-rose-900 shadow-[0_18px_30px_-24px_rgba(225,29,72,0.25)] dark:border-rose-400/35 dark:bg-[linear-gradient(135deg,rgba(76,5,25,0.92),rgba(136,19,55,0.52))] dark:text-rose-100"
-                                                    >
-                                                        <div className="flex items-start justify-between gap-3">
-                                                            <div className="min-w-0 flex-1">
-                                                                <p className="truncate text-sm font-semibold">
-                                                                    {item.label}
-                                                                </p>
-                                                                <p className="mt-1 text-xs text-rose-600 dark:text-rose-300">
-                                                                    Crédito por cambio
-                                                                </p>
-                                                            </div>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="icon-sm"
-                                                                className="shrink-0 rounded-xl text-rose-600 hover:bg-rose-200/60 hover:text-rose-800 dark:text-rose-300 dark:hover:bg-rose-400/15 dark:hover:text-rose-100"
-                                                                onClick={() => handleRemoveExchangeItem(item.saleItemId)}
-                                                                title="Quitar del cambio"
-                                                            >
-                                                                <Trash2 className="size-3.5" />
-                                                            </Button>
-                                                        </div>
-
-                                                        <div className="flex items-center justify-between gap-3">
-                                                            <p className="text-xs text-rose-600/80 dark:text-rose-300/80">
-                                                                Cambio aplicado
-                                                            </p>
-                                                            <span className="text-sm font-bold text-rose-700 dark:text-rose-200">
-                                                                -{formatCurrency(item.amount)}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                ))}
-
-                                                {cart.map((item) => (
-                                                    <div
-                                                        key={item.lineId}
-                                                        className={cn(
-                                                            "group flex h-[130px] flex-col justify-between rounded-[1.4rem] border border-border/70 bg-background/85 p-4 transition-colors",
-                                                            item.isGift &&
-                                                            "border-amber-300/80 bg-[linear-gradient(135deg,rgba(254,243,199,0.98),rgba(253,230,138,0.72))] shadow-[0_18px_32px_-24px_rgba(217,119,6,0.5)] dark:border-amber-300/45 dark:bg-[linear-gradient(135deg,rgba(120,53,15,0.82),rgba(245,158,11,0.24))] dark:shadow-[0_20px_36px_-24px_rgba(251,191,36,0.4)]"
-                                                        )}
-                                                    >
-                                                        <div className="flex items-start gap-3">
-                                                            <div className="min-w-0 flex-1">
-                                                                <p className="truncate text-sm font-semibold">
-                                                                    {item.product.name}
-                                                                </p>
-                                                                <div className="mt-1 space-y-0.5 text-xs">
-                                                                    <p className="text-muted-foreground">
-                                                                        Venta: {formatCurrency(item.product.price)} c/u
+                                            <div className={cn("space-y-3 pr-2", manualGiftGroupingActive && "pb-20")}>
+                                                <div className="grid grid-cols-1 gap-3 transition-[gap,padding] duration-200 ease-out md:grid-cols-2 xl:grid-cols-3">
+                                                    {appliedExchange?.items.map((item) => (
+                                                        <div
+                                                            key={item.saleItemId}
+                                                            className="animate-pos-cart-card-in flex h-[130px] flex-col justify-between rounded-[22px] border border-rose-500/10 bg-white/90 p-4 text-rose-900 shadow-[0_18px_45px_-38px_rgba(0,0,0,0.55)] backdrop-blur dark:border-rose-300/15 dark:bg-white/8 dark:text-rose-100"
+                                                        >
+                                                            <div className="flex items-start justify-between gap-3">
+                                                                <div className="min-w-0 flex-1">
+                                                                    <p className="truncate text-sm font-semibold">
+                                                                        {item.label}
                                                                     </p>
-                                                                    <p className="font-medium text-blue-600">
-                                                                        Mayorista: {formatCurrency(item.product.wholesalePrice)} c/u
+                                                                    <p className="mt-1 text-xs text-rose-600 dark:text-rose-300">
+                                                                        Crédito por cambio
                                                                     </p>
                                                                 </div>
-                                                            </div>
-
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="icon-sm"
-                                                                className={cn(
-                                                                    "shrink-0 rounded-xl",
-                                                                    item.isGift
-                                                                        ? "bg-amber-100 text-amber-800 hover:bg-amber-200 hover:text-amber-900 dark:bg-amber-400/15 dark:text-amber-200 dark:hover:bg-amber-400/25 dark:hover:text-amber-100"
-                                                                        : "text-muted-foreground hover:text-amber-700 dark:hover:text-amber-300"
-                                                                )}
-                                                                onClick={() => toggleGiftItem(item.lineId)}
-                                                                title={item.isGift ? "Quitar regalo" : "Marcar como regalo"}
-                                                            >
-                                                                <Gift className="size-3.5" />
-                                                            </Button>
-                                                        </div>
-
-                                                        <div className="flex items-center justify-between gap-3">
-                                                            <div className="flex items-center gap-1">
-                                                                <Button
-                                                                    variant="outline"
-                                                                    size="icon-sm"
-                                                                    className="rounded-xl"
-                                                                    onClick={() =>
-                                                                        updateQuantity(item.lineId, -1)
-                                                                    }
-                                                                >
-                                                                    <Minus className="size-3.5" />
-                                                                </Button>
-                                                                <span className="w-8 text-center text-sm font-semibold">
-                                                                    {item.quantity}
-                                                                </span>
-                                                                <Button
-                                                                    variant="outline"
-                                                                    size="icon-sm"
-                                                                    className="rounded-xl"
-                                                                    onClick={() =>
-                                                                        updateQuantity(item.lineId, +1)
-                                                                    }
-                                                                >
-                                                                    <Plus className="size-3.5" />
-                                                                </Button>
-                                                            </div>
-
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-sm font-bold">
-                                                                    {formatCurrency(
-                                                                        getUnitPrice(item.product) * item.quantity
-                                                                    )}
-                                                                </span>
                                                                 <Button
                                                                     variant="ghost"
                                                                     size="icon-sm"
-                                                                    className="rounded-xl text-muted-foreground hover:text-destructive"
-                                                                    onClick={() =>
-                                                                        removeFromCart(item.lineId)
-                                                                    }
+                                                                    className="shrink-0 rounded-xl text-rose-600 hover:bg-rose-200/60 hover:text-rose-800 dark:text-rose-300 dark:hover:bg-rose-400/15 dark:hover:text-rose-100"
+                                                                    onClick={() => handleRemoveExchangeItem(item.saleItemId)}
+                                                                    title="Quitar del cambio"
                                                                 >
                                                                     <Trash2 className="size-3.5" />
                                                                 </Button>
                                                             </div>
+
+                                                            <div className="flex items-center justify-between gap-3">
+                                                                <p className="text-xs text-rose-600/80 dark:text-rose-300/80">
+                                                                    Cambio aplicado
+                                                                </p>
+                                                                <span className="text-sm font-bold text-rose-700 dark:text-rose-200">
+                                                                    -{formatCurrency(item.amount)}
+                                                                </span>
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                ))}
+                                                    ))}
+
+                                                    {giftGroups.map((group) => (
+                                                        <div
+                                                            key={group.label}
+                                                            className={cn(
+                                                                "animate-pos-cart-card-in relative overflow-hidden rounded-[22px] border border-amber-200/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,249,235,0.72))] shadow-[0_20px_48px_-38px_rgba(146,64,14,0.34)] backdrop-blur dark:border-amber-300/35 dark:bg-[linear-gradient(180deg,rgba(252,211,77,0.14),rgba(255,255,255,0.08))]",
+                                                                manualGiftTargetGroupLabel === group.label &&
+                                                                "border-amber-400/80 ring-2 ring-amber-400/35 dark:border-amber-300/55 dark:ring-amber-300/30"
+                                                            )}
+                                                        >
+                                                            <span
+                                                                className="absolute inset-x-0 top-0 h-1.5 bg-amber-400 dark:bg-amber-300"
+                                                                aria-hidden="true"
+                                                            />
+                                                            <div className="flex items-center justify-between gap-3 border-b border-amber-200/60 bg-white/55 px-4 py-3 pt-4 dark:border-amber-300/20 dark:bg-amber-300/10">
+                                                                <div className="flex min-w-0 items-center gap-3">
+                                                                    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-400 text-amber-950 shadow-[0_12px_24px_-18px_rgba(217,119,6,0.7)] dark:bg-amber-300 dark:text-amber-950">
+                                                                        <Gift className="size-4" />
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <div className="flex min-w-0 items-center gap-2">
+                                                                            <p className="truncate text-sm font-bold text-amber-950 dark:text-amber-50">
+                                                                                {group.label}
+                                                                            </p>
+                                                                            {manualGiftTargetGroupLabel === group.label && (
+                                                                                <Badge className="shrink-0 border-amber-300/50 bg-amber-50 px-2 py-0 text-[10px] text-amber-700 hover:bg-amber-50 dark:border-amber-300/25 dark:bg-amber-300/10 dark:text-amber-100">
+                                                                                    Agregando
+                                                                                </Badge>
+                                                                            )}
+                                                                        </div>
+                                                                        <p className="mt-0.5 text-xs text-amber-900/55 dark:text-amber-100/65">
+                                                                            {group.items.length} {group.items.length === 1 ? "producto" : "productos"}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex shrink-0 items-center gap-2">
+                                                                    <span className="text-lg font-bold text-amber-800 dark:text-amber-100">
+                                                                        <AnimatedValue
+                                                                            value={`${priceMode}-${group.items
+                                                                                .map((item) => `${item.lineId}:${item.quantity}`)
+                                                                                .join("|")}`}
+                                                                        >
+                                                                            {formatCurrency(
+                                                                                group.items.reduce(
+                                                                                    (sum, item) => sum + getUnitPrice(item.product) * item.quantity,
+                                                                                    0
+                                                                                )
+                                                                            )}
+                                                                        </AnimatedValue>
+                                                                    </span>
+                                                                    <Button
+                                                                        type="button"
+                                                                        variant="outline"
+                                                                        size="icon-sm"
+                                                                        className={cn(
+                                                                            "shrink-0 rounded-full border-black/5 bg-white/85 text-amber-700 shadow-[0_10px_26px_-22px_rgba(0,0,0,0.55)] hover:bg-amber-50 hover:text-amber-800 dark:border-white/10 dark:bg-white/10 dark:text-amber-200 dark:hover:bg-amber-300/10 dark:hover:text-amber-100",
+                                                                            manualGiftTargetGroupLabel === group.label &&
+                                                                            "border-amber-400/40 bg-amber-500 text-white hover:bg-amber-600 hover:text-white dark:bg-amber-300 dark:text-amber-950 dark:hover:bg-amber-200"
+                                                                        )}
+                                                                        onClick={() => handleAddToGiftGroup(group.label)}
+                                                                        title={`Agregar productos a ${group.label}`}
+                                                                        aria-label={`Agregar productos a ${group.label}`}
+                                                                        aria-pressed={manualGiftTargetGroupLabel === group.label}
+                                                                    >
+                                                                        <Plus className="size-3.5" />
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="divide-y divide-black/5 px-3 py-2 dark:divide-white/10">
+                                                                {group.items.map((item) => (
+                                                                    <div
+                                                                        key={item.lineId}
+                                                                        className="grid min-h-12 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-2"
+                                                                    >
+                                                                        <div className="min-w-0 flex-1">
+                                                                            <p className="truncate text-sm font-semibold text-foreground">
+                                                                                {item.product.name}
+                                                                            </p>
+                                                                        </div>
+                                                                        <div className="flex flex-wrap items-center justify-end gap-2">
+                                                                            <div className="flex h-8 items-center gap-1 rounded-full border border-black/5 bg-muted/50 p-1 shadow-inner dark:border-white/10 dark:bg-white/8">
+                                                                                <Button
+                                                                                    type="button"
+                                                                                    variant="ghost"
+                                                                                    size="icon-sm"
+                                                                                    className="size-6 rounded-full"
+                                                                                    onClick={() => decreaseGiftGroupItemQuantity(item.lineId)}
+                                                                                    title="Sacar una unidad del regalo"
+                                                                                >
+                                                                                    <Minus className="size-3" />
+                                                                                </Button>
+                                                                                <span className="min-w-6 text-center text-xs font-bold text-foreground">
+                                                                                    <AnimatedValue value={item.quantity}>
+                                                                                        {item.quantity}
+                                                                                    </AnimatedValue>
+                                                                                </span>
+                                                                                <Button
+                                                                                    type="button"
+                                                                                    variant="ghost"
+                                                                                    size="icon-sm"
+                                                                                    className="size-6 rounded-full"
+                                                                                    onClick={() => increaseCartItemQuantity(item.lineId)}
+                                                                                    title="Aumentar cantidad"
+                                                                                >
+                                                                                    <Plus className="size-3" />
+                                                                                </Button>
+                                                                            </div>
+                                                                            <span className="shrink-0 text-sm font-bold text-emerald-700 dark:text-emerald-300">
+                                                                                <AnimatedValue value={`${priceMode}-${item.lineId}-${item.quantity}`}>
+                                                                                    {formatCurrency(getUnitPrice(item.product) * item.quantity)}
+                                                                                </AnimatedValue>
+                                                                            </span>
+                                                                            <Button
+                                                                                type="button"
+                                                                                variant="ghost"
+                                                                                size="icon-sm"
+                                                                                className="shrink-0 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                                                                onClick={() => removeFromGiftGroup(item.lineId)}
+                                                                                title="Quitar del grupo"
+                                                                            >
+                                                                                <X className="size-3.5" />
+                                                                            </Button>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+
+                                                    {ungroupedCartItems.map((item) => {
+                                                        const isSelectedForGiftGroup = manualGiftSelectedLineIds.includes(item.lineId);
+
+                                                        if (!manualGiftGroupingActive) {
+                                                            return (
+                                                                <div
+                                                                    key={item.lineId}
+                                                                    className="animate-pos-cart-card-in group relative flex h-[112px] flex-col justify-between overflow-hidden rounded-[22px] border border-black/5 bg-white/90 p-4 shadow-[0_18px_45px_-38px_rgba(0,0,0,0.55)] backdrop-blur transition-all hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-white/8 dark:hover:bg-white/10"
+                                                                >
+                                                                    <span
+                                                                        className="absolute left-4 top-4 size-2 rounded-full bg-emerald-500/80 dark:bg-emerald-400/80"
+                                                                        aria-hidden="true"
+                                                                    />
+                                                                    <div className="flex items-start justify-between gap-3">
+                                                                        <div className="min-w-0 flex-1 pl-4">
+                                                                            <p className="truncate text-sm font-semibold">
+                                                                                {item.product.name}
+                                                                            </p>
+                                                                        </div>
+                                                                        <div className="shrink-0 text-right">
+                                                                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                                                                Subtotal
+                                                                            </p>
+                                                                            <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300">
+                                                                                <AnimatedValue value={`${priceMode}-${item.lineId}-${item.quantity}`}>
+                                                                                    {formatCurrency(getUnitPrice(item.product) * item.quantity)}
+                                                                                </AnimatedValue>
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="flex items-center justify-between gap-3">
+                                                                        <div className="flex h-9 items-center gap-1 rounded-full border border-black/5 bg-muted/55 p-1 shadow-inner dark:border-white/10 dark:bg-white/8">
+                                                                            <Button
+                                                                                type="button"
+                                                                                variant="ghost"
+                                                                                size="icon-sm"
+                                                                                className="size-7 rounded-full"
+                                                                                onClick={() => decreaseCartItemQuantity(item.lineId)}
+                                                                                title="Restar cantidad"
+                                                                            >
+                                                                                <Minus className="size-3.5" />
+                                                                            </Button>
+                                                                            <span className="min-w-7 text-center text-sm font-bold text-foreground">
+                                                                                <AnimatedValue value={item.quantity}>
+                                                                                    {item.quantity}
+                                                                                </AnimatedValue>
+                                                                            </span>
+                                                                            <Button
+                                                                                type="button"
+                                                                                variant="ghost"
+                                                                                size="icon-sm"
+                                                                                className="size-7 rounded-full"
+                                                                                onClick={() => increaseCartItemQuantity(item.lineId)}
+                                                                                title="Aumentar cantidad"
+                                                                            >
+                                                                                <Plus className="size-3.5" />
+                                                                            </Button>
+                                                                        </div>
+
+                                                                        <Button
+                                                                            type="button"
+                                                                            variant="ghost"
+                                                                            size="icon-sm"
+                                                                            className="shrink-0 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                                                            onClick={() => removeFromCart(item.lineId)}
+                                                                            title="Eliminar del carrito"
+                                                                        >
+                                                                            <Trash2 className="size-3.5" />
+                                                                        </Button>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        }
+
+                                                        return (
+                                                            <button
+                                                                key={item.lineId}
+                                                                type="button"
+                                                                onClick={() => toggleManualGiftSelection(item.lineId)}
+                                                                aria-pressed={isSelectedForGiftGroup}
+                                                                className={cn(
+                                                                    "animate-pos-cart-card-in group relative flex h-[112px] w-full cursor-pointer flex-col justify-between overflow-hidden rounded-[22px] border border-black/5 bg-white/90 p-4 text-left shadow-[0_18px_45px_-38px_rgba(0,0,0,0.55)] backdrop-blur transition-all hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/35 dark:border-white/10 dark:bg-white/8 dark:hover:bg-white/10",
+                                                                    isSelectedForGiftGroup &&
+                                                                    "border-amber-400/45 bg-amber-50/75 ring-2 ring-amber-400/25 dark:border-amber-300/35 dark:bg-amber-300/10 dark:ring-amber-300/20"
+                                                                )}
+                                                            >
+                                                                <span
+                                                                    className="absolute left-4 top-4 size-2 rounded-full bg-amber-400 dark:bg-amber-300"
+                                                                    aria-hidden="true"
+                                                                />
+                                                                <div className="flex w-full items-start justify-between gap-3">
+                                                                    <div className="min-w-0 flex-1 pl-4">
+                                                                        <p className="truncate text-sm font-semibold">
+                                                                            {item.product.name}
+                                                                        </p>
+                                                                    </div>
+                                                                    <div className="shrink-0 text-right">
+                                                                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                                                            Subtotal
+                                                                        </p>
+                                                                        <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300">
+                                                                            <AnimatedValue value={`${priceMode}-${item.lineId}`}>
+                                                                                {formatCurrency(getUnitPrice(item.product))}
+                                                                            </AnimatedValue>
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="flex w-full items-center justify-between gap-3">
+                                                                    <span className="text-xs font-medium text-muted-foreground">
+                                                                        {manualGiftTargetGroupLabel
+                                                                            ? `Agregar a ${manualGiftTargetGroupLabel}`
+                                                                            : "Seleccionar para grupo"}
+                                                                    </span>
+                                                                    <span
+                                                                        className={cn(
+                                                                            "flex size-7 items-center justify-center rounded-full border transition-colors",
+                                                                            isSelectedForGiftGroup
+                                                                                ? "border-amber-300 bg-amber-500 text-white shadow-[0_12px_22px_-14px_rgba(217,119,6,0.9)] dark:border-amber-300/35 dark:bg-amber-400 dark:text-amber-950"
+                                                                                : "border-border/80 bg-background/80 text-transparent dark:border-white/15 dark:bg-slate-950/35"
+                                                                        )}
+                                                                        aria-hidden="true"
+                                                                    >
+                                                                        <Check className="size-4" />
+                                                                    </span>
+                                                                </div>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
                                         )}
+                                        {manualGiftGroupingActive && (
+                                            <div className="sticky bottom-3 z-20 mt-3 flex items-center justify-end gap-2 pr-2">
+                                                {manualGiftTargetGroupLabel && (
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="icon-sm"
+                                                        className="h-12 w-12 rounded-2xl border-amber-300 bg-background/95 text-amber-800 hover:bg-amber-50 dark:border-amber-300/35 dark:text-amber-200 dark:hover:bg-amber-300/10"
+                                                        onClick={() => {
+                                                            setManualGiftTargetGroupLabel(null);
+                                                            setManualGiftSelectedLineIds([]);
+                                                        }}
+                                                        title="Cancelar agregado al regalo"
+                                                        aria-label="Cancelar agregado al regalo"
+                                                    >
+                                                        <X className="size-4" />
+                                                    </Button>
+                                                )}
+                                                <Button
+                                                    type="button"
+                                                    size="lg"
+                                                    className="h-12 rounded-2xl bg-amber-600 px-5 text-white shadow-[0_20px_42px_-18px_rgba(217,119,6,0.78)] hover:bg-amber-700"
+                                                    disabled={manualGiftSelectedLineIds.length === 0}
+                                                    onClick={handleCreateGiftGroup}
+                                                >
+                                                    {manualGiftTargetGroupLabel
+                                                        ? `Agregar a ${manualGiftTargetGroupLabel}`
+                                                        : "Crear grupo"}
+                                                    {manualGiftSelectedLineIds.length > 0 && (
+                                                        <Badge className="ml-1 border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-100">
+                                                            {manualGiftSelectedLineIds.length}
+                                                        </Badge>
+                                                    )}
+                                                </Button>
+                                            </div>
+                                        )}
+                                        </AnimatedSizeContainer>
                                     </ScrollArea>
                                 </CardContent>
                             </Card>
@@ -1807,48 +2426,78 @@ export default function NuevaVentaPage() {
                                         <div className="flex items-center gap-2">
                                             <ShoppingBag className="size-5 text-muted-foreground" />
                                             <h2 className="text-lg font-semibold">Orden actual</h2>
-                                            {totalItems > 0 && (
-                                                <Badge variant="secondary" className="font-semibold">
-                                                    {totalItems}
-                                                </Badge>
+                                            
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="icon-sm"
+                                                className={cn(
+                                                    "rounded-xl text-amber-700 hover:bg-amber-50 hover:text-amber-800 dark:text-amber-300 dark:hover:bg-amber-400/10 dark:hover:text-amber-200",
+                                                    manualGiftGroupingActive &&
+                                                    "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-300/40 dark:bg-amber-400/10 dark:text-amber-200"
+                                                )}
+                                                disabled={cart.length === 0}
+                                                onClick={handleToggleGiftGrouping}
+                                                aria-label={manualGiftGroupingActive ? "Desactivar regalos" : "Activar regalos"}
+                                                aria-pressed={manualGiftGroupingActive}
+                                                title={manualGiftGroupingActive ? "Desactivar regalos" : "Activar regalos"}
+                                            >
+                                                <Gift className="size-3.5" />
+                                            </Button>
+                                            {cart.length > 0 && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="rounded-xl text-muted-foreground hover:text-destructive"
+                                                    onClick={clearCart}
+                                                >
+                                                    Vaciar
+                                                </Button>
                                             )}
                                         </div>
-                                        {cart.length > 0 && (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="rounded-xl text-muted-foreground hover:text-destructive"
-                                                onClick={clearCart}
-                                            >
-                                                Vaciar
-                                            </Button>
-                                        )}
                                     </div>
 
-                                    <div className="mb-2 grid grid-cols-2 gap-2">
+                                    <div className="mb-2">
                                         <button
                                             type="button"
-                                            onClick={() => setPriceMode("retail")}
-                                            className={cn(
-                                                "cursor-pointer rounded-2xl px-3 py-3 text-sm font-medium transition-all",
-                                                priceMode === "retail"
-                                                    ? "bg-[linear-gradient(135deg,#1c1c28_0%,#3f3f50_100%)] text-white dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.98),rgba(30,41,59,0.98))] dark:text-slate-50 dark:shadow-[0_18px_32px_-24px_rgba(0,0,0,0.8)]"
-                                                    : "bg-muted text-muted-foreground dark:bg-slate-800/70 dark:text-slate-300"
-                                            )}
+                                            role="switch"
+                                            aria-checked={priceMode === "wholesale"}
+                                            onClick={() =>
+                                                setPriceMode(priceMode === "retail" ? "wholesale" : "retail")
+                                            }
+                                            className="relative grid h-12 w-full cursor-pointer grid-cols-2 rounded-2xl bg-muted p-1 text-sm font-semibold text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 dark:bg-slate-800/70"
                                         >
-                                            Precio venta
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setPriceMode("wholesale")}
-                                            className={cn(
-                                                "cursor-pointer rounded-2xl px-3 py-3 text-sm font-medium transition-all",
-                                                priceMode === "wholesale"
-                                                    ? "bg-[linear-gradient(135deg,#2563eb_0%,#93c5fd_100%)] text-white dark:bg-[linear-gradient(135deg,rgba(37,99,235,0.92),rgba(30,64,175,0.92))] dark:text-sky-50 dark:shadow-[0_18px_32px_-24px_rgba(37,99,235,0.55)]"
-                                                    : "bg-muted text-muted-foreground dark:bg-slate-800/70 dark:text-slate-300"
-                                            )}
-                                        >
-                                            Mayorista
+                                            <span
+                                                className={cn(
+                                                    "absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-[0.85rem] transition-transform",
+                                                    priceMode === "retail"
+                                                        ? "translate-x-0 bg-[linear-gradient(135deg,#1c1c28_0%,#3f3f50_100%)] shadow-[0_18px_32px_-24px_rgba(0,0,0,0.8)] dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.98),rgba(30,41,59,0.98))]"
+                                                        : "translate-x-full bg-[linear-gradient(135deg,#2563eb_0%,#93c5fd_100%)] shadow-[0_18px_32px_-24px_rgba(37,99,235,0.55)] dark:bg-[linear-gradient(135deg,rgba(37,99,235,0.92),rgba(30,64,175,0.92))]"
+                                                )}
+                                                aria-hidden="true"
+                                            />
+                                            <span
+                                                className={cn(
+                                                    "relative z-10 flex items-center justify-center rounded-xl transition-colors",
+                                                    priceMode === "retail"
+                                                        ? "text-white dark:text-slate-50"
+                                                        : "text-muted-foreground dark:text-slate-300"
+                                                )}
+                                            >
+                                                Precio venta
+                                            </span>
+                                            <span
+                                                className={cn(
+                                                    "relative z-10 flex items-center justify-center rounded-xl transition-colors",
+                                                    priceMode === "wholesale"
+                                                        ? "text-white dark:text-sky-50"
+                                                        : "text-muted-foreground dark:text-slate-300"
+                                                )}
+                                            >
+                                                Mayorista
+                                            </span>
                                         </button>
                                     </div>
 
@@ -1883,29 +2532,37 @@ export default function NuevaVentaPage() {
                                         <div className="space-y-2 rounded-[1.5rem] bg-muted/55 p-4 dark:bg-[linear-gradient(180deg,rgba(51,65,85,0.32),rgba(30,41,59,0.42))]">
                                             <div className="flex items-center justify-between text-sm text-muted-foreground">
                                                 <span>Items</span>
-                                                <span>{totalItems}</span>
+                                                <span className="text-2xl font-bold tracking-tight text-foreground">
+                                                    <AnimatedValue value={totalItems}>
+                                                        {totalItems}
+                                                    </AnimatedValue>
+                                                </span>
                                             </div>
-                                            {appliedExchange && (
-                                                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 rounded-xl bg-[linear-gradient(135deg,rgba(255,241,242,0.95),rgba(255,228,230,0.82))] px-3 py-2 text-sm text-rose-700 dark:bg-[linear-gradient(135deg,rgba(76,5,25,0.58),rgba(136,19,55,0.28))] dark:text-rose-100">
-                                                    <div className="min-w-0">
-                                                        <span className="font-medium">
-                                                            Crédito por cambio
-                                                        </span>
-                                                        <div className="h-4 overflow-hidden pt-0.5 text-[11px] text-rose-600 dark:text-rose-300">
-                                                            <button
-                                                                type="button"
-                                                                className="truncate font-medium underline decoration-rose-400/70 underline-offset-2 hover:text-rose-700 dark:hover:text-rose-200"
-                                                                onClick={() => setExchangeDialogOpen(true)}
-                                                            >
-                                                                Boleta #{appliedExchange.ticketNumber.toString().padStart(5, "0")} · {appliedExchange.items.length} producto(s) · Ver detalle
-                                                            </button>
+                                            <AnimatedSizeContainer>
+                                                {appliedExchange && (
+                                                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 rounded-xl bg-[linear-gradient(135deg,rgba(255,241,242,0.95),rgba(255,228,230,0.82))] px-3 py-2 text-sm text-rose-700 dark:bg-[linear-gradient(135deg,rgba(76,5,25,0.58),rgba(136,19,55,0.28))] dark:text-rose-100">
+                                                        <div className="min-w-0">
+                                                            <span className="font-medium">
+                                                                Crédito por cambio
+                                                            </span>
+                                                            <div className="h-4 overflow-hidden pt-0.5 text-[11px] text-rose-600 dark:text-rose-300">
+                                                                <button
+                                                                    type="button"
+                                                                    className="truncate font-medium underline decoration-rose-400/70 underline-offset-2 hover:text-rose-700 dark:hover:text-rose-200"
+                                                                    onClick={() => setExchangeDialogOpen(true)}
+                                                                >
+                                                                    Boleta #{appliedExchange.ticketNumber.toString().padStart(5, "0")} · {appliedExchange.items.length} producto(s) · Ver detalle
+                                                                </button>
+                                                            </div>
                                                         </div>
+                                                        <span className="whitespace-nowrap text-right font-bold text-rose-700 dark:text-rose-100">
+                                                            -<AnimatedValue value={exchangeCredit}>
+                                                                {formatCurrency(exchangeCredit)}
+                                                            </AnimatedValue>
+                                                        </span>
                                                     </div>
-                                                    <span className="whitespace-nowrap text-right font-bold text-rose-700 dark:text-rose-100">
-                                                        -{formatCurrency(exchangeCredit)}
-                                                    </span>
-                                                </div>
-                                            )}
+                                                )}
+                                            </AnimatedSizeContainer>
                                             <div className="flex items-center justify-between border-t border-border/70 pt-3">
                                                 <div>
                                                     <p className="text-sm font-medium text-muted-foreground">
@@ -1916,16 +2573,20 @@ export default function NuevaVentaPage() {
                                                             ? "Usando precio mayorista"
                                                             : "Usando precio de venta"}
                                                     </p>
-                                                    <div className="h-4 overflow-hidden">
+                                                    <AnimatedSizeContainer>
                                                         {hasExchangeOverage && (
                                                             <p className="mt-1 text-xs text-rose-600">
                                                                 El cambio supera la nueva venta.
                                                             </p>
                                                         )}
-                                                    </div>
+                                                    </AnimatedSizeContainer>
                                                 </div>
                                                 <span className="text-3xl font-bold tracking-tight">
-                                                    {formatCurrency(appliedExchange ? balanceAmount : payableAmount)}
+                                                    <AnimatedValue
+                                                        value={`${priceMode}-${appliedExchange ? balanceAmount : payableAmount}`}
+                                                    >
+                                                        {formatCurrency(appliedExchange ? balanceAmount : payableAmount)}
+                                                    </AnimatedValue>
                                                 </span>
                                             </div>
                                         </div>
@@ -1942,7 +2603,14 @@ export default function NuevaVentaPage() {
                                         >
                                             {shouldFinalizeExchangeDirectly
                                                 ? "Finalizar cambio"
-                                                : `Cobrar ${formatCurrency(payableAmount)}`}
+                                                : (
+                                                    <>
+                                                        Cobrar{" "}
+                                                        <AnimatedValue value={`${priceMode}-${payableAmount}`}>
+                                                            {formatCurrency(payableAmount)}
+                                                        </AnimatedValue>
+                                                    </>
+                                                )}
                                         </Button>
                                     </div>
                                 </CardContent>
@@ -2141,7 +2809,17 @@ export default function NuevaVentaPage() {
                     `}</style>
 
                     <div className="fixed inset-0 z-[9999] bg-white text-black">
-                        <TicketReceipt data={receiptData} isGift={activePrintIsGift} />
+                        <TicketReceipt
+                            data={receiptData}
+                            isGift={activePrintIsGift}
+                            giftGroup={
+                                activePrintIsGift
+                                    ? receiptData.giftGroups?.filter((group) => group.items.length > 0)[
+                                        activePrintGiftGroupIndex
+                                    ]
+                                    : undefined
+                            }
+                        />
                     </div>
                 </div>
             )}

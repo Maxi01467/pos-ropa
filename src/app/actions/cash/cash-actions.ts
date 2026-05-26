@@ -403,6 +403,21 @@ const getCashSessionsHistoryCached = unstable_cache(
                         user: {
                             select: { name: true },
                         },
+                        items: {
+                            where: {
+                                deletedAt: null,
+                            },
+                            include: {
+                                variant: {
+                                    include: {
+                                        product: {
+                                            select: { name: true },
+                                        },
+                                    },
+                                },
+                            },
+                            orderBy: { createdAt: "asc" },
+                        },
                     },
                 },
             },
@@ -443,6 +458,18 @@ const getCashSessionsHistoryCached = unstable_cache(
                 transferAmount: sale.transferAmount == null ? null : Number(sale.transferAmount),
                 createdAt: sale.createdAt.toISOString(),
                 sellerName: sale.user.name,
+                items: sale.items.map((item) => ({
+                    id: item.id,
+                    variantId: item.variantId,
+                    productName: item.variant.product.name,
+                    size: item.variant.size,
+                    color: item.variant.color,
+                    sku: item.variant.sku,
+                    quantity: item.quantity,
+                    priceAtTime: Number(item.priceAtTime),
+                    priceType: item.priceType,
+                    returnedQuantity: item.returnedQuantity,
+                })),
             })),
         }));
     },

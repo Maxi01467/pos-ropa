@@ -145,7 +145,7 @@ export function POSLayoutClient({
             return;
         }
 
-        if (!canAccessPath(effectiveSession.role, pathname, { isDesktop: isDesktopClient })) {
+        if (!pathname || !canAccessPath(effectiveSession.role, pathname, { isDesktop: isDesktopClient })) {
             const destination = getDefaultPathForRole(effectiveSession.role, { isDesktop: isDesktopClient });
             if (pathname !== destination) {
                 router.replace(destination);
@@ -190,6 +190,7 @@ export function POSLayoutClient({
 
     const needsTerminalSetup =
         terminal.isDesktop &&
+        pathname &&
         requiresTerminalConfiguration(pathname) &&
         !isTerminalConfigured(terminal) &&
         !terminal.configReadError;

@@ -52,7 +52,7 @@ function getIsOnline() {
         return false;
     }
 
-    if (!isOfflineModeEnabled()) {
+    if (!shouldUsePowerSync()) {
         return browserOnline;
     }
 
@@ -66,6 +66,14 @@ function getIsOnline() {
     }
 
     return browserOnline;
+}
+
+function shouldUsePowerSync() {
+    return (
+        isOfflineModeEnabled() &&
+        typeof window !== "undefined" &&
+        Boolean(window.posDesktop)
+    );
 }
 
 function readStoredSnapshot(): OfflineBootstrapSnapshot {
@@ -169,7 +177,7 @@ export function isOfflineBootstrapReady(snapshot = readStoredSnapshot()) {
 
 export function shouldBlockForOfflineBootstrap(snapshot = readStoredSnapshot()) {
     return (
-        isOfflineModeEnabled() &&
+        shouldUsePowerSync() &&
         snapshot.isOnline === false &&
         snapshot.state === "requires_initial_sync"
     );
@@ -182,7 +190,7 @@ export function assertOfflineBootstrapReady(snapshot = readStoredSnapshot()) {
 }
 
 export async function refreshOfflineBootstrapState(): Promise<OfflineBootstrapSnapshot> {
-    if (!isOfflineModeEnabled()) {
+    if (!shouldUsePowerSync()) {
         return persistSnapshot({
             ...DEFAULT_SNAPSHOT,
             state: "ready_offline",

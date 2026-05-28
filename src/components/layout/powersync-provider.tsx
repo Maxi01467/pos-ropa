@@ -9,11 +9,13 @@ import { Loader2 } from 'lucide-react';
 
 export function PowerSyncProvider({ children }: { children: React.ReactNode }) {
   const offlineEnabled = isOfflineModeEnabled();
-  const [initialized, setInitialized] = useState(() => !offlineEnabled);
+  const isDesktopRuntime = typeof window !== "undefined" && Boolean(window.posDesktop);
+  const shouldEnablePowerSync = offlineEnabled && isDesktopRuntime;
+  const [initialized, setInitialized] = useState(() => !shouldEnablePowerSync);
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    if (!offlineEnabled) {
+    if (!shouldEnablePowerSync) {
       return;
     }
 
@@ -49,9 +51,9 @@ export function PowerSyncProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener("offline", refreshBootstrap);
       // No desconectar db brutalmente si compartimos global singleton, pero previene setState
     };
-  }, [offlineEnabled]);
+  }, [shouldEnablePowerSync]);
 
-  if (!offlineEnabled) {
+  if (!shouldEnablePowerSync) {
     return <>{children}</>;
   }
 

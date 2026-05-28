@@ -32,7 +32,7 @@ export async function GET(request: Request) {
 
     // 2. Importar la KEY RSA privada.
     const privateKey = await importPKCS8(
-      Buffer.from(config.privateKey, 'base64').toString('ascii'),
+      decodePrivateKey(config.privateKey),
       'RS256'
     );
 
@@ -55,8 +55,22 @@ export async function GET(request: Request) {
 
   } catch (error) {
     console.error('Error generando token de PowerSync:', error);
-    return NextResponse.json({ error: 'Error del servidor firmando JWT' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'PowerSync no está disponible con esta configuración' },
+      { status: 503 }
+    );
   }
+}
+
+function decodePrivateKey(value: string) {
+  const trimmed = value.trim();
+
+  if (trimmed.startsWith('-----BEGIN ')) {
+    return trimmed;
+  }
+
+  const decoded = Buffer.from(trimmed, 'base64').toString('ascii').trim();
+  return decoded.startsWith('-----BEGIN ') ? decoded : trimmed;
 }
 
 async function resolveSyncSubject(request: Request, fallbackSubject: string) {

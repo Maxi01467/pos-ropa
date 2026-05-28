@@ -49,6 +49,75 @@ function writeFilteredEnv(sourcePath, targetPath) {
     console.log(`  .env filtrado – variables excluidas: ${removed}`);
 }
 
+function ensureNextPackageEntrypoint() {
+    const sourcePath = path.join(projectRoot, "node_modules", "next", "package.json");
+    const targetPath = path.join(
+        standaloneRoot,
+        "node_modules",
+        "next",
+        "package.json"
+    );
+
+    if (!fs.existsSync(path.dirname(targetPath)) || fs.existsSync(targetPath)) return;
+
+    if (!fs.existsSync(sourcePath)) {
+        throw new Error(
+            "No se encontro node_modules/next/package.json. Ejecuta `npm install` antes de empaquetar."
+        );
+    }
+
+    ensureDir(path.dirname(targetPath));
+    fs.copyFileSync(sourcePath, targetPath);
+    console.log("  next/package.json agregado al standalone.");
+}
+
+function ensureNextRuntime() {
+    const sourcePath = path.join(projectRoot, "node_modules", "next", "dist");
+    const targetPath = path.join(
+        standaloneRoot,
+        "node_modules",
+        "next",
+        "dist"
+    );
+
+    if (!fs.existsSync(sourcePath)) {
+        throw new Error(
+            "No se encontro node_modules/next/dist. Ejecuta `npm install` antes de empaquetar."
+        );
+    }
+
+    copyRecursive(sourcePath, targetPath);
+    console.log("  next/dist agregado al standalone.");
+}
+
+function ensureStandalonePackage(packagePath) {
+    const sourcePath = path.join(projectRoot, "node_modules", ...packagePath.split("/"));
+    const targetPath = path.join(
+        standaloneRoot,
+        "node_modules",
+        ...packagePath.split("/")
+    );
+
+    if (!fs.existsSync(sourcePath)) {
+        throw new Error(
+            `No se encontro node_modules/${packagePath}. Ejecuta \`npm install\` antes de empaquetar.`
+        );
+    }
+
+    copyRecursive(sourcePath, targetPath);
+    console.log(`  ${packagePath} agregado al standalone.`);
+}
+
+function ensureNextDependencies() {
+    const nextPackagePath = path.join(projectRoot, "node_modules", "next", "package.json");
+    const nextPackage = JSON.parse(fs.readFileSync(nextPackagePath, "utf8"));
+    const packageNames = Object.keys(nextPackage.dependencies ?? {});
+
+    for (const packageName of packageNames) {
+        ensureStandalonePackage(packageName);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -68,6 +137,12 @@ copyRecursive(
 );
 copyRecursive(path.join(projectRoot, "public"), path.join(standaloneRoot, "public"));
 copyRecursive(path.join(projectRoot, "private"), path.join(standaloneRoot, "private"));
+
+ensureNextPackageEntrypoint();
+ensureNextRuntime();
+ensureNextDependencies();
+ensureStandalonePackage("react");
+ensureStandalonePackage("react-dom");
 
 writeFilteredEnv(
     path.join(projectRoot, ".env"),

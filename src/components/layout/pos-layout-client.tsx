@@ -199,6 +199,7 @@ export function POSLayoutClient({
     if (
         terminal.isDesktop &&
         terminal.configReadError &&
+        pathname &&
         requiresTerminalConfiguration(pathname)
     ) {
         return (

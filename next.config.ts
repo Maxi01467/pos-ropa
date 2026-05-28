@@ -3,14 +3,6 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   reactCompiler: true,
-  outputFileTracingExcludes: {
-    "*": [
-      "./dist/**/*",
-      "./build/**/*",
-      "./backups/**/*",
-      "./data-migration/**/*",
-    ],
-  },
   experimental: {
     webpackBuildWorker: false,
   },

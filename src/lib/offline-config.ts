@@ -20,13 +20,16 @@ export function getPowerSyncEndpoint(): string | null {
 export function getPowerSyncServerConfig() {
     const endpoint = getPowerSyncEndpoint();
     const audience = process.env.POWERSYNC_JWT_AUDIENCE?.trim() || endpoint || "";
+    const privateKey = process.env.POWERSYNC_PRIVATE_KEY?.trim() || "";
+    const keyId = process.env.POWERSYNC_KID?.trim() || "";
+    const hasServerCredentials = Boolean(endpoint && audience && privateKey && keyId);
 
     return {
-        enabled: isOfflineModeEnabled(),
+        enabled: isOfflineModeEnabled() && hasServerCredentials,
         endpoint,
         audience,
-        privateKey: process.env.POWERSYNC_PRIVATE_KEY?.trim() || "",
-        keyId: process.env.POWERSYNC_KID?.trim() || "",
+        privateKey,
+        keyId,
         issuer: process.env.POWERSYNC_JWT_ISSUER?.trim() || "pos-ropa-nextjs",
         syncSubject: process.env.POWERSYNC_SYNC_SUBJECT?.trim() || "pos-ropa-default-device",
     };

@@ -1,10 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { AnimatePresence, motion } from "motion/react";
 import {
-    CalendarClock,
     ChevronDown,
     ChevronLeft,
     ChevronRight,
@@ -43,18 +42,18 @@ const mainItems = [
     { href: "/", label: "Inicio", icon: Home },
     { href: "/nueva-venta", label: "Nueva venta", icon: ShoppingCart },
     { href: "/caja", label: "Caja", icon: Wallet },
-    { href: "/asistencia", label: "Asistencia", icon: CalendarClock },
 ] as const;
 
 const workspaceItems = [
     {
         label: "Operacion",
         icon: Boxes,
-        badge: 3,
+        badge: 4,
         children: [
             { href: "/inventario", label: "Inventario" },
             { href: "/stock", label: "Stock" },
             { href: "/proveedores", label: "Proveedores" },
+            { href: "/empleados", label: "Empleados" },
         ],
     },
     {
@@ -64,18 +63,17 @@ const workspaceItems = [
         badge: 1,
     },
     {
-        href: "/empleados",
-        label: "Empleados",
-        icon: Users,
-        badge: 1,
-    },
-    {
         href: "/configuracion",
         label: "Configuracion",
         icon: Settings,
         hidden: true,
     },
 ] as const;
+
+const handleLogout = () => {
+    clearLocalSession();
+    window.location.replace("/api/auth/logout");
+};
 
 function countVisibleWorkspaceChildren(role: SessionRole, isDesktop: boolean) {
     return workspaceItems[0].children.filter((child) =>
@@ -90,6 +88,7 @@ function SidebarContent({
     collapsed,
     onToggleCollapse,
     onNavClick,
+    onNavigate,
 }: {
     role: SessionRole;
     userName: string;
@@ -97,7 +96,14 @@ function SidebarContent({
     collapsed: boolean;
     onToggleCollapse?: () => void;
     onNavClick?: () => void;
+    onNavigate?: (href: string) => void;
 }) {
+    const handleNav = (href: string) => {
+        onNavClick?.();
+        if (onNavigate) {
+            onNavigate(href);
+        }
+    };
     const pathname = usePathname();
     const { hasOpenCashSession } = useCashSessionStatus();
     const terminal = useTerminalSnapshot();
@@ -130,13 +136,8 @@ function SidebarContent({
         .join("");
 
     const navItemBaseClass =
-        "rounded-2xl transform-gpu transition-[background-color,color,box-shadow,transform] duration-150 ease-out";
+        "rounded-2xl transform-gpu transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.985]";
     const navItemHoverClass = "text-muted-foreground hover:bg-muted/70 hover:text-foreground";
-
-    const handleLogout = () => {
-        clearLocalSession();
-        window.location.replace("/login?logged_out=1");
-    };
 
     return (
         <TooltipProvider delayDuration={140} skipDelayDuration={80}>
@@ -157,7 +158,7 @@ function SidebarContent({
                             onClick={onToggleCollapse}
                             type="button"
                             aria-label={collapsed ? "Expandir sidebar" : "Colapsar sidebar"}
-                            className="flex size-8 items-center justify-center rounded-2xl border border-white/35 bg-white/24 text-foreground shadow-[0_10px_24px_-18px_rgba(15,23,42,0.45)] backdrop-blur-xl transform-gpu transition-[background-color,transform,box-shadow] duration-150 ease-out hover:scale-105 hover:bg-white/34 dark:border-white/12 dark:bg-white/8 dark:hover:bg-white/12"
+                            className="flex size-8 items-center justify-center rounded-2xl border border-white/35 bg-white/24 text-foreground shadow-[0_10px_24px_-18px_rgba(15,23,42,0.45)] backdrop-blur-xl transform-gpu transition-[background-color,transform,box-shadow] duration-150 ease-out hover:scale-105 active:scale-[0.97] hover:bg-white/34 dark:border-white/12 dark:bg-white/8 dark:hover:bg-white/12"
                         >
                             {collapsed ? (
                                 <ChevronRight className="size-4" />
@@ -187,11 +188,13 @@ function SidebarContent({
                                     {visibleMainItems.map((item) => {
                                         const Icon = item.icon;
                                         const isActive = pathname === item.href;
+                                        const bypassOpenSessionCheck = process.env.NODE_ENV === "development"; // Habilitado en modo desarrollo para pruebas
                                         const isDisabled =
+                                            !bypassOpenSessionCheck &&
                                             item.href === "/nueva-venta" &&
                                             hasOpenCashSession === false;
 
-                                        const navItem = collapsed ? (
+                                        const navItemContent = collapsed ? (
                                             <Tooltip key={item.href}>
                                                 <TooltipTrigger asChild>
                                                     <div
@@ -234,13 +237,20 @@ function SidebarContent({
                                         );
 
                                         if (isDisabled) {
-                                            return <div key={item.href} title="Abrí la caja para habilitar ventas">{navItem}</div>;
+                                            return <div key={item.href} title="Abrí la caja para habilitar ventas">{navItemContent}</div>;
                                         }
 
                                         return (
-                                            <Link key={item.href} href={item.href} onClick={onNavClick}>
-                                                {navItem}
-                                            </Link>
+                                            <div
+                                                key={item.href}
+                                                role="button"
+                                                tabIndex={0}
+                                                className="cursor-pointer"
+                                                onClick={() => handleNav(item.href)}
+                                                onKeyDown={(e) => e.key === "Enter" && handleNav(item.href)}
+                                            >
+                                                {navItemContent}
+                                            </div>
                                         );
                                     })}
                                 </nav>
@@ -273,7 +283,13 @@ function SidebarContent({
                                                 return (
                                                     <Tooltip key={child.href}>
                                                         <TooltipTrigger asChild>
-                                                            <Link href={child.href} onClick={onNavClick}>
+                                                            <div
+                                                                role="button"
+                                                                tabIndex={0}
+                                                                className="cursor-pointer"
+                                                                onClick={() => handleNav(child.href)}
+                                                                onKeyDown={(e) => e.key === "Enter" && handleNav(child.href)}
+                                                            >
                                                                 <div
                                                                     className={cn(
                                                                         "flex w-full items-center justify-center p-3",
@@ -286,7 +302,7 @@ function SidebarContent({
                                                                 >
                                                                     <Icon className="size-4.5" />
                                                                 </div>
-                                                            </Link>
+                                                            </div>
                                                         </TooltipTrigger>
                                                         <TooltipContent side="right">{child.label}</TooltipContent>
                                                     </Tooltip>
@@ -320,34 +336,49 @@ function SidebarContent({
                                                     </span>
                                                 </button>
 
-                                                {workspaceExpanded && (
-                                                    <div className="ml-8 mt-1 space-y-1">
-                                                        {visibleChildren.map((child) => (
-                                                            <Link
-                                                                key={child.href}
-                                                                href={child.href}
-                                                                onClick={onNavClick}
-                                                            >
+                                                <AnimatePresence initial={false}>
+                                                    {workspaceExpanded && (
+                                                        <motion.div
+                                                            initial="collapsed"
+                                                            animate="open"
+                                                            exit="collapsed"
+                                                            variants={{
+                                                                open: { opacity: 1, height: "auto" },
+                                                                collapsed: { opacity: 0, height: 0 }
+                                                            }}
+                                                            transition={{ type: "spring", duration: 0.25, bounce: 0 }}
+                                                            className="ml-8 mt-1 space-y-1 overflow-hidden"
+                                                        >
+                                                            {visibleChildren.map((child) => (
                                                                 <div
-                                                                    className={cn(
-                                                                        "px-3 py-2.5 text-sm",
-                                                                        navItemBaseClass,
-                                                                        pathname === child.href
-                                                                            ? "font-medium text-white shadow-[0_18px_28px_-20px_rgba(124,58,237,0.8)]"
-                                                                            : navItemHoverClass
-                                                                    )}
-                                                                    style={
-                                                                        pathname === child.href
-                                                                            ? { background: "linear-gradient(135deg, #6d28d9 0%, #312e81 100%)" }
-                                                                            : undefined
-                                                                    }
+                                                                    key={child.href}
+                                                                    role="button"
+                                                                    tabIndex={0}
+                                                                    className="cursor-pointer"
+                                                                    onClick={() => handleNav(child.href)}
+                                                                    onKeyDown={(e) => e.key === "Enter" && handleNav(child.href)}
                                                                 >
-                                                                    {child.label}
+                                                                    <div
+                                                                        className={cn(
+                                                                            "px-3 py-2.5 text-sm",
+                                                                            navItemBaseClass,
+                                                                            pathname === child.href
+                                                                                ? "font-medium text-white shadow-[0_18px_28px_-20px_rgba(124,58,237,0.8)]"
+                                                                                : navItemHoverClass
+                                                                        )}
+                                                                        style={
+                                                                            pathname === child.href
+                                                                                ? { background: "linear-gradient(135deg, #6d28d9 0%, #312e81 100%)" }
+                                                                                : undefined
+                                                                        }
+                                                                    >
+                                                                        {child.label}
+                                                                    </div>
                                                                 </div>
-                                                            </Link>
-                                                        ))}
-                                                    </div>
-                                                )}
+                                                            ))}
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
                                             </div>
                                         );
                                     }
@@ -358,7 +389,13 @@ function SidebarContent({
                                         return (
                                             <Tooltip key={item.href}>
                                                 <TooltipTrigger asChild>
-                                                    <Link href={item.href} onClick={onNavClick}>
+                                                    <div
+                                                        role="button"
+                                                        tabIndex={0}
+                                                        className="cursor-pointer"
+                                                        onClick={() => handleNav(item.href)}
+                                                        onKeyDown={(e) => e.key === "Enter" && handleNav(item.href)}
+                                                    >
                                                         <div
                                                             className={cn(
                                                                 "flex w-full items-center justify-center p-3",
@@ -372,7 +409,7 @@ function SidebarContent({
                                                             <span className="sr-only">{item.label}</span>
                                                             <Icon className="size-4.5" />
                                                         </div>
-                                                    </Link>
+                                                    </div>
                                                 </TooltipTrigger>
                                                 <TooltipContent side="right">{item.label}</TooltipContent>
                                             </Tooltip>
@@ -380,7 +417,14 @@ function SidebarContent({
                                     }
 
                                     return (
-                                        <Link key={item.href} href={item.href} onClick={onNavClick}>
+                                        <div
+                                            key={item.href}
+                                            role="button"
+                                            tabIndex={0}
+                                            className="cursor-pointer"
+                                            onClick={() => handleNav(item.href)}
+                                            onKeyDown={(e) => e.key === "Enter" && handleNav(item.href)}
+                                        >
                                             <div
                                                 className={cn(
                                                     "flex items-center gap-3 px-3 py-3 text-sm font-medium",
@@ -412,7 +456,7 @@ function SidebarContent({
                                                     </span>
                                                 )}
                                             </div>
-                                        </Link>
+                                        </div>
                                     );
                                 })}
                             </nav>
@@ -424,7 +468,7 @@ function SidebarContent({
                 {!collapsed && (
                     <div className="relative shrink-0 border-t border-white/35 p-3 dark:border-white/10">
                         <div className="mb-2 flex items-center gap-3 rounded-[1.2rem] bg-card/65 px-3 py-2.5 shadow-xs">
-                            <div className="flex size-9 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#ea580c_0%,#c2410c_100%)] text-sm font-semibold text-orange-50">
+                            <div className="flex size-9 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#FE369E_0%,#D0065F_100%)] text-sm font-semibold text-white">
                                 {initials}
                             </div>
                             <div className="min-w-0 flex-1">
@@ -438,7 +482,7 @@ function SidebarContent({
                         <Button
                             variant="ghost"
                             onClick={handleLogout}
-                            className="h-10 w-full justify-start gap-3 rounded-2xl px-3 text-rose-600 transform-gpu transition-[background-color,color,transform] duration-150 ease-out hover:bg-rose-950/8 hover:text-rose-700 dark:hover:bg-rose-500/12"
+                            className="h-10 w-full justify-start gap-3 rounded-2xl px-3 text-rose-600 transform-gpu transition-[background-color,color,transform] duration-150 ease-out hover:bg-rose-950/8 hover:text-rose-700 dark:hover:bg-rose-500/12 active:scale-[0.985]"
                         >
                             <LogOut className="size-4.5 shrink-0" />
                             <span className="text-sm font-medium">Cerrar sesion</span>
@@ -451,7 +495,7 @@ function SidebarContent({
                     <div className="relative flex shrink-0 flex-col items-center gap-2 border-t border-white/35 px-2 py-2 dark:border-white/10">
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <div className="flex size-9 cursor-default items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#ea580c_0%,#c2410c_100%)] text-sm font-semibold text-orange-50">
+                                <div className="flex size-9 cursor-default items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#FE369E_0%,#D0065F_100%)] text-sm font-semibold text-white">
                                     {initials}
                                 </div>
                             </TooltipTrigger>
@@ -461,7 +505,7 @@ function SidebarContent({
                             <TooltipTrigger asChild>
                                 <button
                                     onClick={handleLogout}
-                                    className="flex size-9 items-center justify-center rounded-2xl text-rose-500 transform-gpu transition-[background-color,color,transform] duration-150 ease-out hover:bg-rose-500/10"
+                                    className="flex size-9 items-center justify-center rounded-2xl text-rose-500 transform-gpu transition-[background-color,color,transform] duration-150 ease-out hover:bg-rose-500/10 active:scale-[0.97]"
                                     type="button"
                                 >
                                     <LogOut className="size-4" />
@@ -482,12 +526,14 @@ export function Sidebar({
     isDesktopClient,
     collapsed,
     onToggleCollapse,
+    onNavigate,
 }: {
     role: SessionRole;
     userName: string;
     isDesktopClient: boolean;
     collapsed: boolean;
     onToggleCollapse: () => void;
+    onNavigate?: (href: string) => void;
 }) {
     return (
         <>
@@ -510,6 +556,7 @@ export function Sidebar({
                             userName={userName}
                             isDesktopClient={isDesktopClient}
                             collapsed={false}
+                            onNavigate={onNavigate}
                         />
                     </SheetContent>
                 </Sheet>
@@ -528,6 +575,7 @@ export function Sidebar({
                     isDesktopClient={isDesktopClient}
                     collapsed={collapsed}
                     onToggleCollapse={onToggleCollapse}
+                    onNavigate={onNavigate}
                 />
             </aside>
         </>

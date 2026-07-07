@@ -42,3 +42,14 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# AI & Editor environments
+/.agents/
+/.claude/
+/.cursor/
+skills-lock.json
+
+# HeroUI test directories
+/src/app/(pos)/test-heroui/
+/src/app/(pos)/test-heroui-caja/
+/src/app/(pos)/test-heroui-ventas/

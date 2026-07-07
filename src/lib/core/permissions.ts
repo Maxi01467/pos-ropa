@@ -32,7 +32,7 @@ export function canAccessPath(
         isDesktop?: boolean;
     }
 ): boolean {
-    const isDesktop = options?.isDesktop === true;
+    const isDesktop = options?.isDesktop === true || process.env.NODE_ENV === "development";
     const path = normalizePath(pathname);
 
     if (isDesktopOnlyPath(path) && !isDesktop) {

@@ -43,3 +43,17 @@ export function computeNextTicketSequence(
 
     return maxSequence + 1;
 }
+
+/**
+ * Dado el ticketNumber más alto de la DB (ya filtrado por prefix),
+ * extrae su secuencia numérica y devuelve el siguiente número.
+ * Retorna 1 si no hay ninguno previo.
+ */
+export function nextSequenceFromMax(
+    maxTicketNumber: string | number | null | undefined,
+    prefix: string
+): number {
+    const seq = extractTicketSequence(maxTicketNumber, prefix);
+    return (seq ?? 0) + 1;
+}
+

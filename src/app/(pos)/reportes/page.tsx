@@ -25,6 +25,8 @@ import {
     TrendingUp,
     Wallet,
 } from "lucide-react";
+import { ScreenLoader } from "@/components/ui/screen-loader";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
@@ -315,9 +317,7 @@ async function loadLocalReportsData() {
 export default function ReportesPage() {
     const router = useRouter();
     const terminal = useTerminalSnapshot();
-    const canOpenReports =
-        terminal.isDesktop ||
-        (typeof window !== "undefined" && Boolean(window.posDesktop));
+    const canOpenReports = true; // Habilitado temporalmente para acceso web/desarrollo
     const initialComparisonRanges = useMemo(() => getComparisonPresetRanges("last30"), []);
     const [isComparisonEnabled, setIsComparisonEnabled] = useState(false);
     const [comparisonPreset, setComparisonPreset] = useState<ComparisonPreset>("last30");
@@ -749,7 +749,7 @@ export default function ReportesPage() {
                         className={cn(
                             "h-8 rounded-lg border px-3 text-xs font-semibold transition-colors",
                             isPeriodFilterEnabled && comparisonPreset === preset.key
-                                ? "border-cyan-800/30 bg-cyan-900/10 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300"
+                                ? "border-rose-800/30 bg-rose-900/10 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300"
                                 : "border-transparent bg-transparent text-muted-foreground hover:bg-muted"
                         )}
                     >
@@ -800,23 +800,7 @@ export default function ReportesPage() {
     );
 
     if (isLoading) {
-        return (
-            <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-6">
-                <div className="rounded-[1.75rem] border border-border/70 bg-card/90 px-10 py-8 shadow-sm">
-                    <div className="flex items-center gap-4">
-                        <div className="rounded-2xl bg-slate-100 p-3">
-                            <Loader2 className="size-6 animate-spin text-slate-700" />
-                        </div>
-                        <div>
-                            <p className="text-base font-semibold text-foreground">Cargando reportes</p>
-                            <p className="text-sm text-muted-foreground">
-                                Estamos consolidando ventas y productos.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
+        return <ScreenLoader layout="centered" message="Cargando reportes" description="Estamos consolidando ventas y productos." />;
     }
 
     return (
@@ -824,7 +808,7 @@ export default function ReportesPage() {
             <div className="flex flex-col gap-5">
                 <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                     <div>
-                        <div className="inline-flex items-center gap-2 rounded-full border border-cyan-900/25 bg-[linear-gradient(135deg,rgba(8,145,178,0.18),rgba(14,116,144,0.08))] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-800 dark:text-cyan-100">
+                        <div className="inline-flex items-center gap-2 rounded-full border border-rose-900/25 bg-[linear-gradient(135deg,rgba(244,63,94,0.18),rgba(190,24,74,0.08))] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-rose-800 dark:text-rose-100">
                             <TrendingUp className="size-3.5" />
                             Reportes
                         </div>
@@ -832,67 +816,6 @@ export default function ReportesPage() {
                             Ventas y productos
                         </h1>
                     </div>
-                    <div className="inline-flex items-center gap-3 rounded-[1.25rem] border border-border/70 bg-card/90 px-4 py-3 shadow-sm">
-                        <div className="rounded-xl bg-muted px-3 py-2 text-center">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                                Ventas
-                            </p>
-                            <p className="mt-1 text-xl font-semibold text-foreground">{filteredSales.length}</p>
-                        </div>
-                        <div className="rounded-xl bg-muted px-3 py-2 text-center">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                                Facturado
-                            </p>
-                            <p className="mt-1 text-xl font-semibold text-foreground">{formatCurrency(reportData.totalSales)}</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                    <Card className="rounded-[1.5rem] border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.14),rgba(6,95,70,0.04))] shadow-sm">
-                        <CardContent className="flex items-center gap-4 p-4">
-                            <div className="flex size-10 items-center justify-center rounded-lg bg-emerald-900 text-emerald-100">
-                                <Wallet className="size-5" />
-                            </div>
-                            <div>
-                                <p className="text-sm text-muted-foreground">Total vendido</p>
-                                <p className="text-2xl font-bold">{formatCurrency(reportData.totalSales)}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                    <Card className="rounded-[1.5rem] border-blue-800/20 bg-[linear-gradient(135deg,rgba(37,99,235,0.14),rgba(30,64,175,0.04))] shadow-sm">
-                        <CardContent className="flex items-center gap-4 p-4">
-                            <div className="flex size-10 items-center justify-center rounded-lg bg-blue-900 text-blue-100">
-                                <ReceiptText className="size-5" />
-                            </div>
-                            <div>
-                                <p className="text-sm text-muted-foreground">Ticket promedio</p>
-                                <p className="text-2xl font-bold">{formatCurrency(reportData.ticketAverage)}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                    <Card className="rounded-[1.5rem] border-orange-800/20 bg-[linear-gradient(135deg,rgba(234,88,12,0.14),rgba(194,65,12,0.04))] shadow-sm">
-                        <CardContent className="flex items-center gap-4 p-4">
-                            <div className="flex size-10 items-center justify-center rounded-lg bg-orange-900 text-orange-100">
-                                <Banknote className="size-5" />
-                            </div>
-                            <div>
-                                <p className="text-sm text-muted-foreground">Efectivo</p>
-                                <p className="text-2xl font-bold">{formatCurrency(reportData.totalCash)}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                    <Card className="rounded-[1.5rem] border-violet-800/20 bg-[linear-gradient(135deg,rgba(109,40,217,0.14),rgba(67,56,202,0.04))] shadow-sm">
-                        <CardContent className="flex items-center gap-4 p-4">
-                            <div className="flex size-10 items-center justify-center rounded-lg bg-violet-900 text-violet-100">
-                                <CreditCard className="size-5" />
-                            </div>
-                            <div>
-                                <p className="text-sm text-muted-foreground">Transferencias</p>
-                                <p className="text-2xl font-bold">{formatCurrency(reportData.totalTransfer)}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
                 </div>
 
                 <Tabs defaultValue="ventas" className="mt-1">
@@ -933,7 +856,7 @@ export default function ReportesPage() {
                                         className={cn(
                                             "h-8 rounded-lg border px-3 text-xs font-semibold transition-colors",
                                             isComparisonEnabled
-                                                ? "border-violet-800/30 bg-violet-900/10 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300"
+                                                ? "border-fuchsia-800/30 bg-fuchsia-900/10 text-fuchsia-800 dark:bg-fuchsia-900/30 dark:text-fuchsia-300"
                                                 : "border-transparent bg-transparent text-muted-foreground hover:bg-muted"
                                         )}
                                     >
@@ -974,7 +897,7 @@ export default function ReportesPage() {
                                             className={cn(
                                                 "h-8 rounded-lg border px-3 text-xs font-semibold transition-colors",
                                                 isPeriodFilterEnabled && comparisonPreset === preset.key
-                                                    ? "border-cyan-800/30 bg-cyan-900/10 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300"
+                                                    ? "border-rose-800/30 bg-rose-900/10 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300"
                                                     : "border-transparent bg-transparent text-muted-foreground hover:bg-muted"
                                             )}
                                         >
@@ -985,16 +908,16 @@ export default function ReportesPage() {
                             </CardHeader>
                             <CardContent className="space-y-5">
                                 <div className={cn("grid gap-3", isComparisonEnabled && "xl:grid-cols-2")}>
-                                    <div className="rounded-[1.25rem] border border-cyan-800/25 bg-[linear-gradient(135deg,rgba(8,145,178,0.12),rgba(14,116,144,0.04))] p-4">
+                                    <div className="rounded-[1.25rem] border border-rose-800/25 bg-[linear-gradient(135deg,rgba(244,63,94,0.12),rgba(190,24,74,0.04))] p-4">
                                         <div className="mb-3 flex items-center gap-2">
-                                            <span className="size-3 rounded-full bg-cyan-600" />
+                                            <span className="size-3 rounded-full bg-rose-600" />
                                             <p className="text-sm font-semibold text-foreground">
                                                 {isComparisonEnabled ? "Periodo A" : "Periodo"}
                                             </p>
                                         </div>
                                         <div className="flex flex-wrap items-center gap-3">
-                                            <div className="flex h-9 flex-1 sm:flex-none items-center overflow-hidden rounded-xl border border-cyan-800/20 bg-background shadow-sm transition-colors focus-within:border-cyan-600 focus-within:ring-[2px] focus-within:ring-cyan-600/20">
-                                                <span className="bg-cyan-950/5 px-3 text-xs font-medium text-cyan-800 border-r border-cyan-800/20 h-full flex items-center dark:text-cyan-400 dark:bg-cyan-900/20 dark:border-cyan-800/40">
+                                            <div className="flex h-9 flex-1 sm:flex-none items-center overflow-hidden rounded-xl border border-rose-800/20 bg-background shadow-sm transition-colors focus-within:border-rose-600 focus-within:ring-[2px] focus-within:ring-rose-600/20">
+                                                <span className="bg-rose-950/5 px-3 text-xs font-medium text-rose-800 border-r border-rose-800/20 h-full flex items-center dark:text-rose-400 dark:bg-rose-900/20 dark:border-rose-800/40">
                                                     Desde
                                                 </span>
                                                 <input
@@ -1008,8 +931,8 @@ export default function ReportesPage() {
                                                     className="h-full border-0 bg-transparent px-2 text-sm text-foreground outline-none w-full sm:w-[130px]"
                                                 />
                                             </div>
-                                            <div className="flex h-9 flex-1 sm:flex-none items-center overflow-hidden rounded-xl border border-cyan-800/20 bg-background shadow-sm transition-colors focus-within:border-cyan-600 focus-within:ring-[2px] focus-within:ring-cyan-600/20">
-                                                <span className="bg-cyan-950/5 px-3 text-xs font-medium text-cyan-800 border-r border-cyan-800/20 h-full flex items-center dark:text-cyan-400 dark:bg-cyan-900/20 dark:border-cyan-800/40">
+                                            <div className="flex h-9 flex-1 sm:flex-none items-center overflow-hidden rounded-xl border border-rose-800/20 bg-background shadow-sm transition-colors focus-within:border-rose-600 focus-within:ring-[2px] focus-within:ring-rose-600/20">
+                                                <span className="bg-rose-950/5 px-3 text-xs font-medium text-rose-800 border-r border-rose-800/20 h-full flex items-center dark:text-rose-400 dark:bg-rose-900/20 dark:border-rose-800/40">
                                                     Hasta
                                                 </span>
                                                 <input
@@ -1027,14 +950,14 @@ export default function ReportesPage() {
                                     </div>
 
                                     {isComparisonEnabled && (
-                                        <div className="rounded-[1.25rem] border border-violet-800/25 bg-[linear-gradient(135deg,rgba(109,40,217,0.10),rgba(67,56,202,0.04))] p-4">
+                                        <div className="rounded-[1.25rem] border border-fuchsia-800/25 bg-[linear-gradient(135deg,rgba(217,70,239,0.10),rgba(192,38,211,0.04))] p-4">
                                             <div className="mb-3 flex items-center gap-2">
-                                                <span className="size-3 rounded-full bg-violet-600" />
+                                                <span className="size-3 rounded-full bg-fuchsia-600" />
                                                 <p className="text-sm font-semibold text-foreground">Periodo B</p>
                                             </div>
                                             <div className="flex flex-wrap items-center gap-3">
-                                                <div className="flex h-9 flex-1 sm:flex-none items-center overflow-hidden rounded-xl border border-violet-800/20 bg-background shadow-sm transition-colors focus-within:border-violet-600 focus-within:ring-[2px] focus-within:ring-violet-600/20">
-                                                    <span className="bg-violet-950/5 px-3 text-xs font-medium text-violet-800 border-r border-violet-800/20 h-full flex items-center dark:text-violet-400 dark:bg-violet-900/20 dark:border-violet-800/40">
+                                                <div className="flex h-9 flex-1 sm:flex-none items-center overflow-hidden rounded-xl border border-fuchsia-800/20 bg-background shadow-sm transition-colors focus-within:border-fuchsia-600 focus-within:ring-[2px] focus-within:ring-fuchsia-600/20">
+                                                    <span className="bg-fuchsia-950/5 px-3 text-xs font-medium text-fuchsia-800 border-r border-fuchsia-800/20 h-full flex items-center dark:text-fuchsia-400 dark:bg-fuchsia-900/20 dark:border-fuchsia-800/40">
                                                         Desde
                                                     </span>
                                                     <input
@@ -1047,8 +970,8 @@ export default function ReportesPage() {
                                                         className="h-full border-0 bg-transparent px-2 text-sm text-foreground outline-none w-full sm:w-[130px]"
                                                     />
                                                 </div>
-                                                <div className="flex h-9 flex-1 sm:flex-none items-center overflow-hidden rounded-xl border border-violet-800/20 bg-background shadow-sm transition-colors focus-within:border-violet-600 focus-within:ring-[2px] focus-within:ring-violet-600/20">
-                                                    <span className="bg-violet-950/5 px-3 text-xs font-medium text-violet-800 border-r border-violet-800/20 h-full flex items-center dark:text-violet-400 dark:bg-violet-900/20 dark:border-violet-800/40">
+                                                <div className="flex h-9 flex-1 sm:flex-none items-center overflow-hidden rounded-xl border border-fuchsia-800/20 bg-background shadow-sm transition-colors focus-within:border-fuchsia-600 focus-within:ring-[2px] focus-within:ring-fuchsia-600/20">
+                                                    <span className="bg-fuchsia-950/5 px-3 text-xs font-medium text-fuchsia-800 border-r border-fuchsia-800/20 h-full flex items-center dark:text-fuchsia-400 dark:bg-fuchsia-900/20 dark:border-fuchsia-800/40">
                                                         Hasta
                                                     </span>
                                                     <input
@@ -1129,8 +1052,8 @@ export default function ReportesPage() {
                                                 <ComposedChart data={comparisonChart} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                                                     <defs>
                                                         <linearGradient id="colorTotalA" x1="0" y1="0" x2="0" y2="1">
-                                                            <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
-                                                            <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+                                                            <stop offset="5%" stopColor="#FE369E" stopOpacity={0.3} />
+                                                            <stop offset="95%" stopColor="#FE369E" stopOpacity={0} />
                                                         </linearGradient>
                                                     </defs>
                                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
@@ -1163,7 +1086,7 @@ export default function ReportesPage() {
                                                                             {/* Periodo A */}
                                                                             <div className="flex items-center justify-between gap-4">
                                                                                 <div className="flex items-center gap-2">
-                                                                                    <div className="size-2.5 rounded-full bg-cyan-500"></div>
+                                                                                    <div className="size-2.5 rounded-full bg-[#FE369E]"></div>
                                                                                     <div>
                                                                                         <p className="text-xs font-medium text-muted-foreground">{isComparisonEnabled ? "Periodo A" : isSalesChartGroupedByHour ? "Hora" : "Día"}</p>
                                                                                         {isSalesChartGroupedByHour && typeof payload[0]?.payload.hour === "number" && (
@@ -1194,7 +1117,7 @@ export default function ReportesPage() {
                                                                                     <div className="h-px bg-border/50" />
                                                                                     <div className="flex items-center justify-between gap-4">
                                                                                         <div className="flex items-center gap-2">
-                                                                                            <div className="size-2.5 rounded-full bg-violet-500"></div>
+                                                                                            <div className="size-2.5 rounded-full bg-[#FF9FD5]"></div>
                                                                                             <div>
                                                                                                 <p className="text-xs font-medium text-muted-foreground">Periodo B</p>
                                                                                                 {isSalesChartGroupedByHour && typeof payload[1].payload.hour === "number" && (
@@ -1233,7 +1156,7 @@ export default function ReportesPage() {
                                                             yAxisId="left"
                                                             type="monotone"
                                                             dataKey="totalB"
-                                                            stroke="#7c3aed"
+                                                            stroke="#FF9FD5"
                                                             strokeWidth={2.5}
                                                             strokeDasharray="5 5"
                                                             dot={{ r: 3, fill: "var(--background)", strokeWidth: 2 }}
@@ -1246,12 +1169,12 @@ export default function ReportesPage() {
                                                         yAxisId="left"
                                                         type="monotone"
                                                         dataKey="totalA"
-                                                        stroke="#06b6d4"
+                                                        stroke="#FE369E"
                                                         strokeWidth={3}
                                                         fillOpacity={1}
                                                         fill="url(#colorTotalA)"
                                                         dot={{ r: 4, fill: "var(--background)", strokeWidth: 2 }}
-                                                        activeDot={{ r: 6, strokeWidth: 0, fill: "#06b6d4" }}
+                                                        activeDot={{ r: 6, strokeWidth: 0, fill: "#FE369E" }}
                                                         name="Periodo A"
                                                     />
                                                 </ComposedChart>
@@ -1282,8 +1205,8 @@ export default function ReportesPage() {
                                             const hasData = total > 0;
                                             
                                             const pieData = hasData ? [
-                                                { name: "Efectivo", value: reportData.totalCash, percentage: cashPercentage, fill: "url(#pieCash)", color: "#10b981" },
-                                                { name: "Transferencia", value: reportData.totalTransfer, percentage: transferPercentage, fill: "url(#pieTransfer)", color: "#3b82f6" }
+                                                { name: "Efectivo", value: reportData.totalCash, percentage: cashPercentage, fill: "url(#pieCash)", color: "#FE369E" },
+                                                { name: "Transferencia", value: reportData.totalTransfer, percentage: transferPercentage, fill: "url(#pieTransfer)", color: "#FF9FD5" }
                                             ] : [
                                                 { name: "Sin datos", value: 1, fill: "var(--muted)", color: "var(--muted)", isPlaceholder: true }
                                             ];
@@ -1294,12 +1217,12 @@ export default function ReportesPage() {
                                                         <PieChart>
                                                             <defs>
                                                                 <linearGradient id="pieCash" x1="0" y1="0" x2="0" y2="1">
-                                                                    <stop offset="0%" stopColor="#34d399" />
-                                                                    <stop offset="100%" stopColor="#059669" />
+                                                                    <stop offset="0%" stopColor="#FF64B9" />
+                                                                    <stop offset="100%" stopColor="#D0065F" />
                                                                 </linearGradient>
                                                                 <linearGradient id="pieTransfer" x1="0" y1="0" x2="0" y2="1">
-                                                                    <stop offset="0%" stopColor="#60a5fa" />
-                                                                    <stop offset="100%" stopColor="#2563eb" />
+                                                                    <stop offset="0%" stopColor="#FFCAE9" />
+                                                                    <stop offset="100%" stopColor="#FF9FD5" />
                                                                 </linearGradient>
                                                             </defs>
                                                             <Pie
@@ -1374,7 +1297,7 @@ export default function ReportesPage() {
                                                             <span
                                                                 className={cn(
                                                                     "size-3 rounded-full",
-                                                                    payment.key === "cash" ? "bg-emerald-600" : "bg-blue-600"
+                                                                    payment.key === "cash" ? "bg-[#FE369E]" : "bg-[#FF9FD5]"
                                                                 )}
                                                             />
                                                             <div>
@@ -1416,8 +1339,8 @@ export default function ReportesPage() {
                                                 <BarChart data={[...reportData.hourRows].sort((a, b) => a.hour - b.hour)} margin={{ top: 20, right: 10, left: -20, bottom: 0 }} barSize={42}>
                                                     <defs>
                                                         <linearGradient id="colorTickets" x1="0" y1="0" x2="0" y2="1">
-                                                            <stop offset="0%" stopColor="#8b5cf6" />
-                                                            <stop offset="100%" stopColor="#5b21b6" />
+                                                            <stop offset="0%" stopColor="#FE369E" />
+                                                            <stop offset="100%" stopColor="#D0065F" />
                                                         </linearGradient>
                                                     </defs>
                                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
@@ -1492,7 +1415,7 @@ export default function ReportesPage() {
                                             className={cn(
                                                 "h-9 rounded-xl border px-3 text-sm font-medium transition-colors",
                                                 productRankingMetric === "money"
-                                                    ? "border-cyan-800 bg-cyan-900 text-cyan-50"
+                                                    ? "border-rose-800 bg-rose-900 text-rose-50"
                                                     : "border-border bg-background text-muted-foreground hover:bg-muted"
                                             )}
                                         >
@@ -1504,7 +1427,7 @@ export default function ReportesPage() {
                                             className={cn(
                                                 "h-9 rounded-xl border px-3 text-sm font-medium transition-colors",
                                                 productRankingMetric === "units"
-                                                    ? "border-cyan-800 bg-cyan-900 text-cyan-50"
+                                                    ? "border-rose-800 bg-rose-900 text-rose-50"
                                                     : "border-border bg-background text-muted-foreground hover:bg-muted"
                                             )}
                                         >
@@ -1518,7 +1441,7 @@ export default function ReportesPage() {
                                                 className={cn(
                                                     "h-9 rounded-xl border px-3 text-sm font-medium transition-colors",
                                                     productRankingLimit === limit
-                                                        ? "border-emerald-800 bg-emerald-900 text-emerald-50"
+                                                        ? "border-fuchsia-800 bg-fuchsia-900 text-fuchsia-50"
                                                         : "border-border bg-background text-muted-foreground hover:bg-muted"
                                                 )}
                                             >
@@ -1549,8 +1472,8 @@ export default function ReportesPage() {
                                                 >
                                                     <defs>
                                                         <linearGradient id="colorProduct" x1="0" y1="0" x2="1" y2="0">
-                                                            <stop offset="0%" stopColor="#0284c7" />
-                                                            <stop offset="100%" stopColor="#0ea5e9" />
+                                                            <stop offset="0%" stopColor="#FF9FD5" />
+                                                            <stop offset="100%" stopColor="#FE369E" />
                                                         </linearGradient>
                                                     </defs>
                                                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="var(--border)" />

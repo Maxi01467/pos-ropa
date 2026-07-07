@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "motion/react";
 import { AppHeader } from "@/components/layout/app-header";
 import { SessionCloseGuard } from "@/components/layout/session-close-guard";
 import { Sidebar } from "@/components/layout/sidebar";
+import { PageTransition, usePageTransitionKey } from "@/components/layout/page-transition";
+
 import { canAccessPath, getDefaultPathForRole, type SessionRole } from "@/lib/core/permissions";
 import { setLocalSession, useSessionSnapshot } from "@/lib/session/session-client";
 import type { AuthSession } from "@/lib/auth/auth-core";
@@ -12,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
+
 import {
     getOfflineBootstrapRequiredMessage,
     refreshOfflineBootstrapState,
@@ -44,6 +48,15 @@ export function POSLayoutClient({
     const [terminalName, setTerminalName] = useState("Caja principal");
     const [isSavingTerminal, setIsSavingTerminal] = useState(false);
     const [isSyncingTerminal, setIsSyncingTerminal] = useState(false);
+    const [isNavigating, startTransition] = useTransition();
+    const pageKey = usePageTransitionKey();
+
+    // Función de navegación que usa startTransition para marcar la transición como pendiente
+    const navigateTo = useCallback((href: string) => {
+        startTransition(() => {
+            router.push(href);
+        });
+    }, [router, startTransition]);
     const effectiveSession = session.hasSession
         ? session
         : {
@@ -68,7 +81,10 @@ export function POSLayoutClient({
             return;
         }
 
-        setTerminalPrefix(terminal.terminalPrefix);
+        const timer = setTimeout(() => {
+            setTerminalPrefix(terminal.terminalPrefix || "");
+        }, 0);
+        return () => clearTimeout(timer);
     }, [terminal.terminalPrefix]);
 
     useEffect(() => {
@@ -76,7 +92,10 @@ export function POSLayoutClient({
             return;
         }
 
-        setTerminalName(terminal.terminalName);
+        const timer = setTimeout(() => {
+            setTerminalName(terminal.terminalName || "");
+        }, 0);
+        return () => clearTimeout(timer);
     }, [terminal.terminalName]);
 
     useEffect(() => {
@@ -126,11 +145,14 @@ export function POSLayoutClient({
             return;
         }
 
-        setLocalSession({
-            userId: initialSession.userId,
-            userName: initialSession.userName,
-            role: initialSession.role,
-        });
+        const timer = setTimeout(() => {
+            setLocalSession({
+                userId: initialSession.userId,
+                userName: initialSession.userName,
+                role: initialSession.role,
+            });
+        }, 0);
+        return () => clearTimeout(timer);
     }, [initialSession, session.hasSession]);
 
     useEffect(() => {
@@ -180,13 +202,7 @@ export function POSLayoutClient({
         );
     }
 
-    if (!effectiveSession.hasSession || !effectiveSession.role || !effectiveSession.userName) {
-        return (
-            <div className="flex min-h-screen items-center justify-center">
-                <Loader2 className="size-10 animate-spin text-emerald-700" />
-            </div>
-        );
-    }
+    const hasSessionData = !!(effectiveSession.hasSession && effectiveSession.role && effectiveSession.userName);
 
     const needsTerminalSetup =
         terminal.isDesktop &&
@@ -301,7 +317,7 @@ export function POSLayoutClient({
             <div className="flex min-h-screen items-center justify-center p-6">
                 <section className="w-full max-w-xl rounded-3xl border border-border/70 bg-card/90 p-8 shadow-xl">
                     <div className="flex items-center gap-4">
-                        <Loader2 className="size-6 animate-spin text-emerald-700" />
+                        <Loader2 className="size-6 animate-spin text-rose-600 dark:text-rose-400" />
                         <div>
                             <h1 className="text-xl font-semibold">Preparando terminal</h1>
                             <p className="text-sm text-muted-foreground">
@@ -369,28 +385,59 @@ export function POSLayoutClient({
         );
     }
 
-    const role: SessionRole = effectiveSession.role;
+    const role = effectiveSession.role;
     const userName = effectiveSession.userName;
 
     return (
-        <div className="flex min-h-screen bg-transparent">
-            <SessionCloseGuard />
-            <Sidebar
-                role={role}
-                userName={userName}
-                isDesktopClient={isDesktopClient}
-                collapsed={collapsed}
-                onToggleCollapse={() => setCollapsed((c) => !c)}
-            />
-            <main className="relative flex min-h-screen flex-1 flex-col overflow-hidden">
-                <AppHeader
-                    userName={userName}
-                    role={role}
-                />
-                <div className="flex-1 overflow-auto bg-transparent">
-                    {children}
-                </div>
-            </main>
+        <div className="flex min-h-screen bg-transparent relative">
+            <AnimatePresence initial={false}>
+                {!hasSessionData ? (
+                    <motion.div
+                        key="welcome-loader"
+                        initial={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.3, ease: "easeOut" }}
+                        className="fixed inset-0 z-50"
+                    >
+                        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm">
+                            <Loader2 className="size-8 animate-spin text-rose-500" />
+                            <span className="mt-4 text-sm font-semibold text-muted-foreground animate-pulse">
+                                Cargando sistema...
+                            </span>
+                        </div>
+                    </motion.div>
+                ) : (
+                    <motion.div
+                        key="main-layout"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.3, ease: "easeOut" }}
+                        className="flex min-h-screen w-full bg-transparent"
+                    >
+                        <SessionCloseGuard />
+                        <Sidebar
+                            role={role!}
+                            userName={userName!}
+                            isDesktopClient={isDesktopClient}
+                            collapsed={collapsed}
+                            onToggleCollapse={() => setCollapsed((c) => !c)}
+                            onNavigate={navigateTo}
+                        />
+                        <main className="relative flex min-h-screen flex-1 flex-col overflow-hidden">
+                            <AppHeader
+                                userName={userName!}
+                                role={role!}
+                                isDesktopClient={isDesktopClient}
+                            />
+                            <div className="flex-1 overflow-auto bg-transparent relative">
+                                <PageTransition key={pageKey}>
+                                    {children}
+                                </PageTransition>
+                            </div>
+                        </main>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

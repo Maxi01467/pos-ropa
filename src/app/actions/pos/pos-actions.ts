@@ -121,47 +121,31 @@ const getProductsForPOSCached = unstable_cache(
 const getFeaturedProductsForPOSCached = unstable_cache(
     async () => {
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const recentSales = await prisma.sale.findMany({
+        const recentItems = await prisma.saleItem.findMany({
             where: {
                 deletedAt: null,
-                createdAt: {
-                    gte: since,
-                },
-            },
-            orderBy: {
-                createdAt: "desc",
-            },
-            include: {
-                items: {
-                    select: {
-                        variantId: true,
-                        quantity: true,
+                sale: {
+                    deletedAt: null,
+                    createdAt: {
+                        gte: since,
                     },
                 },
+            },
+            select: {
+                variantId: true,
+                quantity: true,
             },
         });
 
         const soldByVariant = new Map<string, number>();
-        for (const sale of recentSales) {
-            for (const item of sale.items) {
-                soldByVariant.set(
-                    item.variantId,
-                    (soldByVariant.get(item.variantId) ?? 0) + item.quantity
-                );
-            }
+        for (const item of recentItems) {
+            soldByVariant.set(
+                item.variantId,
+                (soldByVariant.get(item.variantId) ?? 0) + item.quantity
+            );
         }
 
-        const products = await prisma.product.findMany({
-            where: {
-                deletedAt: null,
-            },
-            select: PRODUCT_FOR_POS_SELECT,
-            orderBy: {
-                createdAt: "desc",
-            },
-        });
-
-        const variants = mapProductsForPOS(products);
+        const variants = await getProductsForPOSCached();
         const ranked = [...variants].sort((left, right) => {
             const soldRight = soldByVariant.get(right.id) ?? 0;
             const soldLeft = soldByVariant.get(left.id) ?? 0;

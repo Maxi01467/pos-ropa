@@ -1,108 +1,19 @@
-"use client";
-
-import { useMemo, useEffect, useState } from "react";
-import Link from "next/link";
 import {
     AlertTriangle,
-    ArrowRight,
     CalendarCheck,
     ClipboardList,
-    Package,
     ReceiptText,
     Shirt,
-    ShoppingCart,
-    Users,
-    Wallet,
-    TrendingUp,
     TrendingDown,
+    TrendingUp,
 } from "lucide-react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useCashSessionStatus } from "@/lib/session/cash-session-client";
-import { canAccessPath } from "@/lib/core/permissions";
 import { formatArgentinaDateTime } from "@/lib/core/datetime";
-import { useSessionSnapshot } from "@/lib/session/session-client";
-import { useTerminalSnapshot } from "@/lib/terminal/terminal-client";
 import { getDashboardData } from "@/app/actions/dashboard";
-
-const defaultKpis = [
-    {
-        title: "Ventas de hoy",
-        value: "$0",
-        detail: "Sin ventas registradas",
-        icon: ReceiptText,
-        trend: "+0%",
-        trendUp: true,
-    },
-    {
-        title: "Articulos vendidos",
-        value: "0",
-        detail: "Unidades del dia",
-        icon: Shirt,
-        trend: "+0%",
-        trendUp: true,
-    },
-    {
-        title: "Ticket promedio",
-        value: "$0",
-        detail: "Promedio por venta",
-        icon: ClipboardList,
-        trend: "+0%",
-        trendUp: true,
-    },
-    {
-        title: "Estado de asistencia",
-        value: "Pendiente",
-        detail: "Revisar fichajes del turno",
-        icon: CalendarCheck,
-    },
-];
-
-const quickActions = [
-    {
-        href: "/nueva-venta",
-        label: "Nueva Venta",
-        description: "Registrar una venta en mostrador",
-        icon: ShoppingCart,
-        primary: true,
-    },
-    {
-        href: "/caja",
-        label: "Caja",
-        description: "Abrir, cerrar o revisar la caja",
-        icon: Wallet,
-        primary: false,
-    },
-    {
-        href: "/asistencia",
-        label: "Asistencia",
-        description: "Fichajes y equipo del turno",
-        icon: Users,
-        primary: false,
-    },
-    {
-        href: "/inventario",
-        label: "Inventario",
-        description: "Productos, precios y codigos",
-        icon: Package,
-        primary: false,
-    },
-    {
-        href: "/stock",
-        label: "Stock",
-        description: "Movimientos y faltantes",
-        icon: Shirt,
-        primary: false,
-    },
-    {
-        href: "/caja?tab=historial",
-        label: "Boletas",
-        description: "Tickets y operaciones recientes",
-        icon: ReceiptText,
-        primary: false,
-    },
-] as const;
+import { CashStatusBanner } from "@/components/dashboard/cash-status-banner";
+import { QuickActionsGrid } from "@/components/dashboard/quick-actions-grid";
+import SalesChart from "@/components/dashboard/sales-chart";
 
 const alerts = [
     {
@@ -127,58 +38,10 @@ function capitalize(value: string) {
     return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-const compactCurrencyFormatter = new Intl.NumberFormat("es-AR", {
-    notation: "compact",
-    compactDisplay: "short",
-    maximumFractionDigits: 1,
-});
-
-export default function InicioPage() {
-    const { hasOpenCashSession } = useCashSessionStatus();
-    const session = useSessionSnapshot();
-    const terminal = useTerminalSnapshot();
+export default async function InicioPage() {
+    const data = await getDashboardData();
     
-    const [kpis, setKpis] = useState(defaultKpis);
-    const [salesData, setSalesData] = useState<{ time: string; ventas: number }[]>([]);
-
-    useEffect(() => {
-        getDashboardData().then((data) => {
-            setKpis([
-                {
-                    title: "Ventas de hoy",
-                    value: "$" + data.kpis.revenueToday.toLocaleString("es-AR"),
-                    detail: "Recaudación del día",
-                    icon: ReceiptText,
-                    trend: data.kpis.revenueTrend.value,
-                    trendUp: data.kpis.revenueTrend.isUp,
-                },
-                {
-                    title: "Articulos vendidos",
-                    value: data.kpis.itemsToday.toString(),
-                    detail: "Unidades del día",
-                    icon: Shirt,
-                    trend: data.kpis.itemsTrend.value,
-                    trendUp: data.kpis.itemsTrend.isUp,
-                },
-                {
-                    title: "Ticket promedio",
-                    value: "$" + Math.round(data.kpis.ticketToday).toLocaleString("es-AR"),
-                    detail: "Promedio por venta",
-                    icon: ClipboardList,
-                    trend: data.kpis.ticketTrend.value,
-                    trendUp: data.kpis.ticketTrend.isUp,
-                },
-                {
-                    title: "Estado de asistencia",
-                    value: "Pendiente",
-                    detail: "Revisar fichajes del turno",
-                    icon: CalendarCheck,
-                },
-            ]);
-            setSalesData(data.chartData);
-        }).catch(console.error);
-    }, []);
-    const dateLabel = useMemo(() => {
+    const dateLabel = (() => {
         const formatted = formatArgentinaDateTime(new Date(), {
             weekday: "long",
             day: "numeric",
@@ -189,51 +52,40 @@ export default function InicioPage() {
         });
 
         return capitalize(formatted);
-    }, []);
+    })();
 
-    const cashStatus = useMemo(() => {
-        if (hasOpenCashSession === true) {
-            return {
-                label: "Caja abierta",
-                detail: "Ventas habilitadas",
-                className:
-                    "border-emerald-500/30 bg-emerald-500/12 text-emerald-700 dark:text-emerald-200",
-                dotClassName: "bg-emerald-500",
-            };
-        }
-
-        if (hasOpenCashSession === false) {
-            return {
-                label: "Caja cerrada",
-                detail: "Abrir caja para vender",
-                className:
-                    "border-amber-500/30 bg-amber-500/12 text-amber-700 dark:text-amber-200",
-                dotClassName: "bg-amber-500",
-            };
-        }
-
-        return {
-            label: "Verificando caja",
-            detail: "Consultando estado",
-            className: "border-border bg-muted/60 text-muted-foreground",
-            dotClassName: "bg-muted-foreground",
-        };
-    }, [hasOpenCashSession]);
-
-    const visibleQuickActions = useMemo(() => {
-        if (!session.role) {
-            return [];
-        }
-
-        const role = session.role;
-        const isDesktop =
-            terminal.isDesktop ||
-            (typeof window !== "undefined" && Boolean(window.posDesktop));
-
-        return quickActions.filter((action) =>
-            canAccessPath(role, action.href, { isDesktop })
-        );
-    }, [session.role, terminal.isDesktop]);
+    const kpis = [
+        {
+            title: "Ventas de hoy",
+            value: "$" + data.kpis.revenueToday.toLocaleString("es-AR"),
+            detail: "Recaudación del día",
+            icon: ReceiptText,
+            trend: data.kpis.revenueTrend.value,
+            trendUp: data.kpis.revenueTrend.isUp,
+        },
+        {
+            title: "Articulos vendidos",
+            value: data.kpis.itemsToday.toString(),
+            detail: "Unidades del dia",
+            icon: Shirt,
+            trend: data.kpis.itemsTrend.value,
+            trendUp: data.kpis.itemsTrend.isUp,
+        },
+        {
+            title: "Ticket promedio",
+            value: "$" + Math.round(data.kpis.ticketToday).toLocaleString("es-AR"),
+            detail: "Promedio por venta",
+            icon: ClipboardList,
+            trend: data.kpis.ticketTrend.value,
+            trendUp: data.kpis.ticketTrend.isUp,
+        },
+        {
+            title: "Estado de asistencia",
+            value: "Pendiente",
+            detail: "Revisar fichajes del turno",
+            icon: CalendarCheck,
+        },
+    ];
 
     return (
         <main className="flex-1 overflow-auto p-4 sm:p-5 lg:p-6">
@@ -251,15 +103,8 @@ export default function InicioPage() {
                             </h1>
                         </div>
 
-                        <div
-                            className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${cashStatus.className}`}
-                        >
-                            <span className={`size-3 rounded-full ${cashStatus.dotClassName}`} />
-                            <div>
-                                <p className="text-sm font-semibold">{cashStatus.label}</p>
-                                <p className="text-xs opacity-80">{cashStatus.detail}</p>
-                            </div>
-                        </div>
+                        {/* Banner reactivo cliente (Caja abierta/cerrada) */}
+                        <CashStatusBanner />
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -309,43 +154,7 @@ export default function InicioPage() {
                             </CardHeader>
                             <CardContent className="relative z-10">
                                 <div className="h-[240px] w-full">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <AreaChart data={salesData} margin={{ top: 10, right: 16, left: 8, bottom: 0 }}>
-                                            <defs>
-                                                <linearGradient id="colorVentas" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3} />
-                                                    <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
-                                                </linearGradient>
-                                            </defs>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.5} />
-                                            <XAxis 
-                                                dataKey="time" 
-                                                axisLine={false} 
-                                                tickLine={false} 
-                                                tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} 
-                                                dy={10}
-                                            />
-                                            <YAxis 
-                                                axisLine={false} 
-                                                tickLine={false} 
-                                                tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} 
-                                                tickFormatter={(value) => `$${compactCurrencyFormatter.format(Number(value))}`}
-                                                tickMargin={8}
-                                                width={72}
-                                            />
-                                            <Tooltip 
-                                                contentStyle={{ borderRadius: '12px', border: '1px solid var(--border)', backgroundColor: 'var(--card)' }}
-                                            />
-                                            <Area 
-                                                type="monotone" 
-                                                dataKey="ventas" 
-                                                stroke="var(--primary)" 
-                                                strokeWidth={2}
-                                                fillOpacity={1} 
-                                                fill="url(#colorVentas)" 
-                                            />
-                                        </AreaChart>
-                                    </ResponsiveContainer>
+                                    <SalesChart salesData={data.chartData} />
                                 </div>
                             </CardContent>
                         </Card>
@@ -356,50 +165,10 @@ export default function InicioPage() {
                                 <CardTitle className="text-xl">Acciones rapidas</CardTitle>
                             </CardHeader>
                             <CardContent className="relative z-10">
-                                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                {visibleQuickActions.map((action) => {
-                                    const Icon = action.icon;
-
-                                    return (
-                                        <Link key={action.href} href={action.href} className="group">
-                                            <div
-                                                className={
-                                                    action.primary
-                                                        ? "flex min-h-[156px] flex-col justify-between rounded-2xl bg-foreground p-5 text-background shadow-[0_22px_42px_-30px_rgba(0,0,0,0.65)] transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-xl hover:shadow-foreground/20"
-                                                        : "flex min-h-[156px] flex-col justify-between rounded-2xl border border-border/70 bg-background/85 p-5 transition-all duration-300 ease-out hover:-translate-y-1 hover:border-foreground/15 hover:shadow-lg hover:shadow-foreground/5"
-                                                }
-                                            >
-                                                <div className="flex items-start justify-between gap-3">
-                                                    <div
-                                                        className={
-                                                            action.primary
-                                                                ? "flex size-12 items-center justify-center rounded-xl bg-background/14"
-                                                                : "flex size-12 items-center justify-center rounded-xl bg-muted"
-                                                        }
-                                                    >
-                                                        <Icon className="size-5" />
-                                                    </div>
-                                                    <ArrowRight className="size-5 transition group-hover:translate-x-1" />
-                                                </div>
-                                                <div>
-                                                    <p className="text-lg font-semibold">{action.label}</p>
-                                                    <p
-                                                        className={
-                                                            action.primary
-                                                                ? "mt-2 text-sm leading-6 text-background/72"
-                                                                : "mt-2 text-sm leading-6 text-muted-foreground"
-                                                        }
-                                                    >
-                                                        {action.description}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </Link>
-                                    );
-                                })}
-                            </div>
-                        </CardContent>
-                    </Card>
+                                {/* Grid de acciones rápidas cliente filtradas por permisos */}
+                                <QuickActionsGrid />
+                            </CardContent>
+                        </Card>
                     </div>
 
                     <aside className="flex flex-col gap-5">

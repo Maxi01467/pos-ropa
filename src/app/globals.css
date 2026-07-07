@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@heroui/styles";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -25,80 +26,91 @@
     from { opacity: 1; scale: 1; }
     to { opacity: 0; scale: 0.985; }
   }
+
+  --animate-pos-loader-slide: pos-loader-slide 1.5s infinite ease-in-out;
+  @keyframes pos-loader-slide {
+    0% { transform: translateX(-100%); }
+    50% { transform: translateX(150%); }
+    100% { transform: translateX(-100%); }
+  }
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
+  --background: oklch(0.982 0.005 15);
+  --foreground: oklch(0.16 0.015 15);
+  --card: oklch(1 0.001 15);
+  --card-foreground: oklch(0.16 0.015 15);
+  --popover: oklch(1 0.001 15);
+  --popover-foreground: oklch(0.16 0.015 15);
   --primary: oklch(0.47 0.19 22);
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.96 0.01 85);
-  --secondary-foreground: oklch(0.24 0.01 40);
-  --muted: oklch(0.965 0.004 70);
-  --muted-foreground: oklch(0.49 0.01 40);
-  --accent: oklch(0.95 0.03 32);
-  --accent-foreground: oklch(0.29 0.07 24);
+  --secondary: oklch(0.955 0.008 15);
+  --secondary-foreground: oklch(0.24 0.015 15);
+  --muted: oklch(0.95 0.007 15);
+  --muted-foreground: oklch(0.48 0.012 15);
+  --accent: oklch(0.95 0.02 12);
+  --accent-foreground: oklch(0.25 0.05 12);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.58 0.17 24);
+  --border: oklch(0.93 0.006 15);
+  --input: oklch(0.93 0.006 15);
+  --ring: oklch(0.60 0.18 12);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar: oklch(0.99 0.003 15);
+  --sidebar-foreground: oklch(0.16 0.015 15);
   --sidebar-primary: oklch(0.47 0.19 22);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.95 0.03 32);
   --sidebar-accent-foreground: oklch(0.29 0.07 24);
-  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-border: oklch(0.93 0.006 15);
   --sidebar-ring: oklch(0.708 0 0);
   --pos-shell-background:
-    linear-gradient(0deg, oklch(1 0.07 26), oklch(1 0.24 19));
+    radial-gradient(ellipse at top left, oklch(0.985 0.01 15) 0%, transparent 48%),
+    radial-gradient(ellipse at top right, oklch(0.980 0.008 30) 0%, transparent 52%),
+    linear-gradient(180deg, oklch(0.990 0.003 15) 0%, oklch(0.975 0.005 20) 100%);
   --pos-body-background:
-    linear-gradient(0deg, oklch(1 0.07 26), oklch(1 0.24 19));
+    radial-gradient(circle at top, oklch(0.990 0.008 15) 18%, transparent 34%),
+    radial-gradient(circle at 80% 0%, oklch(0.985 0.006 30) 12%, transparent 30%),
+    linear-gradient(180deg, oklch(0.992 0.002 15) 96%, oklch(0.975 0.005 20) 4%) 0%, transparent 24%;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
+  --background: oklch(0.18 0.012 245);
+  --foreground: oklch(0.985 0.003 245);
+  --card: oklch(0.24 0.015 245);
+  --card-foreground: oklch(0.985 0.003 245);
+  --popover: oklch(0.24 0.015 245);
+  --popover-foreground: oklch(0.985 0.003 245);
   --primary: oklch(0.68 0.18 24);
   --primary-foreground: oklch(0.16 0.02 20);
-  --secondary: oklch(0.24 0.01 45);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.23 0.008 45);
-  --muted-foreground: oklch(0.72 0.01 50);
-  --accent: oklch(0.28 0.03 20);
-  --accent-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.29 0.015 245);
+  --secondary-foreground: oklch(0.985 0.003 245);
+  --muted: oklch(0.27 0.01 245);
+  --muted-foreground: oklch(0.78 0.01 245);
+  --accent: oklch(0.30 0.02 245);
+  --accent-foreground: oklch(0.985 0.003 245);
   --destructive: oklch(0.396 0.141 25.723);
   --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(0.55 0.16 24);
+  --border: oklch(0.32 0.015 245);
+  --input: oklch(0.32 0.015 245);
+  --ring: oklch(0.65 0.16 12);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar: oklch(0.20 0.012 245);
+  --sidebar-foreground: oklch(0.985 0.003 245);
   --sidebar-primary: oklch(0.68 0.18 24);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0.003 245);
   --sidebar-accent: oklch(0.28 0.03 20);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0.003 245);
+  --sidebar-border: oklch(0.28 0.015 245);
   --sidebar-ring: oklch(0.439 0 0);
   --pos-shell-background:
     radial-gradient(ellipse at top left, rgba(148, 163, 184, 0.22) 0%, transparent 46%),
@@ -119,39 +131,6 @@ html:not(.dark)[data-pos-palette="elegant-gray"] {
     radial-gradient(circle at top, color-mix(in srgb, #cbd5e1 18%, white 82%), transparent 34%),
     radial-gradient(circle at 80% 0%, color-mix(in srgb, #94a3b8 12%, white 88%), transparent 30%),
     linear-gradient(180deg, color-mix(in srgb, #f8fafc 96%, #cbd5e1 4%) 0%, transparent 24%);
-}
-
-html:not(.dark)[data-pos-palette="green"] {
-  --pos-shell-background:
-    radial-gradient(ellipse at top left, rgba(16, 185, 129, 0.34) 0%, transparent 48%),
-    radial-gradient(ellipse at top right, rgba(34, 197, 94, 0.22) 0%, transparent 52%),
-    linear-gradient(180deg, #f2fbf5 0%, #e2f6e8 100%);
-  --pos-body-background:
-    radial-gradient(circle at top, color-mix(in srgb, #10b981 16%, white 84%), transparent 34%),
-    radial-gradient(circle at 80% 0%, color-mix(in srgb, #22c55e 11%, white 89%), transparent 30%),
-    linear-gradient(180deg, color-mix(in srgb, #f0fdf4 96%, #86efac 4%) 0%, transparent 24%);
-}
-
-html:not(.dark)[data-pos-palette="violet"] {
-  --pos-shell-background:
-    radial-gradient(ellipse at top left, rgba(217, 70, 239, 0.34) 0%, transparent 48%),
-    radial-gradient(ellipse at top right, rgba(139, 92, 246, 0.24) 0%, transparent 52%),
-    linear-gradient(180deg, #fdf4ff 0%, #f5e8ff 100%);
-  --pos-body-background:
-    radial-gradient(circle at top, color-mix(in srgb, #d946ef 15%, white 85%), transparent 34%),
-    radial-gradient(circle at 80% 0%, color-mix(in srgb, #8b5cf6 12%, white 88%), transparent 30%),
-    linear-gradient(180deg, color-mix(in srgb, #fdf4ff 95%, #e879f9 5%) 0%, transparent 24%);
-}
-
-html:not(.dark)[data-pos-palette="lava"] {
-  --pos-shell-background:
-    radial-gradient(ellipse at top left, rgba(239, 68, 68, 0.36) 0%, transparent 46%),
-    radial-gradient(ellipse at top right, rgba(249, 115, 22, 0.26) 0%, transparent 50%),
-    linear-gradient(180deg, #fff3e9 0%, #f7d7c4 100%);
-  --pos-body-background:
-    radial-gradient(circle at top, color-mix(in srgb, #ef4444 16%, white 84%), transparent 34%),
-    radial-gradient(circle at 80% 0%, color-mix(in srgb, #f97316 14%, white 86%), transparent 30%),
-    linear-gradient(180deg, color-mix(in srgb, #fff7ed 94%, #fdba74 6%) 0%, transparent 24%);
 }
 
 @theme inline {
@@ -205,6 +184,37 @@ html:not(.dark)[data-pos-palette="lava"] {
     background-image: var(--pos-body-background);
     background-attachment: fixed;
   }
+
+  /* Ocultar flechas de incremento/decremento en inputs numéricos */
+  input::-webkit-outer-spin-button,
+  input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  /* Barra de desplazamiento (Scrollbar) premium y reactiva */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+  }
 }
 
 @layer components {
@@ -251,4 +261,21 @@ html:not(.dark)[data-pos-palette="lava"] {
 
 .animate-pos-cart-card-in {
   animation: pos-cart-card-in 220ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-page-enter {
+  animation: page-enter 220ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }

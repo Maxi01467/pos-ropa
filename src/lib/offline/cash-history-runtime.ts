@@ -513,7 +513,7 @@ const powerSyncRuntime: CashHistoryRuntime = {
     async getCashSessionsHistory() {
         return withReadFallback(
             "getCashSessionsHistory",
-            () => getLocalSessions(),
+            () => getLocalSessions("", [], "ORDER BY cs.openingDate DESC", 100),
             () => serverRuntime.getCashSessionsHistory(),
             (sessions) => sessions.length > 0
         );

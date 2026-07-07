@@ -12,6 +12,7 @@ import {
     Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ScreenLoader } from "@/components/ui/screen-loader";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -167,21 +168,7 @@ export default function ProveedoresPage() {
     );
 
     if (isLoading) {
-        return (
-            <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-6">
-                <div className="rounded-[1.75rem] border border-border/70 bg-card/90 px-10 py-8 shadow-sm">
-                    <div className="flex items-center gap-4">
-                        <div className="rounded-2xl bg-[linear-gradient(135deg,#2563eb_0%,#1d4ed8_100%)] p-3 text-blue-50">
-                            <Loader2 className="size-6 animate-spin" />
-                        </div>
-                        <div>
-                            <p className="text-base font-semibold text-foreground">Cargando proveedores</p>
-                            <p className="text-sm text-muted-foreground">Estamos preparando la agenda de compras.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
+        return <ScreenLoader message="Cargando proveedores..." description="Listando contactos y marcas de abastecimiento." />;
     }
 
     return (
@@ -199,10 +186,10 @@ export default function ProveedoresPage() {
                     </div>
                     <Button
                         size="lg"
-                        className="gap-2 h-12 text-base font-semibold"
+                        className="h-11 px-5 gap-2 rounded-2xl border-0 bg-[linear-gradient(135deg,#EC4899_0%,#BE185D_100%)] text-white text-sm font-semibold shadow-[0_6px_16px_-4px_rgba(236,72,153,0.25)] hover:shadow-[0_10px_22px_-4px_rgba(236,72,153,0.35)] hover:scale-[1.01] active:scale-98 transition-all duration-200 cursor-pointer"
                         onClick={handleOpenNew}
                     >
-                        <Plus className="size-5" />
+                        <Plus className="size-4.5" />
                         Nuevo Proveedor
                     </Button>
                 </div>
@@ -216,7 +203,7 @@ export default function ProveedoresPage() {
                         placeholder="Buscar proveedor..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="h-11 pl-10"
+                        className="h-12 rounded-2xl pl-11 bg-background/85 border-border/70"
                     />
                 </div>
             )}
@@ -238,7 +225,7 @@ export default function ProveedoresPage() {
                     {!searchQuery && (
                         <Button
                             size="lg"
-                            className="mt-6 gap-2"
+                            className="mt-6 gap-2 rounded-2xl border-0 bg-[linear-gradient(135deg,#EC4899_0%,#BE185D_100%)] text-white shadow-[0_8px_20px_-6px_rgba(236,72,153,0.3)] hover:shadow-[0_12px_28px_-6px_rgba(236,72,153,0.45)] hover:scale-[1.02] active:scale-98 transition-all duration-200 cursor-pointer"
                             onClick={handleOpenNew}
                         >
                             <Plus className="size-5" />
@@ -374,7 +361,7 @@ export default function ProveedoresPage() {
                         <Button
                             variant="outline"
                             size="lg"
-                            className="flex-1"
+                            className="flex-1 rounded-xl"
                             onClick={() => setDialogOpen(false)}
                             disabled={isSaving}
                         >
@@ -382,7 +369,7 @@ export default function ProveedoresPage() {
                         </Button>
                         <Button
                             size="lg"
-                            className="flex-1 bg-emerald-600 font-bold hover:bg-emerald-700 gap-2"
+                            className="flex-1 rounded-xl font-bold gap-2"
                             onClick={handleSave}
                             disabled={!formName.trim() || isSaving}
                         >

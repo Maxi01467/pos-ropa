@@ -3,35 +3,24 @@
 
 import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { Loader2 } from "lucide-react";
 import { useCashSessionStatus } from "@/lib/session/cash-session-client";
+import { ScreenLoader } from "@/components/ui/screen-loader";
 
 export function RouteGuard({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const pathname = usePathname();
     const { hasOpenCashSession } = useCashSessionStatus();
     const isSalesRoute = pathname === "/nueva-venta" || pathname?.startsWith("/nueva-venta/");
+    const bypassOpenSessionCheck = process.env.NODE_ENV === "development"; // Habilitado en modo desarrollo para pruebas
 
     useEffect(() => {
-        if (isSalesRoute && hasOpenCashSession === false) {
+        if (!bypassOpenSessionCheck && isSalesRoute && hasOpenCashSession === false) {
             router.push("/caja");
         }
     }, [hasOpenCashSession, isSalesRoute, router]);
 
-    if (isSalesRoute && hasOpenCashSession === null) {
-        return (
-            <div className="flex h-full min-h-[calc(100vh-4rem)] w-full items-center justify-center">
-                <Loader2 className="size-10 animate-spin text-emerald-700" />
-            </div>
-        );
-    }
-
-    if (isSalesRoute && hasOpenCashSession === false) {
-        return (
-            <div className="flex h-full min-h-[calc(100vh-4rem)] w-full items-center justify-center">
-                <Loader2 className="size-10 animate-spin text-emerald-700" />
-            </div>
-        );
+    if (!bypassOpenSessionCheck && isSalesRoute && (hasOpenCashSession === null || hasOpenCashSession === false)) {
+        return <ScreenLoader layout="centered" message="Verificando sesión de caja..." />;
     }
 
     return <>{children}</>;

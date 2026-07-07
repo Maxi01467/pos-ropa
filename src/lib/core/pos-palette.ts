@@ -11,21 +11,6 @@ export const POS_PALETTES = [
         label: "Gris elegante",
         swatches: ["#cbd5e1", "#94a3b8", "#e5e7eb"],
     },
-    {
-        value: "green",
-        label: "Verde",
-        swatches: ["#10b981", "#34d399", "#dcfce7"],
-    },
-    {
-        value: "violet",
-        label: "Magenta / violeta",
-        swatches: ["#d946ef", "#8b5cf6", "#f5d0fe"],
-    },
-    {
-        value: "lava",
-        label: "Lava",
-        swatches: ["#ef4444", "#f97316", "#451a03"],
-    },
 ] as const;
 
 export type PosPalette = (typeof POS_PALETTES)[number]["value"];

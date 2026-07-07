@@ -49,8 +49,17 @@ export async function getDashboardData() {
             },
             deletedAt: null,
         },
-        include: {
-            items: true,
+        select: {
+            total: true,
+            createdAt: true,
+            items: {
+                where: {
+                    deletedAt: null,
+                },
+                select: {
+                    quantity: true,
+                },
+            },
         },
     });
 
@@ -63,8 +72,17 @@ export async function getDashboardData() {
             },
             deletedAt: null,
         },
-        include: {
-            items: true,
+        select: {
+            total: true,
+            createdAt: true,
+            items: {
+                where: {
+                    deletedAt: null,
+                },
+                select: {
+                    quantity: true,
+                },
+            },
         },
     });
 

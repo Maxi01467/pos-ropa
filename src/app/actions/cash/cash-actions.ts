@@ -377,6 +377,7 @@ const getCashSessionsHistoryCached = unstable_cache(
                 deletedAt: null,
             },
             orderBy: { openingDate: "desc" },
+            take: 100,
             include: {
                 openedBy: {
                     select: { id: true, name: true, role: true },

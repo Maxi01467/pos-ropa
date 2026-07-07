@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
     Bell,
     /* Command, */
@@ -9,7 +9,16 @@ import {
     /* Search, */
     /* SlidersHorizontal, */
     Sun,
+    Clock
 } from "lucide-react";
+import { toast } from "sonner";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle
+} from "@/components/ui/dialog";
+import { getAttendanceRuntime, type RuntimeAttendanceEmployee, type RuntimeAttendanceBoard } from "@/lib/offline/attendance-runtime";
 import { useTheme } from "next-themes";
 /* import { Input } from "@/components/ui/input"; */
 import {
@@ -55,13 +64,73 @@ function getInitials(name: string) {
 export function AppHeader({
     userName,
     role,
+    isDesktopClient,
 }: {
     userName: string;
     role: SessionRole;
+    isDesktopClient: boolean;
 }) {
     const initials = getInitials(userName);
     const { theme, setTheme } = useTheme();
     const bootstrap = useOfflineBootstrap();
+
+    // Control de Asistencia en Cabecera
+    const attendanceRuntime = useMemo(() => getAttendanceRuntime(), []);
+    const [activeShiftsCount, setActiveShiftsCount] = useState<number>(0);
+    const [employees, setEmployees] = useState<RuntimeAttendanceEmployee[]>([]);
+    const [board, setBoard] = useState<RuntimeAttendanceBoard | null>(null);
+    const [isAttendanceOpen, setIsAttendanceOpen] = useState(false);
+    const [isAttendanceSubmitting, setIsAttendanceSubmitting] = useState(false);
+
+    const loadAttendanceCount = useCallback(async () => {
+        try {
+            const currentBoard = await attendanceRuntime.getAttendanceBoard();
+            setBoard(currentBoard);
+            const active = currentBoard.shifts.filter((s) => s.status === "ACTIVE").length;
+            setActiveShiftsCount(active);
+        } catch (error) {
+            console.error("Error loading active shifts count:", error);
+        }
+    }, [attendanceRuntime]);
+
+    const loadAttendanceEmployees = useCallback(async () => {
+        try {
+            const data = await attendanceRuntime.getAttendanceEmployees();
+            setEmployees(data);
+        } catch (error) {
+            console.error("Error loading attendance employees:", error);
+        }
+    }, [attendanceRuntime]);
+
+    useEffect(() => {
+        void loadAttendanceCount();
+        void loadAttendanceEmployees();
+    }, [loadAttendanceCount, loadAttendanceEmployees]);
+
+    useDataRefresh(CACHE_TAGS.attendance, () => {
+        void loadAttendanceCount();
+    }, { pollIntervalMs: false });
+
+    const handleQuickAction = async (employeeId: string, isActive: boolean) => {
+        setIsAttendanceSubmitting(true);
+        try {
+            if (isActive) {
+                await attendanceRuntime.checkOutUser(employeeId);
+                toast.success("Salida registrada");
+            } else {
+                await attendanceRuntime.checkInUser(employeeId);
+                toast.success("Entrada registrada");
+            }
+            await loadAttendanceCount();
+            notifyDataUpdated([CACHE_TAGS.attendance, CACHE_TAGS.cash]);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "Error al registrar asistencia";
+            toast.error(message);
+        } finally {
+            setIsAttendanceSubmitting(false);
+        }
+    };
+
     const [notifications, setNotifications] = useState<QuickCreationNotification[]>([]);
     const [seenNotificationIds, setSeenNotificationIds] = useState<Set<string>>(new Set());
     const [palette, setPalette] = useState<PosPalette>(() => {
@@ -198,12 +267,14 @@ export function AppHeader({
                 */}
 
                 <div className="flex items-center gap-2">
-                    <div
-                        className={`hidden rounded-2xl border px-3 py-2 text-xs font-medium lg:flex lg:flex-col lg:items-start ${bootstrapTone}`}
-                        title={bootstrapHint}
-                    >
-                        <span className="uppercase tracking-[0.18em] opacity-80">{bootstrapLabel}</span>
-                    </div>
+                    {isDesktopClient && (
+                        <div
+                            className={`hidden rounded-2xl border px-3 py-2 text-xs font-medium lg:flex lg:flex-col lg:items-start ${bootstrapTone}`}
+                            title={bootstrapHint}
+                        >
+                            <span className="uppercase tracking-[0.18em] opacity-80">{bootstrapLabel}</span>
+                        </div>
+                    )}
 
                     <Select
                         value={palette}
@@ -236,6 +307,110 @@ export function AppHeader({
                             ))}
                         </SelectContent>
                     </Select>
+
+                    {/* Widget Fichaje Asistencia */}
+                    <button
+                        type="button"
+                        onClick={() => setIsAttendanceOpen(true)}
+                        className={`relative flex h-10 cursor-pointer items-center justify-center gap-2 rounded-2xl border px-3 text-xs font-semibold shadow-xs transition-colors hover:bg-muted ${
+                            activeShiftsCount > 0
+                                ? "border-emerald-600/40 bg-emerald-50/20 text-emerald-700 dark:text-emerald-400 dark:bg-emerald-950/10"
+                                : "border-amber-600/40 bg-amber-50/20 text-amber-700 dark:text-amber-400 dark:bg-amber-950/10"
+                        }`}
+                        title="Control de Asistencia"
+                    >
+                        {activeShiftsCount > 0 ? (
+                            <>
+                                <span className="relative flex size-2">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full size-2 bg-emerald-500"></span>
+                                </span>
+                                <span>{activeShiftsCount} Activos</span>
+                            </>
+                        ) : (
+                            <>
+                                <span className="relative flex size-2">
+                                    <span className="relative inline-flex rounded-full size-2 bg-amber-500"></span>
+                                </span>
+                                <span>Fichar</span>
+                            </>
+                        )}
+                    </button>
+
+                    <Dialog open={isAttendanceOpen} onOpenChange={setIsAttendanceOpen}>
+                        <DialogContent className="sm:max-w-md rounded-[1.75rem]">
+                            <DialogHeader>
+                                <DialogTitle className="flex items-center gap-2 text-xl font-semibold tracking-[-0.03em]">
+                                    <Clock className="size-5 text-emerald-600 animate-pulse" />
+                                    Fichaje del Personal
+                                </DialogTitle>
+                            </DialogHeader>
+                            <div className="grid grid-cols-2 gap-3 py-4">
+                                {employees.length === 0 ? (
+                                    <div className="col-span-2 py-6 text-center text-sm text-muted-foreground">
+                                        No hay empleados activos configurados.
+                                    </div>
+                                ) : (
+                                    employees.map((emp) => {
+                                        const activeShift = board?.shifts.find(
+                                            (s) => s.userId === emp.id && s.status === "ACTIVE"
+                                        );
+                                        const isActive = !!activeShift;
+
+                                        return (
+                                            <button
+                                                key={emp.id}
+                                                type="button"
+                                                disabled={isAttendanceSubmitting}
+                                                onClick={() => handleQuickAction(emp.id, isActive)}
+                                                className={`flex flex-col items-center justify-center p-4 rounded-[1.25rem] border text-center transition-all cursor-pointer ${
+                                                    isActive
+                                                        ? "border-emerald-600 bg-emerald-50/10 text-emerald-800 dark:text-emerald-300 dark:border-emerald-500 shadow-md hover:bg-emerald-100/10"
+                                                        : "border-border bg-card hover:bg-muted text-foreground"
+                                                }`}
+                                            >
+                                                <div
+                                                    className={`flex size-11 items-center justify-center rounded-2xl text-sm font-semibold text-white mb-2 shadow-sm ${
+                                                        isActive
+                                                            ? "bg-[linear-gradient(135deg,#059669_0%,#10b981_100%)]"
+                                                            : "bg-[linear-gradient(135deg,#6b7280_0%,#9ca3af_100%)]"
+                                                    }`}
+                                                >
+                                                    {getInitials(emp.name)}
+                                                </div>
+                                                <span className="font-semibold text-sm truncate max-w-full">
+                                                    {emp.name}
+                                                </span>
+                                                <div className="mt-1.5 flex items-center gap-1">
+                                                    {isActive ? (
+                                                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600/15 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                                                            <span className="size-1.5 rounded-full bg-emerald-500 animate-ping" />
+                                                            Activo
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                                            Ausente
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </button>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        </DialogContent>
+                    </Dialog>
+
+                    {/* Dark mode toggle like v0 */}
+                    <button
+                        type="button"
+                        aria-label="Cambiar tema"
+                        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                        className="relative flex size-10 cursor-pointer items-center justify-center rounded-2xl border border-border/60 bg-card/78 transition-[background-color,transform] duration-200 ease-out hover:bg-muted active:scale-[0.94]"
+                    >
+                        <Sun className="size-4 rotate-0 scale-100 transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] dark:-rotate-90 dark:scale-0" />
+                        <Moon className="absolute size-4 rotate-90 scale-0 transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] dark:rotate-0 dark:scale-100" />
+                    </button>
 
                     {role === "ADMIN" && (
                         <DropdownMenu onOpenChange={handleNotificationsOpenChange}>
@@ -302,21 +477,10 @@ export function AppHeader({
                         </DropdownMenu>
                     )}
 
-                    {/* Dark mode toggle like v0 */}
-                    <button
-                        type="button"
-                        aria-label="Cambiar tema"
-                        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                        className="relative flex size-10 cursor-pointer items-center justify-center rounded-2xl border border-border/60 bg-card/78 transition-colors hover:bg-muted"
-                    >
-                        <Sun className="size-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-                        <Moon className="absolute size-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-                    </button>
-
                     <div className="flex items-center gap-3 rounded-[1.4rem] border border-border/60 bg-card/82 px-2 py-2 shadow-xs">
                         <div
                             className="flex size-10 items-center justify-center rounded-2xl text-sm font-semibold text-white"
-                            style={{ background: "linear-gradient(135deg, #ea580c 0%, #c2410c 100%)", color: "#fff7ed" }}
+                            style={{ background: "linear-gradient(135deg, #FE369E 0%, #D0065F 100%)", color: "#ffffff" }}
                         >
                             {initials}
                         </div>

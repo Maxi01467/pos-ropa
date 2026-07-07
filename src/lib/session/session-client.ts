@@ -24,6 +24,15 @@ const SESSION_LOGOUT_BROADCAST_KEY = "pos_session_logout_at";
 let lastSnapshot: SessionSnapshot = EMPTY_SESSION_SNAPSHOT;
 let lastSnapshotKey = "false:";
 
+// Flag en memoria RAM: solo se activa cuando el usuario se loguea en el proceso
+// actual. Al ser una variable de módulo (no storage), es imposible que sobreviva
+// un reinicio, crash o corte de corriente. Esto evita el auto-redirect fantasma.
+let sessionEstablishedThisRun = false;
+
+export function isSessionEstablishedThisRun(): boolean {
+    return sessionEstablishedThisRun;
+}
+
 function getSessionStorage() {
     if (typeof window === "undefined") {
         return null;
@@ -97,6 +106,9 @@ export function setLocalSession(session: {
     if (!storage) {
         return;
     }
+
+    // Marcar que la sesión fue establecida en este proceso (Capa 1 de seguridad).
+    sessionEstablishedThisRun = true;
 
     SESSION_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
     storage.setItem("pos_session", "true");

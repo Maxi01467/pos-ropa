@@ -18,6 +18,8 @@ import {
     ShieldAlert,
     KeyRound,
 } from "lucide-react";
+import { ScreenLoader } from "@/components/ui/screen-loader";
+
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -115,7 +117,10 @@ export default function EmpleadosPage() {
     }, []);
 
     useEffect(() => {
-        void loadEmployees();
+        const timer = setTimeout(() => {
+            void loadEmployees();
+        }, 0);
+        return () => clearTimeout(timer);
     }, [loadEmployees]);
 
     useDataRefresh(CACHE_TAGS.employees, loadEmployees, { pollIntervalMs: false });
@@ -227,15 +232,12 @@ export default function EmpleadosPage() {
         }
     };
 
-    const activeEmployees = employees.filter((employee) => employee.active).length;
-    const inactiveEmployees = employees.length - activeEmployees;
-
     if (role === "STAFF") {
         return (
             <div className="p-4 sm:p-5 lg:p-6">
-                <Card className="mx-auto mt-12 max-w-xl border-orange-800/30 bg-[linear-gradient(135deg,rgba(234,88,12,0.12),rgba(194,65,12,0.05))]">
+                <Card className="mx-auto mt-12 max-w-xl border-rose-800/30 bg-[linear-gradient(135deg,rgba(244,63,94,0.12),rgba(190,24,74,0.05))]">
                     <CardContent className="flex flex-col items-center gap-4 p-8 text-center">
-                        <div className="flex size-14 items-center justify-center rounded-full bg-[linear-gradient(135deg,#ea580c_0%,#c2410c_100%)] text-orange-50">
+                        <div className="flex size-14 items-center justify-center rounded-full bg-[linear-gradient(135deg,#EC4899_0%,#BE185D_100%)] text-white shadow-[0_8px_20px_-6px_rgba(236,72,153,0.45)]">
                             <ShieldAlert className="size-7" />
                         </div>
                         <div>
@@ -252,7 +254,7 @@ export default function EmpleadosPage() {
 
     return (
         <div className="p-4 sm:p-5 lg:p-6">
-            <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-5 mb-6">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                         <div className="inline-flex items-center gap-2 rounded-full border border-blue-800/30 bg-[linear-gradient(135deg,rgba(37,99,235,0.18),rgba(30,64,175,0.08))] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-800 dark:text-blue-100">
@@ -263,45 +265,14 @@ export default function EmpleadosPage() {
                             Empleados
                         </h1>
                     </div>
-                    <Button className="h-12 gap-2 bg-sky-700 hover:bg-sky-800" onClick={openCreateDialog}>
-                        <UserPlus className="size-5" />
+                    <Button
+                        className="h-11 px-5 gap-2 rounded-2xl border-0 bg-[linear-gradient(135deg,#EC4899_0%,#BE185D_100%)] text-white text-sm font-semibold shadow-[0_6px_16px_-4px_rgba(236,72,153,0.25)] hover:shadow-[0_10px_22px_-4px_rgba(236,72,153,0.35)] hover:scale-[1.01] active:scale-98 transition-all duration-200 cursor-pointer"
+                        onClick={openCreateDialog}
+                    >
+                        <UserPlus className="size-4.5" />
                         Nuevo empleado
                     </Button>
                 </div>
-            </div>
-
-            <div className="mb-8 mt-5 grid gap-4 md:grid-cols-3">
-                <Card className="rounded-[1.5rem] border-blue-800/20 bg-[linear-gradient(135deg,rgba(37,99,235,0.14),rgba(30,64,175,0.04))] shadow-sm">
-                    <CardContent className="p-6">
-                        <p className="text-sm font-medium uppercase tracking-wider text-blue-800 dark:text-blue-100">Total usuarios</p>
-                        <p className="mt-2 text-4xl font-bold text-blue-950 dark:text-blue-100">{employees.length}</p>
-                    </CardContent>
-                </Card>
-                <Card className="rounded-[1.5rem] border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.14),rgba(6,95,70,0.04))] shadow-sm">
-                    <CardContent className="p-6">
-                        <p className="text-sm font-medium uppercase tracking-wider text-emerald-800 dark:text-emerald-100">Administradores</p>
-                        <p className="mt-2 text-4xl font-bold text-emerald-900 dark:text-emerald-100">
-                            {employees.filter((employee) => employee.role === "ADMIN").length}
-                        </p>
-                    </CardContent>
-                </Card>
-                <Card className="rounded-[1.5rem] border-rose-900/20 bg-[linear-gradient(135deg,rgba(225,29,72,0.14),rgba(159,18,57,0.04))] shadow-sm">
-                    <CardContent className="p-6">
-                        <p className="text-sm font-medium uppercase tracking-wider text-rose-800 dark:text-rose-100">Staff</p>
-                        <p className="mt-2 text-4xl font-bold text-rose-900 dark:text-rose-100">
-                            {employees.filter((employee) => employee.role === "STAFF").length}
-                        </p>
-                    </CardContent>
-                </Card>
-            </div>
-
-            <div className="mb-6 flex flex-wrap gap-3 text-sm">
-                <Badge variant="outline" className="border-emerald-800/30 bg-emerald-950/8 text-emerald-800 dark:text-emerald-100">
-                    Activos: {activeEmployees}
-                </Badge>
-                <Badge variant="outline" className="border-rose-900/25 bg-rose-950/8 text-rose-800 dark:text-rose-100">
-                    Desactivados: {inactiveEmployees}
-                </Badge>
             </div>
 
             <Card className="rounded-[1.75rem] border-border/70 bg-card/92 shadow-sm">
@@ -313,23 +284,21 @@ export default function EmpleadosPage() {
                 </CardHeader>
                 <CardContent>
                     {isLoading ? (
-                        <div className="flex min-h-56 items-center justify-center">
-                            <Loader2 className="size-8 animate-spin text-blue-700" />
-                        </div>
+                        <ScreenLoader layout="inline" message="Cargando empleados..." />
                     ) : employees.length === 0 ? (
                         <div className="rounded-xl border border-dashed p-10 text-center text-muted-foreground">
                             Todavía no hay empleados cargados.
                         </div>
                     ) : (
                         <Table>
-                            <TableHeader>
-                                <TableRow className="hover:bg-transparent">
-                                    <TableHead>Usuario</TableHead>
-                                    <TableHead>Rol</TableHead>
-                                    <TableHead>Contraseña</TableHead>
-                                    <TableHead>Estado</TableHead>
-                                    <TableHead>Creado</TableHead>
-                                    <TableHead className="text-right">Acciones</TableHead>
+                            <TableHeader className="bg-stone-50/100 dark:bg-neutral-900/40">
+                                <TableRow className="hover:bg-transparent border-b border-stone-200/50 dark:border-stone-800/40">
+                                    <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5">Usuario</TableHead>
+                                    <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5">Rol</TableHead>
+                                    <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5">Contraseña</TableHead>
+                                    <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5">Estado</TableHead>
+                                    <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5">Creado</TableHead>
+                                    <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5 text-right">Acciones</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -376,7 +345,7 @@ export default function EmpleadosPage() {
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
-                                                    className="gap-2"
+                                                    className="gap-2 rounded-xl"
                                                     onClick={() => openEditDialog(employee)}
                                                 >
                                                     <Pencil className="size-4" />
@@ -385,7 +354,7 @@ export default function EmpleadosPage() {
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
-                                                    className="gap-2"
+                                                    className="gap-2 rounded-xl"
                                                     onClick={() => handleToggleStatus(employee)}
                                                     disabled={statusUpdatingId === employee.id}
                                                 >
@@ -401,7 +370,7 @@ export default function EmpleadosPage() {
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
-                                                    className="gap-2 border-rose-900/20 text-rose-700 hover:bg-rose-950/6 hover:text-rose-800"
+                                                    className="gap-2 rounded-xl border-rose-900/20 text-rose-700 hover:bg-rose-950/6 hover:text-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/20"
                                                     onClick={() => setEmployeePendingDelete(employee)}
                                                 >
                                                     <Trash2 className="size-4" />
@@ -436,8 +405,8 @@ export default function EmpleadosPage() {
                     </DialogHeader>
 
                     <div className="space-y-4 py-2">
-                        <div className="space-y-2">
-                            <Label htmlFor="employee-name">Nombre</Label>
+                        <div className="space-y-2 group">
+                            <Label htmlFor="employee-name" className="transition-colors duration-200 group-focus-within:text-rose-600 dark:group-focus-within:text-rose-400">Nombre</Label>
                             <Input
                                 id="employee-name"
                                 value={form.name}
@@ -445,10 +414,11 @@ export default function EmpleadosPage() {
                                     setForm((current) => ({ ...current, name: event.target.value }))
                                 }
                                 placeholder="Ej: Micaela"
+                                className="h-11 rounded-2xl bg-background/85 border-border/70 transition-all duration-200 focus:shadow-[0_8px_30px_rgba(244,63,94,0.04)]"
                             />
                         </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="employee-pin">Contraseña</Label>
+                        <div className="space-y-2 group">
+                            <Label htmlFor="employee-pin" className="transition-colors duration-200 group-focus-within:text-rose-600 dark:group-focus-within:text-rose-400">Contraseña</Label>
                             <Input
                                 id="employee-pin"
                                 value={form.pin}
@@ -456,17 +426,18 @@ export default function EmpleadosPage() {
                                     setForm((current) => ({ ...current, pin: event.target.value }))
                                 }
                                 placeholder="Ej: ropa2026"
+                                className="h-11 rounded-2xl bg-background/85 border-border/70 transition-all duration-200 focus:shadow-[0_8px_30px_rgba(244,63,94,0.04)]"
                             />
                         </div>
-                        <div className="space-y-2">
-                            <Label>Rol</Label>
+                        <div className="space-y-2 group">
+                            <Label className="transition-colors duration-200 group-focus-within:text-rose-600 dark:group-focus-within:text-rose-400">Rol</Label>
                             <Select
                                 value={form.role}
                                 onValueChange={(value: SessionRole) =>
                                     setForm((current) => ({ ...current, role: value }))
                                 }
                             >
-                                <SelectTrigger>
+                                <SelectTrigger className="h-11 rounded-2xl bg-background/85 border-border/70 transition-all duration-200 focus:shadow-[0_8px_30px_rgba(244,63,94,0.04)]">
                                     <SelectValue placeholder="Seleccioná un rol" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -477,11 +448,20 @@ export default function EmpleadosPage() {
                         </div>
                     </div>
 
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
+                    <DialogFooter className="gap-2 sm:gap-0">
+                        <Button 
+                            variant="outline" 
+                            className="flex-1 rounded-xl" 
+                            onClick={() => setDialogOpen(false)} 
+                            disabled={isSaving}
+                        >
                             Cancelar
                         </Button>
-                        <Button className="bg-sky-700 hover:bg-sky-800" onClick={handleSaveEmployee} disabled={isSaving}>
+                        <Button 
+                            className="flex-1 rounded-xl font-bold gap-2" 
+                            onClick={handleSaveEmployee} 
+                            disabled={isSaving}
+                        >
                             {isSaving ? <Loader2 className="size-4 animate-spin" /> : null}
                             {editingEmployee ? "Guardar cambios" : "Crear empleado"}
                         </Button>
@@ -505,12 +485,17 @@ export default function EmpleadosPage() {
                         Se eliminará a <span className="font-semibold">{employeePendingDelete?.name}</span>.
                     </div>
 
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setEmployeePendingDelete(null)} disabled={isDeleting}>
+                    <DialogFooter className="gap-2 sm:gap-0">
+                        <Button 
+                            variant="outline" 
+                            className="flex-1 rounded-xl" 
+                            onClick={() => setEmployeePendingDelete(null)} 
+                            disabled={isDeleting}
+                        >
                             Cancelar
                         </Button>
                         <Button
-                            className="bg-rose-700 hover:bg-rose-800"
+                            className="flex-1 rounded-xl bg-rose-600 hover:bg-rose-700 dark:bg-rose-700 dark:hover:bg-rose-800 font-bold gap-2 text-white"
                             onClick={handleDeleteEmployee}
                             disabled={isDeleting}
                         >

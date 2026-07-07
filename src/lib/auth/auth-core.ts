@@ -51,7 +51,8 @@ async function sign(value: string) {
 export async function createSessionToken(session: AuthSession) {
   const payload: AuthTokenPayload = {
     ...session,
-    exp: Date.now() + 1000 * 60 * 60 * 24 * 7,
+    exp: Date.now() + 1000 * 60 * 60 * 11, // 11 horas (jornada laboral 10am-9pm)
+
   };
   const encodedPayload = bytesToBase64Url(
     new TextEncoder().encode(JSON.stringify(payload)),

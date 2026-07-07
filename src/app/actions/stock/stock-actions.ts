@@ -223,24 +223,46 @@ export async function getStockPageData({
 
 // 2. Registrar nuevos ingresos (Usa Transacciones para máxima seguridad)
 export async function registerStockEntries(entries: RegisterStockEntry[]) {
+    if (entries.length === 0) return;
+
+    // 1. Agrupar duplicados de SKU en memoria para evitar updates secuenciales
+    const aggregatedMap = new Map<string, RegisterStockEntry>();
+    for (const entry of entries) {
+        const existing = aggregatedMap.get(entry.sku);
+        if (existing) {
+            existing.quantity += entry.quantity;
+        } else {
+            aggregatedMap.set(entry.sku, { ...entry });
+        }
+    }
+    const aggregatedEntries = Array.from(aggregatedMap.values());
+
     const result = await prisma.$transaction(async (tx) => {
-        for (const entry of entries) {
-            let variant = await tx.productVariant.findFirst({
-                where: {
-                    sku: entry.sku,
-                    deletedAt: null,
-                    product: {
-                        deletedAt: null,
-                    },
-                }
-            });
+        const skus = aggregatedEntries.map(e => e.sku);
+
+        // 2. Pre-fetch de todas las variantes por SKU en una sola consulta
+        const existingVariants = await tx.productVariant.findMany({
+            where: {
+                sku: { in: skus },
+                deletedAt: null,
+                product: { deletedAt: null }
+            }
+        });
+        const variantMap = new Map(existingVariants.map(v => [v.sku, v]));
+        const movementsData = [];
+
+        // 3. Procesar las actualizaciones / creaciones
+        for (const entry of aggregatedEntries) {
+            let variant = variantMap.get(entry.sku);
 
             if (variant) {
-                variant = await tx.productVariant.update({
+                // Actualizar variante existente
+                await tx.productVariant.update({
                     where: { id: variant.id },
                     data: { stock: { increment: entry.quantity } }
                 });
             } else {
+                // Crear variante inexistente
                 variant = await tx.productVariant.create({
                     data: {
                         productId: entry.productId,
@@ -250,16 +272,22 @@ export async function registerStockEntries(entries: RegisterStockEntry[]) {
                         stock: entry.quantity
                     }
                 });
+                variantMap.set(entry.sku, variant);
             }
 
-            await tx.stockMovement.create({
-                data: {
-                    variantId: variant.id,
-                    supplierId: entry.supplierId || null,
-                    quantity: entry.quantity,
-                    type: "INGRESO",
-                    notes: "Ingreso desde panel de stock"
-                }
+            movementsData.push({
+                variantId: variant.id,
+                supplierId: entry.supplierId || null,
+                quantity: entry.quantity,
+                type: "INGRESO",
+                notes: "Ingreso desde panel de stock"
+            });
+        }
+
+        // 4. Crear todos los movimientos en una sola llamada batch
+        if (movementsData.length > 0) {
+            await tx.stockMovement.createMany({
+                data: movementsData
             });
         }
     });
@@ -272,38 +300,66 @@ export async function registerStockEntries(entries: RegisterStockEntry[]) {
 }
 
 export async function reduceStockEntries(entries: RegisterStockEntry[]) {
+    if (entries.length === 0) return;
+
+    // 1. Agrupar duplicados de SKU en memoria para evitar updates secuenciales
+    const aggregatedMap = new Map<string, RegisterStockEntry>();
+    for (const entry of entries) {
+        const existing = aggregatedMap.get(entry.sku);
+        if (existing) {
+            existing.quantity += entry.quantity;
+        } else {
+            aggregatedMap.set(entry.sku, { ...entry });
+        }
+    }
+    const aggregatedEntries = Array.from(aggregatedMap.values());
+
     const result = await prisma.$transaction(async (tx) => {
-        for (const entry of entries) {
-            const variant = await tx.productVariant.findFirst({
-                where: {
-                    sku: entry.sku,
-                    deletedAt: null,
-                    product: {
-                        deletedAt: null,
-                    },
-                },
-            });
+        const skus = aggregatedEntries.map(e => e.sku);
 
-            if (!variant || variant.productId !== entry.productId) {
-                throw new Error("La variante a descontar no existe");
+        // 2. Pre-fetch de todas las variantes por SKU en una sola consulta
+        const existingVariants = await tx.productVariant.findMany({
+            where: {
+                sku: { in: skus },
+                deletedAt: null,
+                product: { deletedAt: null }
             }
+        });
+        const variantMap = new Map(existingVariants.map(v => [v.sku, v]));
+        const movementsData = [];
 
+        // 3. Validar stock en memoria primero antes de escribir nada
+        for (const entry of aggregatedEntries) {
+            const variant = variantMap.get(entry.sku);
+            if (!variant || variant.productId !== entry.productId) {
+                throw new Error(`La variante a descontar no existe: ${entry.sku}`);
+            }
             if (variant.stock < entry.quantity) {
                 throw new Error(`Stock insuficiente para ${entry.sku}`);
             }
+        }
+
+        // 4. Procesar las actualizaciones
+        for (const entry of aggregatedEntries) {
+            const variant = variantMap.get(entry.sku)!;
 
             await tx.productVariant.update({
                 where: { id: variant.id },
                 data: { stock: { decrement: entry.quantity } },
             });
 
-            await tx.stockMovement.create({
-                data: {
-                    variantId: variant.id,
-                    quantity: -entry.quantity,
-                    type: "SALIDA",
-                    notes: "Salida desde panel de stock",
-                },
+            movementsData.push({
+                variantId: variant.id,
+                quantity: -entry.quantity,
+                type: "SALIDA",
+                notes: "Salida desde panel de stock",
+            });
+        }
+
+        // 5. Crear todos los movimientos en una sola llamada batch
+        if (movementsData.length > 0) {
+            await tx.stockMovement.createMany({
+                data: movementsData
             });
         }
     });
@@ -316,17 +372,31 @@ export async function reduceStockEntries(entries: RegisterStockEntry[]) {
 }
 
 export async function adjustStockEntries(entries: RegisterStockEntry[]) {
+    if (entries.length === 0) return;
+
+    // Deduplicar por SKU, quedándose con la última entrada
+    const deduplicatedMap = new Map<string, RegisterStockEntry>();
+    for (const entry of entries) {
+        deduplicatedMap.set(entry.sku, entry);
+    }
+    const deduplicatedEntries = Array.from(deduplicatedMap.values());
+
     const result = await prisma.$transaction(async (tx) => {
-        for (const entry of entries) {
-            let variant = await tx.productVariant.findFirst({
-                where: {
-                    sku: entry.sku,
-                    deletedAt: null,
-                    product: {
-                        deletedAt: null,
-                    },
-                },
-            });
+        const skus = deduplicatedEntries.map(e => e.sku);
+
+        // Pre-fetch de todas las variantes coincidentes
+        const existingVariants = await tx.productVariant.findMany({
+            where: {
+                sku: { in: skus },
+                deletedAt: null,
+                product: { deletedAt: null }
+            }
+        });
+        const variantMap = new Map(existingVariants.map(v => [v.sku, v]));
+        const movementsData = [];
+
+        for (const entry of deduplicatedEntries) {
+            let variant = variantMap.get(entry.sku);
 
             if (!variant) {
                 if (entry.quantity <= 0) {
@@ -342,21 +412,20 @@ export async function adjustStockEntries(entries: RegisterStockEntry[]) {
                         stock: entry.quantity,
                     },
                 });
+                variantMap.set(entry.sku, variant);
 
-                await tx.stockMovement.create({
-                    data: {
-                        variantId: variant.id,
-                        supplierId: entry.supplierId || null,
-                        quantity: entry.quantity,
-                        type: "AJUSTE",
-                        notes: "Ajuste desde panel de stock",
-                    },
+                movementsData.push({
+                    variantId: variant.id,
+                    supplierId: entry.supplierId || null,
+                    quantity: entry.quantity,
+                    type: "AJUSTE",
+                    notes: "Ajuste desde panel de stock",
                 });
                 continue;
             }
 
             if (variant.productId !== entry.productId) {
-                throw new Error("La variante a ajustar no coincide con el producto seleccionado");
+                throw new Error(`La variante a ajustar no coincide con el producto seleccionado para SKU ${entry.sku}`);
             }
 
             const delta = entry.quantity - variant.stock;
@@ -370,14 +439,18 @@ export async function adjustStockEntries(entries: RegisterStockEntry[]) {
                 data: { stock: entry.quantity },
             });
 
-            await tx.stockMovement.create({
-                data: {
-                    variantId: variant.id,
-                    supplierId: entry.supplierId || null,
-                    quantity: delta,
-                    type: "AJUSTE",
-                    notes: "Ajuste desde panel de stock",
-                },
+            movementsData.push({
+                variantId: variant.id,
+                supplierId: entry.supplierId || null,
+                quantity: delta,
+                type: "AJUSTE",
+                notes: "Ajuste desde panel de stock",
+            });
+        }
+
+        if (movementsData.length > 0) {
+            await tx.stockMovement.createMany({
+                data: movementsData
             });
         }
     });

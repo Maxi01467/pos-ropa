@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
-    "dev:web": "next dev --webpack",
+    "dev:web": "next dev --turbo",
     "dev:desktop": "concurrently -k \"npm:dev:web\" \"npm:desktop\"",
     "desktop": "wait-on http://localhost:3000 && cross-env ELECTRON_RENDERER_URL=http://localhost:3000 electron .",
     "build": "next build --webpack",
@@ -15,12 +15,15 @@
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate",
-    "migrate:productos": "tsx prisma/migrate-productos.ts"
+    "migrate:productos": "tsx prisma/migrate-productos.ts",
+    "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@heroui/react": "^3.1.0",
+    "@heroui/theme": "^2.4.26",
     "@journeyapps/wa-sqlite": "^1.6.0",
     "@powersync/react": "^1.10.0",
     "@powersync/web": "^1.37.2",

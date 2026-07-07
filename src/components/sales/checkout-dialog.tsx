@@ -90,22 +90,47 @@ export function CheckoutDialog({
 
     useEffect(() => {
         if (open) {
-            setSelectedMethod("efectivo");
-            setCashAmount(total);
-            setTransferAmount(0);
+            const timeoutId = setTimeout(() => {
+                setSelectedMethod("efectivo");
+                setCashAmount(total);
+                setTransferAmount(0);
+            }, 0);
+            return () => clearTimeout(timeoutId);
         }
     }, [open, total]);
 
+    // Enfocar y seleccionar por defecto el input de efectivo al seleccionar pago mixto
+    useEffect(() => {
+        if (selectedMethod === "mixto") {
+            const timeoutId = setTimeout(() => {
+                const cashInput = document.getElementById("cash") as HTMLInputElement | null;
+                if (cashInput) {
+                    cashInput.focus();
+                    cashInput.select();
+                }
+            }, 60);
+            return () => clearTimeout(timeoutId);
+        }
+    }, [selectedMethod]);
+
     const handleCashChange = (value: string) => {
-        const num = parseFloat(value) || 0;
+        const sanitized = value.replace(/\D/g, "");
+        let num = parseFloat(sanitized) || 0;
+        if (num > total) {
+            num = total;
+        }
         setCashAmount(num);
-        setTransferAmount(Math.max(0, total - num));
+        setTransferAmount(total - num);
     };
 
     const handleTransferChange = (value: string) => {
-        const num = parseFloat(value) || 0;
+        const sanitized = value.replace(/\D/g, "");
+        let num = parseFloat(sanitized) || 0;
+        if (num > total) {
+            num = total;
+        }
         setTransferAmount(num);
-        setCashAmount(Math.max(0, total - num));
+        setCashAmount(total - num);
     };
 
     const handleConfirm = useCallback(async () => {
@@ -114,8 +139,8 @@ export function CheckoutDialog({
             return;
         }
 
-        if (selectedMethod === "mixto" && cashAmount + transferAmount !== total) {
-            toast.error("La suma de los montos debe ser igual al total");
+        if (selectedMethod === "mixto" && (cashAmount <= 0 || transferAmount <= 0 || cashAmount + transferAmount !== total)) {
+            toast.error("Ambos montos deben ser mayores a $0 y sumar el total");
             return;
         }
 
@@ -149,11 +174,11 @@ export function CheckoutDialog({
                 description: `Boleta #${sale.ticketNumber.toString().padStart(4, "0")} · ${itemCount} art. — ${formatCurrency(total)} (${methodLabel})`,
                 duration: 4000,
             });
+            setIsSubmitting(false);
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : "No se pudo registrar la venta";
             toast.error(message);
-        } finally {
             setIsSubmitting(false);
         }
     }, [cashAmount, itemCount, onConfirm, onOpenChange, selectedMethod, total, transferAmount]);
@@ -193,21 +218,33 @@ export function CheckoutDialog({
 
             if (isEditableTarget) return;
 
-            if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+            if (event.key === "ArrowRight") {
                 event.preventDefault();
                 cyclePaymentMethod("next");
                 return;
             }
 
-            if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+            if (event.key === "ArrowLeft") {
                 event.preventDefault();
                 cyclePaymentMethod("previous");
                 return;
             }
 
-            if (event.key === "Enter") {
+            if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
-                void handleConfirm();
+
+                // Impedir confirmación si los datos de pago no son válidos
+                const isPaymentInvalid =
+                    !selectedMethod ||
+                    (selectedMethod === "mixto" && (
+                        cashAmount <= 0 ||
+                        transferAmount <= 0 ||
+                        cashAmount + transferAmount !== total
+                    ));
+
+                if (!isPaymentInvalid && !isSubmitting) {
+                    void handleConfirm();
+                }
             }
         };
 
@@ -215,7 +252,7 @@ export function CheckoutDialog({
         return () => {
             window.removeEventListener("keydown", handleDialogKeyDown, true);
         };
-    }, [handleConfirm, onOpenChange, open, selectedMethod]);
+    }, [handleConfirm, onOpenChange, open, selectedMethod, cashAmount, transferAmount, total, isSubmitting]);
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -230,31 +267,16 @@ export function CheckoutDialog({
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
-                    <div className="rounded-[1.35rem] border border-border/70 bg-muted/30 p-5">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                            Total a cobrar
-                        </p>
-                        <p className="mt-2 text-4xl font-semibold tracking-[-0.06em] text-foreground">
-                            {formatCurrency(total)}
-                        </p>
-                        <p className="mt-2 text-sm text-muted-foreground">
-                            {itemCount} artículo{itemCount > 1 ? "s" : ""} en esta venta
-                        </p>
-                    </div>
-                    <div className="rounded-[1.35rem] border border-border/70 bg-card/90 p-5">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                            Estado
-                        </p>
-                        <p className="mt-2 text-lg font-semibold text-foreground">
-                            {selectedMethod ? "Método elegido" : "Pendiente"}
-                        </p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            {selectedMethod
-                                ? paymentMethods.find((method) => method.value === selectedMethod)?.label
-                                : "Elegí cómo paga el cliente"}
-                        </p>
-                    </div>
+                <div className="rounded-[1.35rem] border border-border/70 bg-muted/30 p-5 text-center">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                        Total a cobrar
+                    </p>
+                    <p className="mt-2 text-4xl font-semibold tracking-[-0.06em] text-foreground">
+                        {formatCurrency(total)}
+                    </p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                        {itemCount} artículo{itemCount > 1 ? "s" : ""} en esta venta
+                    </p>
                 </div>
 
                 <Separator />
@@ -268,7 +290,7 @@ export function CheckoutDialog({
                                 key={method.value}
                                 onClick={() => setSelectedMethod(method.value)}
                                 className={cn(
-                                    "flex cursor-pointer flex-col items-start gap-2 rounded-[1.25rem] border p-4 text-left transition-all",
+                                    "flex cursor-pointer flex-col items-start gap-2 rounded-[1.25rem] border p-4 text-left transition-[border-color,background-color,shadow,transform] duration-200 active:scale-[0.97] focus:outline-none",
                                     isSelected
                                         ? "border-emerald-700/60 bg-[linear-gradient(135deg,rgba(6,95,70,0.16),rgba(2,6,23,0.04))] shadow-sm"
                                         : "border-border/70 bg-card/90 hover:border-foreground/15"
@@ -276,7 +298,7 @@ export function CheckoutDialog({
                                 type="button"
                             >
                                 <div className={cn(
-                                    "flex size-11 items-center justify-center rounded-2xl",
+                                    "flex size-11 items-center justify-center rounded-2xl transition-colors duration-200",
                                     isSelected ? "bg-emerald-900 text-emerald-100" : "bg-muted text-muted-foreground"
                                 )}>
                                     <Icon className="size-5" />
@@ -295,7 +317,7 @@ export function CheckoutDialog({
                 </div>
 
                 {selectedMethod === "mixto" && (
-                    <div className="animate-in fade-in zoom-in duration-200 space-y-4 rounded-[1.35rem] border border-border/70 bg-muted/20 p-4">
+                    <div className="animate-in fade-in-0 zoom-in-95 duration-200 space-y-4 rounded-[1.35rem] border border-border/70 bg-muted/20 p-4">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                             Desglose de pago
                         </p>
@@ -306,7 +328,9 @@ export function CheckoutDialog({
                                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
                                     <Input
                                         id="cash"
-                                        type="number"
+                                        type="text"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
                                         className="h-11 pl-6 font-semibold"
                                         value={cashAmount || ""}
                                         onChange={(e) => handleCashChange(e.target.value)}
@@ -319,7 +343,9 @@ export function CheckoutDialog({
                                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
                                     <Input
                                         id="transfer"
-                                        type="number"
+                                        type="text"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
                                         className="h-11 pl-6 font-semibold"
                                         value={transferAmount || ""}
                                         onChange={(e) => handleTransferChange(e.target.value)}
@@ -336,9 +362,17 @@ export function CheckoutDialog({
                 <DialogFooter className="mt-1">
                     <Button
                         size="lg"
-                        className="h-14 w-full gap-2 bg-emerald-600 text-base font-semibold hover:bg-emerald-700"
+                        className="h-14 w-full gap-2 bg-emerald-600 text-base font-semibold hover:bg-emerald-700 disabled:opacity-40 disabled:pointer-events-none transition-[background-color,transform] duration-150 ease-out active:scale-[0.985]"
                         onClick={handleConfirm}
-                        disabled={!selectedMethod || isSubmitting}
+                        disabled={
+                            !selectedMethod ||
+                            isSubmitting ||
+                            (selectedMethod === "mixto" && (
+                                cashAmount <= 0 ||
+                                transferAmount <= 0 ||
+                                cashAmount + transferAmount !== total
+                            ))
+                        }
                     >
                         {isSubmitting ? (
                             <>

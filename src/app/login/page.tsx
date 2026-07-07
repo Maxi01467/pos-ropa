@@ -2,6 +2,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { Store, Loader2, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { authenticatePosUser } from "@/lib/offline/auth-client";
-import { clearLocalSession, setLocalSession, useSessionSnapshot } from "@/lib/session/session-client";
+import { clearLocalSession, setLocalSession, useSessionSnapshot, isSessionEstablishedThisRun } from "@/lib/session/session-client";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
     getOfflineBootstrapRequiredMessage,
@@ -18,6 +19,7 @@ import {
 } from "@/lib/offline/offline-bootstrap";
 import { getDefaultPathForRole } from "@/lib/core/permissions";
 import { refreshTerminalSnapshot, useTerminalSnapshot } from "@/lib/terminal/terminal-client";
+
 
 function LoginPageContent() {
     const router = useRouter();
@@ -28,6 +30,7 @@ function LoginPageContent() {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const [isRedirecting, setIsRedirecting] = useState(false);
     const isLoggedOutNavigation = searchParams.get("logged_out") === "1";
 
     useEffect(() => {
@@ -42,6 +45,14 @@ function LoginPageContent() {
         }
 
         if (!session.hasSession || !session.role) {
+            return;
+        }
+
+        // Capa 1 de seguridad: si el sessionStorage tiene datos de una sesión anterior
+        // (crash, corte de corriente, etc.) pero el flag en RAM no fue activado en este
+        // proceso, significa que son datos "fantasma". Se limpian y se muestra el login.
+        if (!isSessionEstablishedThisRun()) {
+            clearLocalSession();
             return;
         }
 
@@ -89,6 +100,7 @@ function LoginPageContent() {
             toast.success(
                 result.source === "local" ? "Acceso offline concedido" : "¡Acceso concedido!"
             );
+            setIsRedirecting(true);
             window.location.assign(destination);
         } catch (error) {
             const message =
@@ -99,13 +111,30 @@ function LoginPageContent() {
     };
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
+        <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4 relative overflow-hidden">
             {/* Fondo decorativo sutil */}
             <div className="absolute inset-0 z-0 bg-grid-black/[0.02] bg-[size:20px_20px]" />
             
+            <AnimatePresence>
+                {isRedirecting && (
+                    <motion.div
+                        key="login-welcome-loader"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.3, ease: "easeOut" }}
+                        className="fixed inset-0 z-50"
+                    >
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm">
+                            <Loader2 className="size-8 animate-spin text-rose-500" />
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             <Card className="z-10 w-full max-w-[400px] shadow-2xl border-border/50">
                 <CardHeader className="space-y-3 pb-6 text-center">
-                    <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-[linear-gradient(135deg,#ea580c_0%,#c2410c_100%)] text-orange-50 shadow-[0_18px_28px_-18px_rgba(194,65,12,0.7)]">
+                    <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-[linear-gradient(135deg,#EC4899_0%,#BE185D_100%)] text-white shadow-[0_18px_28px_-18px_rgba(236,72,153,0.75)]">
                         <Store className="size-8" />
                     </div>
                     <div>
@@ -120,26 +149,26 @@ function LoginPageContent() {
 
                 <CardContent>
                     <form onSubmit={handleLogin} className="space-y-5">
-                        <div className="space-y-2">
-                            <Label htmlFor="username">Usuario</Label>
+                        <div className="space-y-2 group">
+                            <Label htmlFor="username" className="transition-colors duration-200 group-focus-within:text-rose-600 dark:group-focus-within:text-rose-400">Usuario</Label>
                             <Input 
                                 id="username" 
                                 placeholder="Ej: admin" 
                                 value={username}
                                 onChange={(e) => setUsername(e.target.value)}
                                 autoFocus
-                                className="h-11 text-base"
+                                className="h-11 text-base transition-all duration-200 focus:shadow-[0_8px_30px_rgba(244,63,94,0.04)]"
                             />
                         </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="password">Contraseña</Label>
+                        <div className="space-y-2 group">
+                            <Label htmlFor="password" className="transition-colors duration-200 group-focus-within:text-rose-600 dark:group-focus-within:text-rose-400">Contraseña</Label>
                             <Input 
                                 id="password" 
                                 type="password" 
                                 placeholder="Contraseña" 
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="h-11 text-base"
+                                className="h-11 text-base transition-all duration-200 focus:shadow-[0_8px_30px_rgba(244,63,94,0.04)]"
                             />
                         </div>
 
@@ -157,7 +186,7 @@ function LoginPageContent() {
                         
                         <Button
                             type="submit"
-                            className="h-12 w-full bg-emerald-600 hover:bg-emerald-700 text-base font-bold gap-2 mt-2 shadow-md transition-all hover:shadow-lg"
+                            className="h-12 w-full rounded-2xl border-0 bg-[linear-gradient(135deg,#EC4899_0%,#BE185D_100%)] text-white text-base font-bold gap-2 mt-2 shadow-[0_10px_24px_-8px_rgba(236,72,153,0.4)] hover:shadow-[0_14px_32px_-8px_rgba(236,72,153,0.55)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 cursor-pointer"
                             disabled={
                                 isLoading ||
                                 !username ||
@@ -181,7 +210,7 @@ export default function LoginPage() {
         <Suspense
             fallback={
                 <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
-                    <Loader2 className="size-8 animate-spin text-emerald-700" />
+                    <Loader2 className="size-8 animate-spin text-rose-600 dark:text-rose-400" />
                 </div>
             }
         >

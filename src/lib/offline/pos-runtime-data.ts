@@ -402,8 +402,34 @@ const powerSyncDataSource: PosRuntimeDataSource = {
         return withPowerSyncFallback(
             "sales-history",
             async () => {
-                const [salesRows, itemRows] = await Promise.all([
-                    queryPowerSyncRows<SaleRow>(
+                const queryVal = options?.query?.trim() ?? "";
+                const limit = options?.limit ?? 200;
+
+                let salesRows: SaleRow[];
+                if (queryVal) {
+                    salesRows = await queryPowerSyncRows<SaleRow>(
+                        `
+                            SELECT
+                                s.id,
+                                s.ticketNumber,
+                                s.total,
+                                s.paymentMethod,
+                                s.cashAmount,
+                                s.transferAmount,
+                                s.createdAt AS date,
+                                COALESCE(u.name, 'Vendedor') AS sellerName
+                            FROM "Sale" s
+                            LEFT JOIN "User" u
+                                ON u.id = s.userId
+                            WHERE s.deletedAt IS NULL
+                              AND s.ticketNumber LIKE ?
+                            ORDER BY s.createdAt DESC
+                            LIMIT ?
+                        `,
+                        [`%${queryVal}%`, limit]
+                    );
+                } else {
+                    salesRows = await queryPowerSyncRows<SaleRow>(
                         `
                             SELECT
                                 s.id,
@@ -419,31 +445,42 @@ const powerSyncDataSource: PosRuntimeDataSource = {
                                 ON u.id = s.userId
                             WHERE s.deletedAt IS NULL
                             ORDER BY s.createdAt DESC
-                        `
-                    ),
-                    queryPowerSyncRows<SaleItemRow>(
-                        `
-                            SELECT
-                                si.id,
-                                si.saleId,
-                                si.variantId,
-                                p.name AS productName,
-                                pv.size,
-                                pv.color,
-                                pv.sku,
-                                si.quantity,
-                                si.priceAtTime,
-                                si.priceType,
-                                si.returnedQuantity
-                            FROM "SaleItem" si
-                            INNER JOIN "ProductVariant" pv
-                                ON pv.id = si.variantId
-                            INNER JOIN "Product" p
-                                ON p.id = pv.productId
-                            WHERE si.deletedAt IS NULL
-                        `
-                    ),
-                ]);
+                            LIMIT ?
+                        `,
+                        [limit]
+                    );
+                }
+
+                if (salesRows.length === 0) {
+                    return [];
+                }
+
+                const saleIds = salesRows.map((s) => s.id);
+                const placeholders = saleIds.map(() => "?").join(", ");
+                const itemRows = await queryPowerSyncRows<SaleItemRow>(
+                    `
+                        SELECT
+                            si.id,
+                            si.saleId,
+                            si.variantId,
+                            p.name AS productName,
+                            pv.size,
+                            pv.color,
+                            pv.sku,
+                            si.quantity,
+                            si.priceAtTime,
+                            si.priceType,
+                            si.returnedQuantity
+                        FROM "SaleItem" si
+                        INNER JOIN "ProductVariant" pv
+                            ON pv.id = si.variantId
+                        INNER JOIN "Product" p
+                            ON p.id = pv.productId
+                        WHERE si.deletedAt IS NULL
+                          AND si.saleId IN (${placeholders})
+                    `,
+                    saleIds
+                );
 
                 return filterSalesHistoryByQuery(mapPowerSyncSales(salesRows, itemRows), options);
             },

@@ -1,33 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React from "react";
 import {
     Barcode,
-    CalendarDays,
     ChevronDown,
     ClipboardList,
-    Eye,
     Filter,
     Minus,
     Package,
     PackagePlus,
-    Printer,
-    Search,
     X,
-    Loader2,
+    AlertTriangle,
+    DollarSign,
+    CalendarIcon,
     Check,
     ChevronsUpDown,
-    CalendarIcon
 } from "lucide-react";
-import { format, subDays, startOfMonth, startOfWeek } from "date-fns";
+import { format, subDays, startOfMonth } from "date-fns";
+import { ScreenLoader } from "@/components/ui/screen-loader";
 import { es } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { BarcodeLabels } from "@/components/printing/barcode-labels";
 import { Card, CardContent } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Calendar } from "@/components/ui/calendar";
 import {
     Collapsible,
@@ -47,1586 +41,651 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table";
-import { toast } from "sonner";
-import { CACHE_TAGS } from "@/lib/core/cache-tags";
-import {
-    formatArgentinaDateTimeWithSuffix,
-    formatArgentinaShortDate,
-} from "@/lib/core/datetime";
-import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
+import { BarcodeLabels } from "@/components/printing/barcode-labels";
 import { cn } from "@/lib/core/utils";
-import { getStockRuntime } from "@/lib/offline/stock-runtime";
+import { useStock } from "./hooks/use-stock";
+import { MovementsTable } from "@/components/stock/movements-table";
+import { StockActionDialog } from "@/components/stock/stock-action-dialog";
+import { PrintLabelsDialog } from "@/components/stock/print-labels-dialog";
+import { MovementDetailsDialog } from "@/components/stock/movement-details-dialog";
 
-// Reemplazamos mockSizes por un array constante aquí
-const commonSizes = ["XS", "S", "M", "L", "XL", "XXL", "38", "40", "42", "44", "46", "48"];
-const STOCK_MOVEMENTS_PER_PAGE = 12;
-
-type LabelPrintItem = {
-    productName: string;
-    sku: string;
-    size: string;
-    color: string;
-    retailPrice: number;
-    wholesalePrice: number;
-};
-
-export type StockEntry = {
-    id: string;
-    productId: string;
-    providerId?: string;
-    quantity: number;
-    type: string;
-    notes?: string;
-    color: string;
-    size: string;
-    sku: string;
-    date: string;
-    mode: "simple" | "avanzado";
-};
-
-type StockProduct = {
-    id: string;
-    name: string;
-    code: string;
-    price: number;
-    wholesalePrice: number;
-};
-
-type StockSupplier = {
-    id: string;
-    name: string;
-};
-
-type StockVariant = {
-    id: string;
-    productId: string;
-    color: string;
-    size: string;
-    sku: string;
-    stock: number;
-};
-
-type RegisterStockEntry = {
-    productId: string;
-    quantity: number;
-    color: string;
-    size: string;
-    sku: string;
-    supplierId?: string;
-};
-
-type StockMovement = {
-    id: string;
-    productId: string;
-    providerId?: string;
-    date: string;
-    totalQuantity: number;
-    variants: StockEntry[];
-};
-
-function formatDate(dateStr: string): string {
-    return formatArgentinaDateTimeWithSuffix(dateStr, { year: "2-digit" });
+function formatPrice(val: number) {
+    return new Intl.NumberFormat("es-AR", {
+        style: "currency",
+        currency: "ARS",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    }).format(val);
 }
 
-function formatShortDate(dateStr: string): string {
-    return formatArgentinaShortDate(dateStr);
-}
-
-function buildMovements(entries: StockEntry[]): StockMovement[] {
-    const grouped = new Map<string, StockMovement>();
-    for (const entry of entries) {
-        // Agrupamos por el timestamp real del ingreso para no mezclar movimientos
-        // distintos del mismo producto que ocurrieron el mismo día.
-        const key = `${entry.productId}-${entry.providerId ?? "sin-proveedor"}-${entry.date}`;
-        const existing = grouped.get(key);
-
-        if (existing) {
-            existing.totalQuantity += entry.quantity;
-            existing.variants.push(entry);
-            continue;
-        }
-
-        grouped.set(key, {
-            id: key,
-            productId: entry.productId,
-            providerId: entry.providerId,
-            date: entry.date,
-            totalQuantity: entry.quantity,
-            variants: [entry],
-        });
-    }
-
-    return Array.from(grouped.values()).sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+function MetricCard({
+    label,
+    value,
+    description,
+    icon,
+    tone = "default",
+}: {
+    label: string;
+    value: string;
+    description?: string;
+    icon: React.ReactNode;
+    tone?: "default" | "success" | "danger" | "warning" | "info" | "dark";
+}) {
+    const iconClassName = cn(
+        "flex size-10 shrink-0 items-center justify-center rounded-2xl border",
+        tone === "success"
+            ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/30"
+            : tone === "danger"
+              ? "bg-rose-500/10 text-rose-600 border-rose-500/20 dark:bg-rose-500/20 dark:text-rose-400 dark:border-rose-500/30"
+              : tone === "warning"
+                ? "bg-amber-500/10 text-amber-600 border-amber-500/20 dark:bg-amber-500/20 dark:text-amber-400 dark:border-amber-500/30"
+                : tone === "info"
+                  ? "bg-blue-500/10 text-blue-600 border-blue-500/20 dark:bg-blue-500/20 dark:text-blue-400 dark:border-blue-500/30"
+                  : tone === "dark"
+                    ? "bg-neutral-900/5 text-neutral-900 border-neutral-900/10 dark:bg-white/10 dark:text-white dark:border-white/15"
+                    : "bg-neutral-50 text-neutral-500 border-neutral-200/50 dark:bg-neutral-900/50 dark:text-neutral-400 dark:border-neutral-800/60"
     );
-}
 
-function generateSKU(productCode: string, color: string, size: string) {
-    const cleanColor = color.substring(0, 3).toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    return `${productCode}-${cleanColor || "UNI"}-${size.toUpperCase()}`;
-}
+    const valueClassName =
+        tone === "success"
+            ? "text-emerald-600 dark:text-emerald-400"
+            : tone === "danger"
+              ? "text-rose-600 dark:text-rose-400"
+              : tone === "warning"
+                ? "text-amber-600 dark:text-amber-400"
+                : tone === "info"
+                  ? "text-blue-600 dark:text-blue-400"
+                  : "text-foreground font-extrabold";
 
-function getVariantLabel(entry: StockEntry) {
-    const parts: string[] = [];
-    if (entry.size !== "Único") parts.push(`Talle ${entry.size}`);
-    if (entry.color !== "Único") parts.push(`Color ${entry.color}`);
-    return parts.length > 0 ? parts.join(" - ") : "Talle y color único";
-}
-
-function clampQuantity(rawValue: string | undefined, max: number) {
-    if (rawValue === "") return 0;
-    const parsed = Number.parseInt(rawValue ?? String(max), 10);
-    return Number.isNaN(parsed) ? max : Math.max(0, Math.min(parsed, max));
-}
-
-function getTodayInputDate() {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, "0");
-    const day = String(today.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-}
-
-function normalizePrintQuantity(rawValue: string, max: number) {
-    if (rawValue === "") return "";
-    const parsed = Number.parseInt(rawValue, 10);
-    if (Number.isNaN(parsed)) return "";
-    return String(Math.max(0, Math.min(parsed, max)));
+    return (
+        <Card className="h-full rounded-[2rem] border border-neutral-200/50 bg-background/80 dark:border-neutral-800/40 dark:bg-neutral-900/20 shadow-sm transition-all duration-300 hover:shadow-md hover:-translate-y-0.5">
+            <CardContent className="p-5">
+                <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-neutral-400 dark:text-neutral-500">
+                            {label}
+                        </p>
+                        <p className={cn("mt-2 text-2xl font-bold tracking-tight", valueClassName)}>
+                            {value}
+                        </p>
+                        {description ? (
+                            <p className="mt-1.5 text-xs text-neutral-500 dark:text-neutral-400 font-medium">
+                                {description}
+                            </p>
+                        ) : null}
+                    </div>
+                    <div className={iconClassName}>{icon}</div>
+                </div>
+            </CardContent>
+        </Card>
+    );
 }
 
 export default function StockPage() {
-    const stockRuntime = useMemo(() => getStockRuntime(), []);
-    // Estados de base de datos
-    const [entries, setEntries] = useState<StockEntry[]>([]);
-    const [products, setProducts] = useState<StockProduct[]>([]);
-    const [providers, setProviders] = useState<StockSupplier[]>([]);
-    const [variants, setVariants] = useState<StockVariant[]>([]);
-    const [labelsToPrint, setLabelsToPrint] = useState<LabelPrintItem[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [isSaving, setIsSaving] = useState(false);
-
-    // ... Resto de tus estados se mantienen exactamente igual ...
-    const [filterProduct, setFilterProduct] = useState("all");
-    const [filterProvider, setFilterProvider] = useState("all");
-    const [filterDateFrom, setFilterDateFrom] = useState<Date | undefined>(new Date());
-    const [filterDateTo, setFilterDateTo] = useState<Date | undefined>(new Date());
-    const [isFiltersOpen, setIsFiltersOpen] = useState(false);
-    const [currentPage, setCurrentPage] = useState(1);
-    const [stockDialogOpen, setStockDialogOpen] = useState(false);
-    const [stockAction, setStockAction] = useState<"add" | "remove" | "adjust">("add");
-    const [advancedMode, setAdvancedMode] = useState(false);
-    const [selectedProductId, setSelectedProductId] = useState("");
-    const [selectedProviderId, setSelectedProviderId] = useState("");
-    const [productSearchQuery, setProductSearchQuery] = useState("");
-    const [providerSearchQuery, setProviderSearchQuery] = useState("");
-    const [simpleQuantity, setSimpleQuantity] = useState("");
-    const [advancedColor, setAdvancedColor] = useState("");
-    const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
-    const [sizeQuantities, setSizeQuantities] = useState<Record<string, string>>({});
-    const [selectedMovement, setSelectedMovement] = useState<StockMovement | null>(null);
-    const [selectedMovementIds, setSelectedMovementIds] = useState<string[]>([]);
-    const [printDialogOpen, setPrintDialogOpen] = useState(false);
-    const [printQuantities, setPrintQuantities] = useState<Record<string, string>>({});
-    
-    const loadData = useCallback(async () => {
-        try {
-            const data = await stockRuntime.getStockPageData();
-            setProducts(data.products);
-            setProviders(data.suppliers);
-            setEntries(data.entries);
-            setVariants(data.variants);
-        } catch (error) {
-            toast.error("Error al cargar el stock");
-            console.error(error);
-        } finally {
-            setIsLoading(false);
-        }
-    }, [stockRuntime]);
-
-    useEffect(() => {
-        void loadData();
-    }, [loadData]);
-
-    useDataRefresh(
-        [CACHE_TAGS.stock, CACHE_TAGS.inventory, CACHE_TAGS.suppliers, CACHE_TAGS.posProducts],
-        loadData,
-        { pollIntervalMs: false }
-    );
-
-    useEffect(() => {
-        const handleAfterPrint = () => {
-            setLabelsToPrint([]);
-        };
-
-        window.addEventListener("afterprint", handleAfterPrint);
-        return () => {
-            window.removeEventListener("afterprint", handleAfterPrint);
-        };
-    }, []);
-
-    const movements = useMemo(() => buildMovements(entries), [entries]);
-    const filteredMovements = useMemo(() => {
-        return movements.filter((movement) => {
-            if (filterProduct !== "all" && movement.productId !== filterProduct) {
-                return false;
-            }
-
-            if (filterProvider !== "all" && movement.providerId !== filterProvider) {
-                return false;
-            }
-
-            const movementTime = new Date(movement.date).getTime();
-
-            if (filterDateFrom) {
-                const fromTime = new Date(filterDateFrom).setHours(0, 0, 0, 0);
-                if (movementTime < fromTime) {
-                    return false;
-                }
-            }
-
-            if (filterDateTo) {
-                const toTime = new Date(filterDateTo).setHours(23, 59, 59, 999);
-                if (movementTime > toTime) {
-                    return false;
-                }
-            }
-
-            return true;
-        });
-    }, [filterDateFrom, filterDateTo, filterProduct, filterProvider, movements]);
-    const totalMovements = filteredMovements.length;
-    const totalMovementPages = Math.max(1, Math.ceil(totalMovements / STOCK_MOVEMENTS_PER_PAGE));
-    const paginatedMovements = useMemo(() => {
-        const start = (currentPage - 1) * STOCK_MOVEMENTS_PER_PAGE;
-        return filteredMovements.slice(start, start + STOCK_MOVEMENTS_PER_PAGE);
-    }, [currentPage, filteredMovements]);
-
-    const isMovementSelectable = useCallback(
-        (movement: StockMovement) =>
-            !movement.variants.some(
-                (variant) => variant.type === "AJUSTE" || variant.type === "SALIDA"
-            ),
-        []
-    );
-
-    const selectedMovements = useMemo(
-        () =>
-            filteredMovements.filter(
-                (movement) =>
-                    selectedMovementIds.includes(movement.id) && isMovementSelectable(movement)
-            ),
-        [filteredMovements, isMovementSelectable, selectedMovementIds]
-    );
-
-    const printableVariants = useMemo(
-        () =>
-            selectedMovements
-                .flatMap((movement) => movement.variants)
-                .filter((variant) => variant.quantity > 0),
-        [selectedMovements]
-    );
-
-    const printableTickets = printableVariants.reduce(
-        (total, variant) => total + clampQuantity(printQuantities[variant.id], variant.quantity),
-        0
-    );
-
-    const totalUnits = movements.reduce((sum, movement) => sum + movement.totalQuantity, 0);
-    const todayEntries = movements.filter(
-        (movement) => new Date(movement.date).toDateString() === new Date().toDateString()
-    ).length;
-
-    const hasActiveFilters = filterProduct !== "all" || filterProvider !== "all" || filterDateFrom !== undefined || filterDateTo !== undefined;
-
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [filterProduct, filterProvider, filterDateFrom, filterDateTo]);
-
-    useEffect(() => {
-        if (currentPage > totalMovementPages) {
-            setCurrentPage(totalMovementPages);
-        }
-    }, [currentPage, totalMovementPages]);
-
-    useEffect(() => {
-        setSelectedMovementIds((current) =>
-            current.filter((movementId) =>
-                movements.some(
-                    (movement) =>
-                        movement.id === movementId && isMovementSelectable(movement)
-                )
-            )
-        );
-    }, [isMovementSelectable, movements]);
-
-    const searchedProducts = useMemo(() => {
-        const query = productSearchQuery.trim().toLowerCase();
-        if (!query) return products;
-        return products.filter(
-            (product) =>
-                product.name.toLowerCase().includes(query) ||
-                product.code.toLowerCase().includes(query)
-        );
-    }, [products, productSearchQuery]);
-    const searchedProviders = useMemo(() => {
-        const query = providerSearchQuery.trim().toLowerCase();
-        if (!query) return providers;
-        return providers.filter((provider) =>
-            provider.name.toLowerCase().includes(query)
-        );
-    }, [providers, providerSearchQuery]);
-
-    const getProductName = (id: string) => products.find((product) => product.id === id)?.name ?? "Desconocido";
-    const getProviderName = (id?: string) => providers.find((provider) => provider.id === id)?.name ?? "—";
-    const getProductTotalStock = (productId: string) =>
-        variants
-            .filter((variant) => variant.productId === productId)
-            .reduce((sum, variant) => sum + variant.stock, 0);
-    const getVariantCurrentStock = useCallback(
-        (productId: string, color: string, size: string) =>
-            variants.find(
-                (variant) =>
-                    variant.productId === productId &&
-                    variant.color === color &&
-                    variant.size === size
-            )?.stock ?? 0,
-        [variants]
-    );
-
-    const selectedProduct = useMemo(
-        () => products.find((product) => product.id === selectedProductId) ?? null,
-        [products, selectedProductId]
-    );
-    const selectedProductCurrentStock = selectedProductId ? getProductTotalStock(selectedProductId) : 0;
-    const currentSimpleVariantStock = selectedProduct
-        ? getVariantCurrentStock(selectedProduct.id, "Único", "Único")
-        : 0;
-    const selectedVariantStocks = useMemo(
-        () =>
-            selectedSizes.map((size) => ({
-                size,
-                stock: selectedProductId
-                    ? getVariantCurrentStock(
-                          selectedProductId,
-                          advancedColor.trim() || "Único",
-                          size
-                      )
-                    : 0,
-            })),
-        [advancedColor, getVariantCurrentStock, selectedProductId, selectedSizes]
-    );
-
-    const clearFilters = () => {
-        setFilterProduct("all");
-        setFilterProvider("all");
-        setFilterDateFrom(undefined);
-        setFilterDateTo(undefined);
-    };
-
-    const resetStockForm = () => {
-        setSelectedProductId("");
-        setSelectedProviderId("");
-        setProductSearchQuery("");
-        setProviderSearchQuery("");
-        setSimpleQuantity("");
-        setAdvancedColor("");
-        setSelectedSizes([]);
-        setSizeQuantities({});
-        setAdvancedMode(false);
-        setStockAction("add");
-    };
-
-    const handleOpenNewStock = () => {
-        resetStockForm();
-        setStockAction("add");
-        setStockDialogOpen(true);
-    };
-
-    const handleOpenReduceStock = () => {
-        resetStockForm();
-        setStockAction("remove");
-        setStockDialogOpen(true);
-    };
-
-    const handleOpenAdjustStock = () => {
-        resetStockForm();
-        setStockAction("adjust");
-        setStockDialogOpen(true);
-    };
-
-    const handleProductChange = (productId: string) => {
-        setSelectedProductId(productId);
-        const product = products.find((item) => item.id === productId);
-        if (product) {
-            setProductSearchQuery(product.name);
-        }
-    };
-
-    const handleProviderChange = (providerId: string) => {
-        setSelectedProviderId(providerId);
-        const provider = providers.find((item) => item.id === providerId);
-        if (provider) {
-            setProviderSearchQuery(provider.name);
-        }
-    };
-
-    const toggleSize = (size: string) => {
-        setSelectedSizes((current) =>
-            current.includes(size)
-                ? current.filter((item) => item !== size)
-                : [...current, size]
-        );
-        if (selectedSizes.includes(size)) {
-            setSizeQuantities((current) => {
-                const next = { ...current };
-                delete next[size];
-                return next;
-            });
-        }
-    };
-
-    const handleSaveStock = async () => {
-        if (!selectedProductId) {
-            toast.error("Seleccioná un producto");
-            return;
-        }
-
-        const product = products.find((item) => item.id === selectedProductId);
-        if (!product) return;
-
-        const newEntries: RegisterStockEntry[] = [];
-
-        if (advancedMode) {
-            if (!advancedColor.trim()) {
-                toast.error("Ingresá un color");
-                return;
-            }
-            if (selectedSizes.length === 0) {
-                toast.error("Seleccioná al menos un talle");
-                return;
-            }
-
-            for (const size of selectedSizes) {
-                const quantity = Number.parseInt(sizeQuantities[size] ?? "0", 10);
-                if (Number.isNaN(quantity) || quantity < 0) {
-                    toast.error(`Ingresá una cantidad válida para el talle ${size}`);
-                    return;
-                }
-                if (stockAction !== "adjust" && quantity <= 0) {
-                    toast.error(`Ingresá una cantidad válida para el talle ${size}`);
-                    return;
-                }
-                if (stockAction === "remove") {
-                    const currentStock = getVariantCurrentStock(
-                        selectedProductId,
-                        advancedColor.trim(),
-                        size
-                    );
-                    if (quantity > currentStock) {
-                        toast.error(
-                            `No podés descontar ${quantity} del talle ${size}; stock actual: ${currentStock}`
-                        );
-                        return;
-                    }
-                }
-                newEntries.push({
-                    productId: selectedProductId,
-                    quantity,
-                    color: advancedColor.trim(),
-                    size,
-                    sku: generateSKU(product.code, advancedColor.trim(), size),
-                    supplierId: selectedProviderId || undefined,
-                });
-            }
-        } else {
-            const quantity = Number.parseInt(simpleQuantity, 10);
-            if (Number.isNaN(quantity) || quantity < 0) {
-                toast.error("Ingresá una cantidad válida");
-                return;
-            }
-            if (stockAction !== "adjust" && quantity <= 0) {
-                toast.error("Ingresá una cantidad válida");
-                return;
-            }
-            if (stockAction === "remove" && quantity > currentSimpleVariantStock) {
-                toast.error(
-                    `No podés descontar ${quantity}; stock actual de la variante simple: ${currentSimpleVariantStock}`
-                );
-                return;
-            }
-            newEntries.push({
-                productId: selectedProductId,
-                quantity,
-                color: "Único",
-                size: "Único",
-                sku: `${product.code}-UNI`,
-                supplierId: selectedProviderId || undefined,
-            });
-        }
-
-        setIsSaving(true);
-        try {
-            if (stockAction === "add") {
-                await stockRuntime.registerStockEntries(newEntries);
-            } else if (stockAction === "remove") {
-                await stockRuntime.reduceStockEntries(newEntries);
-            } else {
-                await stockRuntime.adjustStockEntries(newEntries);
-            }
-            await loadData();
-            notifyDataUpdated([CACHE_TAGS.stock, CACHE_TAGS.inventory, CACHE_TAGS.posProducts]);
-            
-            setStockDialogOpen(false);
-            resetStockForm();
-            toast.success(
-                stockAction === "add"
-                    ? "Ingreso de stock registrado"
-                    : stockAction === "remove"
-                      ? "Stock reducido"
-                      : "Stock ajustado",
-                {
-                description:
-                    stockAction === "adjust"
-                        ? `${product.name} · nuevo stock actualizado`
-                        : `${product.name} · ${newEntries.reduce((sum, entry) => sum + entry.quantity, 0)} unidad(es)`,
-                }
-            );
-        } catch (error) {
-            const message =
-                error instanceof Error
-                    ? error.message
-                    : stockAction === "add"
-                      ? "Error al guardar el ingreso en la base de datos"
-                      : stockAction === "remove"
-                        ? "Error al reducir stock"
-                        : "Error al ajustar stock";
-            toast.error(message);
-            console.error(error);
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    const toggleMovementSelection = (movementId: string, checked: boolean) => {
-        const movement = movements.find((item) => item.id === movementId);
-        if (!movement || !isMovementSelectable(movement)) {
-            return;
-        }
-
-        setSelectedMovementIds((current) =>
-            checked ? [...current, movementId] : current.filter((id) => id !== movementId)
-        );
-    };
-
-    const handleOpenPrintDialog = () => {
-        if (selectedMovements.length === 0) return;
-        setPrintQuantities((current) => {
-            const next = { ...current };
-            for (const variant of selectedMovements.flatMap((movement) => movement.variants)) {
-                if (!next[variant.id]) {
-                    next[variant.id] = String(variant.quantity);
-                }
-            }
-            return next;
-        });
-        
-        // Defer opening the dialog until the quantities state strictly settles
-        // This avoids overlapping a heavy DOM calculation with the blur animation
-        setTimeout(() => {
-            setPrintDialogOpen(true);
-        }, 10);
-    };
-
-    const handleConfirmPrint = () => {
-        const itemsToPrint: LabelPrintItem[] = [];
-
-        for (const variant of printableVariants) {
-            const product = products.find((p) => p.id === variant.productId);
-            const qtyToPrint = clampQuantity(printQuantities[variant.id], variant.quantity);
-
-            for (let i = 0; i < qtyToPrint; i++) {
-                itemsToPrint.push({
-                    productName: product?.name || "Producto",
-                    sku: variant.sku,
-                    size: variant.size,
-                    color: variant.color,
-                    retailPrice: product?.price || 0,
-                    wholesalePrice: product?.wholesalePrice || 0,
-                });
-            }
-        }
-
-        if (itemsToPrint.length === 0) {
-            toast.error("No hay etiquetas para imprimir");
-            return;
-        }
-
-        setLabelsToPrint(itemsToPrint);
-        
-        setPrintDialogOpen(false);
-        setTimeout(() => {
-            window.print();
-            
-            // Clean up to free memory and prevent lag when navigating the stock page
-            setTimeout(() => {
-                setLabelsToPrint([]);
-            }, 1000);
-        }, 300);
-    };
-
-    const getMovementTone = (movement: StockMovement) => {
-        if (movement.variants.some((variant) => variant.type === "AJUSTE")) {
-            return movement.totalQuantity >= 0
-                ? "bg-amber-900 text-sm font-bold text-amber-100"
-                : "bg-orange-900 text-sm font-bold text-orange-100";
-        }
-
-        return movement.totalQuantity >= 0
-            ? "bg-emerald-900 text-sm font-bold text-emerald-100"
-            : "bg-rose-900 text-sm font-bold text-rose-100";
-    };
-
-    const getMovementLabel = (movement: StockMovement) => {
-        const primaryType = movement.variants[0]?.type;
-        const signedQuantity =
-            movement.totalQuantity > 0
-                ? `+${movement.totalQuantity}`
-                : `${movement.totalQuantity}`;
-
-        if (primaryType === "INGRESO") return `Ingreso ${signedQuantity}`;
-        if (primaryType === "SALIDA") return `Salida ${signedQuantity}`;
-        return `Ajuste ${signedQuantity}`;
-    };
+    const {
+        // DB states
+        variants,
+        labelsToPrint,
+        isLoading,
+        isSaving,
+        // Filter states
+        filterProduct,
+        setFilterProduct,
+        filterProvider,
+        setFilterProvider,
+        filterDateFrom,
+        setFilterDateFrom,
+        filterDateTo,
+        setFilterDateTo,
+        isFiltersOpen,
+        setIsFiltersOpen,
+        currentPage,
+        setCurrentPage,
+        // Form states
+        stockDialogOpen,
+        setStockDialogOpen,
+        stockAction,
+        advancedMode,
+        setAdvancedMode,
+        selectedProductId,
+        selectedProviderId,
+        productSearchQuery,
+        setProductSearchQuery,
+        providerSearchQuery,
+        setProviderSearchQuery,
+        simpleQuantity,
+        setSimpleQuantity,
+        advancedColor,
+        setAdvancedColor,
+        selectedSizes,
+        sizeQuantities,
+        setSizeQuantities,
+        // Printing states
+        selectedMovementIds,
+        printDialogOpen,
+        setPrintDialogOpen,
+        printQuantities,
+        setPrintQuantities,
+        selectedMovement,
+        setSelectedMovement,
+        // Computed
+        filteredMovements,
+        totalMovements,
+        totalMovementPages,
+        paginatedMovements,
+        selectedMovements,
+        printableVariants,
+        printableTickets,
+        totalPhysicalStock,
+        stockAlerts,
+        inventoryValue,
+        hasActiveFilters,
+        searchedProducts,
+        searchedProviders,
+        selectedProduct,
+        selectedProductCurrentStock,
+        currentSimpleVariantStock,
+        selectedVariantStocks,
+        products,
+        providers,
+        // Methods
+        clearFilters,
+        handleOpenNewStock,
+        handleOpenReduceStock,
+        handleOpenAdjustStock,
+        handleProductChange,
+        handleProviderChange,
+        toggleSize,
+        handleSaveStock,
+        toggleMovementSelection,
+        handleOpenPrintDialog,
+        handleConfirmPrint,
+        handleQuickPrintMovement,
+        isMovementSelectable,
+        getProductName,
+    } = useStock();
 
     if (isLoading) {
-        return (
-            <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-6">
-                <div className="rounded-[1.75rem] border border-border/70 bg-card/90 px-10 py-8 shadow-sm">
-                    <div className="flex items-center gap-4">
-                        <div className="rounded-2xl bg-[linear-gradient(135deg,#2563eb_0%,#1d4ed8_100%)] p-3 text-blue-50">
-                            <Loader2 className="size-6 animate-spin" />
-                        </div>
-                        <div>
-                            <p className="text-base font-semibold text-foreground">Cargando stock</p>
-                            <p className="text-sm text-muted-foreground">
-                                Estamos preparando movimientos, productos y proveedores.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
+        return <ScreenLoader message="Cargando stock..." description="Verificando niveles e historial de mercadería." />;
     }
 
     return (
-    <>
-        {/* Envolvemos todo en un div que se oculta al imprimir */}
-        <div className="print:hidden p-4 sm:p-5 lg:p-6">
-            <div className="flex flex-col gap-5">
-                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                    <div>
-                        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200/70 bg-indigo-50/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-700">
-                            <Package className="size-3.5" />
-                            Gestión de stock
+        <>
+            <div className="print:hidden p-4 sm:p-5 lg:p-6">
+                <div className="flex flex-col gap-5">
+                    {/* Header */}
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                        <div>
+                            <div className="inline-flex items-center gap-2 rounded-full border border-border/40 bg-muted/30 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                                <Package className="size-3.5" />
+                                Gestión de stock
+                            </div>
+                            <h1 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-foreground sm:text-3xl">
+                                Stock
+                            </h1>
                         </div>
-                        <h1 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-foreground sm:text-3xl">
-                            Stock
-                        </h1>
+                        <div className="flex flex-wrap gap-2">
+                            <Button
+                                variant="outline"
+                                size="lg"
+                                className="h-11 gap-2 rounded-2xl border-border/50 bg-card/60 backdrop-blur-md text-foreground text-sm font-semibold hover:bg-muted/70 cursor-pointer shadow-xs transition-all active:scale-98 disabled:opacity-40"
+                                disabled={selectedMovements.length === 0}
+                                onClick={handleOpenPrintDialog}
+                            >
+                                <Barcode className="size-4.5 text-blue-500 dark:text-blue-400" />
+                                Imprimir etiquetas
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="lg"
+                                className="h-11 gap-2 rounded-2xl border-border/50 bg-card/60 backdrop-blur-md text-foreground text-sm font-semibold hover:bg-muted/70 cursor-pointer shadow-xs transition-all active:scale-98"
+                                onClick={handleOpenAdjustStock}
+                            >
+                                <ClipboardList className="size-4.5 text-amber-500 dark:text-amber-400" />
+                                Ajustar stock
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="lg"
+                                className="h-11 gap-2 rounded-2xl border-border/50 bg-card/60 backdrop-blur-md text-foreground text-sm font-semibold hover:bg-muted/70 cursor-pointer shadow-xs transition-all active:scale-98"
+                                onClick={handleOpenReduceStock}
+                            >
+                                <Minus className="size-4.5 text-rose-500 dark:text-rose-400" />
+                                Reducir stock
+                            </Button>
+                            <Button
+                                size="lg"
+                                className="h-11 gap-2 rounded-2xl border-0 bg-[linear-gradient(135deg,#EC4899_0%,#BE185D_100%)] text-white text-sm font-bold shadow-[0_6px_16px_-4px_rgba(236,72,153,0.25)] hover:shadow-[0_10px_22px_-4px_rgba(236,72,153,0.35)] hover:scale-[1.02] active:scale-98 transition-all duration-200 cursor-pointer"
+                                onClick={handleOpenNewStock}
+                            >
+                                <PackagePlus className="size-4.5" />
+                                Ingresar stock
+                            </Button>
+                        </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                        
-                        <Button
-                            variant="outline"
-                            size="lg"
-                            className="h-12 gap-2 rounded-2xl border-border/80 bg-white text-base"
-                            disabled={selectedMovements.length === 0}
-                            onClick={handleOpenPrintDialog}
-                        >
-                            <Barcode className="size-5" />
-                            Imprimir etiquetas
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="lg"
-                            className="h-12 gap-2 rounded-2xl border-amber-900/20 bg-white text-base text-amber-700 hover:bg-amber-950/6 hover:text-amber-800"
-                            onClick={handleOpenAdjustStock}
-                        >
-                            <ClipboardList className="size-5" />
-                            Ajustar stock
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="lg"
-                            className="h-12 gap-2 rounded-2xl border-rose-900/20 bg-white text-base text-rose-700 hover:bg-rose-950/6 hover:text-rose-800"
-                            onClick={handleOpenReduceStock}
-                        >
-                            <Minus className="size-5" />
-                            Reducir stock
-                        </Button>
-                        <Button
-                            size="lg"
-                            className="h-12 gap-2 rounded-2xl bg-emerald-600 text-base font-semibold hover:bg-emerald-700"
-                            onClick={handleOpenNewStock}
-                        >
-                            <PackagePlus className="size-5" />
-                            Ingresar stock
-                        </Button>
+
+                    {/* KPI Cards */}
+                    <div className="grid gap-4 sm:grid-cols-3">
+                        <MetricCard
+                            label="Stock Físico Total"
+                            value={String(totalPhysicalStock)}
+                            description={`${variants.length} variantes en catálogo`}
+                            icon={<Package className="size-5" />}
+                            tone="info"
+                        />
+                        <MetricCard
+                            label="Alertas de Stock"
+                            value={`${stockAlerts.outOfStock} sin stock`}
+                            description={`${stockAlerts.lowStock} variantes con stock bajo (≤ 3 u.)`}
+                            icon={<AlertTriangle className="size-5" />}
+                            tone="warning"
+                        />
+                        <MetricCard
+                            label="Valor del Inventario"
+                            value={formatPrice(inventoryValue.retail)}
+                            description={`Costo est. (mayorista): ${formatPrice(inventoryValue.wholesale)}`}
+                            icon={<DollarSign className="size-5" />}
+                            tone="success"
+                        />
                     </div>
-                </div>
 
-                <div className="grid gap-4 sm:grid-cols-3">
-                    <Card className="rounded-[1.5rem] border-blue-800/20 bg-[linear-gradient(135deg,rgba(37,99,235,0.14),rgba(30,64,175,0.04))] shadow-sm">
-                        <CardContent className="flex items-center gap-4 p-5">
-                            <div className="flex size-12 items-center justify-center rounded-2xl bg-blue-900 text-blue-100">
-                                <Package className="size-5" />
-                            </div>
-                            <div>
-                                <p className="text-sm text-muted-foreground">
-                                    Variación total stock
-                                </p>
-                                <p className="text-3xl font-semibold tracking-[-0.05em]">{totalUnits}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                    <Card className="rounded-[1.5rem] border-emerald-800/20 bg-[linear-gradient(135deg,rgba(5,150,105,0.14),rgba(6,95,70,0.04))] shadow-sm">
-                        <CardContent className="flex items-center gap-4 p-5">
-                            <div className="flex size-12 items-center justify-center rounded-2xl bg-emerald-900 text-emerald-100">
-                                <PackagePlus className="size-5" />
-                            </div>
-                            <div>
-                                <p className="text-sm text-muted-foreground">
-                                    Movimientos registrados
-                                </p>
-                                <p className="text-3xl font-semibold tracking-[-0.05em]">{movements.length}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                    <Card className="rounded-[1.5rem] border-orange-800/20 bg-[linear-gradient(135deg,rgba(234,88,12,0.14),rgba(194,65,12,0.04))] shadow-sm">
-                        <CardContent className="flex items-center gap-4 p-5">
-                            <div className="flex size-12 items-center justify-center rounded-2xl bg-orange-900 text-orange-100">
-                                <CalendarDays className="size-5" />
-                            </div>
-                            <div>
-                                <p className="text-sm text-muted-foreground">Movimientos hoy</p>
-                                <p className="text-3xl font-semibold tracking-[-0.05em]">{todayEntries}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </div>
-
-                <Card className="rounded-[1.75rem] border-border/70 bg-card/92 shadow-sm">
-                    <CardContent className="p-4 sm:p-5">
-                        <Collapsible open={isFiltersOpen} onOpenChange={setIsFiltersOpen} className="w-full">
-                            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                                <div className="flex items-center gap-2">
-                                    <CollapsibleTrigger asChild>
-                                        <Button variant="outline" size="sm" className="gap-2 rounded-xl text-foreground font-medium h-9 px-3 border-border/70">
-                                            <Filter className="size-4" />
-                                            {hasActiveFilters ? "Filtros activos" : "Filtros"}
-                                            <div
-                                                className={cn(
-                                                    "ml-1 flex size-5 shrink-0 items-center justify-center rounded-full border border-border/40 bg-muted/40 transition-transform duration-200",
-                                                    isFiltersOpen && "rotate-180"
+                    {/* Filters & Table Card */}
+                    <Card className="rounded-[1.75rem] border-border/40 bg-card/70 backdrop-blur-md shadow-xs">
+                        <CardContent className="p-4 sm:p-5 space-y-4">
+                            <Collapsible open={isFiltersOpen} onOpenChange={setIsFiltersOpen} className="w-full">
+                                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <CollapsibleTrigger asChild>
+                                            <Button 
+                                                variant="outline" 
+                                                size="sm" 
+                                                className="gap-2 rounded-full text-xs font-bold h-8.5 px-3 border-border/40 bg-muted/20 hover:bg-muted/40 transition-all select-none"
+                                            >
+                                                <Filter className="size-3.5" />
+                                                {hasActiveFilters ? "Filtros activos" : "Filtros"}
+                                                <div
+                                                    className={cn(
+                                                        "ml-1 flex size-4 shrink-0 items-center justify-center rounded-full border border-border/40 bg-background/60 transition-transform duration-200",
+                                                        isFiltersOpen && "rotate-180"
+                                                    )}
+                                                >
+                                                    <ChevronDown className="size-3" />
+                                                </div>
+                                            </Button>
+                                        </CollapsibleTrigger>
+                                                                    
+                                        {/* Filters pills */}
+                                        {!isFiltersOpen && hasActiveFilters && (
+                                            <div className="hidden sm:flex flex-wrap items-center gap-2">
+                                                {filterProduct !== "all" && (
+                                                    <Badge 
+                                                        variant="secondary" 
+                                                        className="gap-1 px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 border border-indigo-500/20 cursor-pointer transition-all text-xs font-semibold uppercase" 
+                                                        onClick={() => setFilterProduct("all")}
+                                                    >
+                                                        <span>{products.find((p) => p.id === filterProduct)?.name.toUpperCase()}</span>
+                                                        <X className="size-3" />
+                                                    </Badge>
                                                 )}
-                                            >
-                                                <ChevronDown className="size-3" />
+                                                {filterProvider !== "all" && (
+                                                    <Badge 
+                                                        variant="secondary" 
+                                                        className="gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 cursor-pointer transition-all text-xs font-semibold uppercase" 
+                                                        onClick={() => setFilterProvider("all")}
+                                                    >
+                                                        <span>{providers.find((p) => p.id === filterProvider)?.name.toUpperCase()}</span>
+                                                        <X className="size-3" />
+                                                    </Badge>
+                                                )}
+                                                {(filterDateFrom || filterDateTo) && (
+                                                    <Badge 
+                                                        variant="secondary" 
+                                                        className="gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/20 cursor-pointer transition-all text-xs font-semibold" 
+                                                        onClick={() => {setFilterDateFrom(undefined); setFilterDateTo(undefined);}}
+                                                    >
+                                                        <span>
+                                                            {filterDateFrom ? format(filterDateFrom, "dd/MM/yyyy") : ""} 
+                                                            {filterDateFrom && filterDateTo ? " - " : ""}
+                                                            {filterDateTo ? format(filterDateTo, "dd/MM/yyyy") : ""}
+                                                        </span>
+                                                        <X className="size-3" />
+                                                    </Badge>
+                                                )}
                                             </div>
-                                        </Button>
-                                    </CollapsibleTrigger>
-                                                                
-                                    {/* Píldoras de Filtros Activos (visibles solo cuando los filtros están cerrados y hay filtros activos) */}
-                                    {!isFiltersOpen && hasActiveFilters && (
-                                        <div className="hidden sm:flex flex-wrap items-center gap-2">
-                                            {filterProduct !== "all" && (
-                                                <Badge variant="secondary" className="gap-1 px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200/50 cursor-pointer transition-colors" onClick={() => setFilterProduct("all")}>
-                                                    <span className="font-semibold">{products.find((p) => p.id === filterProduct)?.name}</span>
-                                                    <X className="size-3" />
-                                                </Badge>
-                                            )}
-                                            {filterProvider !== "all" && (
-                                                <Badge variant="secondary" className="gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/50 cursor-pointer transition-colors" onClick={() => setFilterProvider("all")}>
-                                                    <span className="font-semibold">{providers.find((p) => p.id === filterProvider)?.name}</span>
-                                                    <X className="size-3" />
-                                                </Badge>
-                                            )}
-                                            {(filterDateFrom || filterDateTo) && (
-                                                <Badge variant="secondary" className="gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200/50 cursor-pointer transition-colors" onClick={() => {setFilterDateFrom(undefined); setFilterDateTo(undefined);}}>
-                                                    <span className="font-semibold">
-                                                        {filterDateFrom ? format(filterDateFrom, "dd/MM/yyyy") : ""} 
-                                                        {filterDateFrom && filterDateTo ? " - " : ""}
-                                                        {filterDateTo ? format(filterDateTo, "dd/MM/yyyy") : ""}
-                                                    </span>
-                                                    <X className="size-3" />
-                                                </Badge>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="lg:ml-auto">
-                                    <span className="text-sm font-medium text-foreground tracking-tight bg-muted px-2.5 py-1 rounded-lg">
-                                        {totalMovements} registro(s) encontrados
-                                    </span>
-                                </div>
-                            </div>
-
-                            <CollapsibleContent className="space-y-4 pt-4">
-                                <div className="rounded-[1.5rem] border border-border/70 bg-muted/25 p-4">
-                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 items-end">
-                                {/* Producto Combobox */}
-                                <div className="space-y-1.5">
-                                    <Label className="text-sm font-medium">Producto</Label>
-                                    <Popover>
-                                        <PopoverTrigger asChild>
-                                            <Button variant="outline" role="combobox" className={cn("w-full justify-between h-10 font-normal", filterProduct === "all" && "text-muted-foreground")}>
-                                                <span className="truncate">{filterProduct === "all" ? "Todos los productos" : products.find((p) => p.id === filterProduct)?.name ?? "Producto no encontrado"}</span>
-                                                <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
-                                            </Button>
-                                        </PopoverTrigger>
-                                        <PopoverContent align="start" className="w-[300px] sm:w-[380px] p-0 rounded-xl">
-                                            <Command>
-                                                <CommandInput placeholder="Buscar producto..." className="h-9" />
-                                                <CommandList className="max-h-[220px]">
-                                                    <CommandEmpty>No se encontraron productos.</CommandEmpty>
-                                                    <CommandGroup>
-                                                        <CommandItem
-                                                            onSelect={() => { setFilterProduct("all"); }}
-                                                            className="rounded-lg"
-                                                        >
-                                                            <Check className={cn("mr-2 size-4", filterProduct === "all" ? "opacity-100" : "opacity-0")} />
-                                                            Todos los productos
-                                                        </CommandItem>
-                                                        {products.map((p) => (
-                                                            <CommandItem
-                                                                key={p.id}
-                                                                onSelect={() => { setFilterProduct(p.id); }}
-                                                                className="rounded-lg"
-                                                            >
-                                                                <Check className={cn("mr-2 size-4", filterProduct === p.id ? "opacity-100" : "opacity-0")} />
-                                                                {p.name}
-                                                            </CommandItem>
-                                                        ))}
-                                                    </CommandGroup>
-                                                </CommandList>
-                                            </Command>
-                                        </PopoverContent>
-                                    </Popover>
-                                </div>
-
-                                {/* Proveedor Combobox */}
-                                <div className="space-y-1.5">
-                                    <Label className="text-sm font-medium">Proveedor</Label>
-                                    <Popover>
-                                        <PopoverTrigger asChild>
-                                            <Button variant="outline" role="combobox" className={cn("w-full justify-between h-10 font-normal", filterProvider === "all" && "text-muted-foreground")}>
-                                                <span className="truncate">{filterProvider === "all" ? "Todos los proveedores" : providers.find((p) => p.id === filterProvider)?.name ?? "Proveedor no encontrado"}</span>
-                                                <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
-                                            </Button>
-                                        </PopoverTrigger>
-                                        <PopoverContent align="start" className="w-[300px] sm:w-[380px] p-0 rounded-xl">
-                                            <Command>
-                                                <CommandInput placeholder="Buscar proveedor..." className="h-9" />
-                                                <CommandList className="max-h-[220px]">
-                                                    <CommandEmpty>No se encontraron proveedores.</CommandEmpty>
-                                                    <CommandGroup>
-                                                        <CommandItem
-                                                            onSelect={() => { setFilterProvider("all"); }}
-                                                            className="rounded-lg"
-                                                        >
-                                                            <Check className={cn("mr-2 size-4", filterProvider === "all" ? "opacity-100" : "opacity-0")} />
-                                                            Todos los proveedores
-                                                        </CommandItem>
-                                                        {providers.map((p) => (
-                                                            <CommandItem
-                                                                key={p.id}
-                                                                onSelect={() => { setFilterProvider(p.id); }}
-                                                                className="rounded-lg"
-                                                            >
-                                                                <Check className={cn("mr-2 size-4", filterProvider === p.id ? "opacity-100" : "opacity-0")} />
-                                                                {p.name}
-                                                            </CommandItem>
-                                                        ))}
-                                                    </CommandGroup>
-                                                </CommandList>
-                                            </Command>
-                                        </PopoverContent>
-                                    </Popover>
-                                </div>
-
-                                {/* Fecha Desde */}
-                                <div className="space-y-1.5">
-                                    <Label className="text-sm font-medium">Desde</Label>
-                                    <Popover>
-                                        <PopoverTrigger asChild>
-                                            <Button
-                                                variant="outline"
-                                                className={cn("w-full justify-start text-left h-10 font-normal", !filterDateFrom && "text-muted-foreground")}
-                                            >
-                                                <CalendarIcon className="mr-2 size-4" />
-                                                {filterDateFrom ? format(filterDateFrom, "PPP", { locale: es }) : "Seleccionar fecha"}
-                                            </Button>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="w-auto p-0 rounded-xl" align="start">
-                                            <Calendar
-                                                mode="single"
-                                                locale={es}
-                                                selected={filterDateFrom}
-                                                onSelect={setFilterDateFrom}
-                                            />
-                                        </PopoverContent>
-                                    </Popover>
-                                </div>
-
-                                {/* Fecha Hasta */}
-                                <div className="space-y-1.5">
-                                    <Label className="text-sm font-medium">Hasta</Label>
-                                    <Popover>
-                                        <PopoverTrigger asChild>
-                                            <Button
-                                                variant="outline"
-                                                className={cn("w-full justify-start text-left h-10 font-normal", !filterDateTo && "text-muted-foreground")}
-                                            >
-                                                <CalendarIcon className="mr-2 size-4" />
-                                                {filterDateTo ? format(filterDateTo, "PPP", { locale: es }) : "Seleccionar fecha"}
-                                            </Button>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="w-auto p-0 rounded-xl" align="start">
-                                            <Calendar
-                                                mode="single"
-                                                locale={es}
-                                                selected={filterDateTo}
-                                                onSelect={setFilterDateTo}
-                                            />
-                                        </PopoverContent>
-                                    </Popover>
-                                </div>
-                                
-                                <div className="col-span-full pt-2 flex items-center justify-between">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <span className="text-sm text-muted-foreground mr-2 font-medium">Filtros rápidos:</span>
-                                        <Button size="sm" variant="secondary" className="text-xs h-8 rounded-lg" onClick={() => { setFilterDateFrom(new Date()); setFilterDateTo(new Date()); }}>Hoy</Button>
-                                        <Button size="sm" variant="secondary" className="text-xs h-8 rounded-lg" onClick={() => { setFilterDateFrom(subDays(new Date(), 7)); setFilterDateTo(new Date()); }}>Últimos 7 días</Button>
-                                        <Button size="sm" variant="secondary" className="text-xs h-8 rounded-lg" onClick={() => { setFilterDateFrom(startOfMonth(new Date())); setFilterDateTo(new Date()); }}>Este mes</Button>
+                                        )}
                                     </div>
-                                    {hasActiveFilters && (
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="gap-1 rounded-xl text-muted-foreground"
-                                            onClick={clearFilters}
-                                        >
-                                            <X className="size-3.5" />
-                                            Limpiar filtros
-                                        </Button>
-                                    )}
+                                    <div className="lg:ml-auto">
+                                        <span className="text-[11px] font-bold text-muted-foreground bg-muted/50 px-2.5 py-1 rounded-full border border-border/20 shadow-3xs select-none">
+                                            {totalMovements} {totalMovements === 1 ? "registro encontrado" : "registros encontrados"}
+                                        </span>
+                                    </div>
                                 </div>
-                                </div>
-                                </div>
-                            </CollapsibleContent>
-                        </Collapsible>
-                    </CardContent>
-                </Card>
 
-            <div className="mt-5 overflow-hidden rounded-[1.75rem] border border-border/70 bg-card/92 shadow-sm">
-                <Table>
-                    <TableHeader>
-                        <TableRow className="hover:bg-transparent">
-                            <TableHead className="w-14 font-semibold">Sel.</TableHead>
-                            <TableHead className="font-semibold">Fecha</TableHead>
-                            <TableHead className="font-semibold">Producto Principal</TableHead>
-                            <TableHead className="font-semibold">
-                                Variacion
-                            </TableHead>
-                            <TableHead className="font-semibold">Proveedor</TableHead>
-                            <TableHead className="text-right font-semibold">
-                                Acciones
-                            </TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {filteredMovements.length === 0 ? (
-                            <TableRow>
-                                <TableCell colSpan={6} className="py-16 text-center">
-                                    <Package className="mx-auto mb-3 size-12 text-muted-foreground/30" />
-                                    <p className="text-lg font-medium text-muted-foreground">
-                                        {hasActiveFilters
-                                            ? "No hay movimientos con estos filtros"
-                                            : "Sin movimientos de stock aun"}
-                                    </p>
-                                    <p className="mt-1 text-sm text-muted-foreground/70">
-                                        {hasActiveFilters
-                                            ? "Probá con otros filtros"
-                                            : "Cuando selecciones filas, se habilita la impresión"}
-                                    </p>
-                                </TableCell>
-                            </TableRow>
-                        ) : (
-                            paginatedMovements.map((movement) => {
-                                const isSelected = selectedMovementIds.includes(movement.id);
-                                const isSelectable = isMovementSelectable(movement);
+                                <CollapsibleContent className="space-y-4 pt-4">
+                                    <div className="rounded-[1.75rem] border border-border/40 bg-card/40 backdrop-blur-md shadow-inner-xs p-4 sm:p-5 mt-2">
+                                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 items-end">
+                                            {/* Product Combobox */}
+                                            <div className="space-y-1.5">
+                                                <Popover>
+                                                    <PopoverTrigger asChild>
+                                                        <Button 
+                                                            variant="outline" 
+                                                            role="combobox" 
+                                                            className={cn(
+                                                                "w-full justify-between h-9.5 text-xs font-medium rounded-full border-border/40 bg-background/50 hover:bg-background/80 hover:border-border/60 transition-all select-none shadow-2xs",
+                                                                filterProduct === "all" 
+                                                                    ? "text-muted-foreground" 
+                                                                    : "border-indigo-500/30 bg-indigo-500/5 text-indigo-600 hover:bg-indigo-500/10 hover:border-indigo-500/45 font-bold dark:text-indigo-400"
+                                                            )}
+                                                        >
+                                                            <span className="truncate flex items-center gap-1.5">
+                                                                {filterProduct === "all" ? (
+                                                                    <>
+                                                                        <Filter className="size-3.5 opacity-60" />
+                                                                        Producto: Todos
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <span className="size-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                                                                        Producto: {products.find((p) => p.id === filterProduct)?.name.toUpperCase()}
+                                                                    </>
+                                                                )}
+                                                            </span>
+                                                            <ChevronsUpDown className="ml-2 size-3.5 shrink-0 opacity-50" />
+                                                        </Button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent align="start" className="w-[300px] sm:w-[380px] p-0 rounded-xl">
+                                                        <Command>
+                                                            <CommandInput placeholder="Buscar producto..." className="h-9" />
+                                                            <CommandList className="max-h-[220px]">
+                                                                <CommandEmpty>No se encontraron productos.</CommandEmpty>
+                                                                <CommandGroup>
+                                                                    <CommandItem
+                                                                        onSelect={() => { setFilterProduct("all"); }}
+                                                                        className="rounded-lg text-xs"
+                                                                    >
+                                                                        <Check className={cn("mr-2 size-4", filterProduct === "all" ? "opacity-100" : "opacity-0")} />
+                                                                        Todos los productos
+                                                                    </CommandItem>
+                                                                    {products.map((p) => (
+                                                                        <CommandItem
+                                                                            key={p.id}
+                                                                            onSelect={() => { setFilterProduct(p.id); }}
+                                                                            className="rounded-lg text-xs uppercase"
+                                                                        >
+                                                                            <Check className={cn("mr-2 size-4", filterProduct === p.id ? "opacity-100" : "opacity-0")} />
+                                                                            {p.name}
+                                                                        </CommandItem>
+                                                                    ))}
+                                                                </CommandGroup>
+                                                            </CommandList>
+                                                        </Command>
+                                                    </PopoverContent>
+                                                </Popover>
+                                            </div>
 
-                                return (
-                                <TableRow
-                                    key={movement.id}
-                                    className={cn(
-                                        "transition-colors",
-                                        isSelected &&
-                                            "bg-emerald-950/6 hover:bg-emerald-950/10 dark:bg-emerald-400/10 dark:hover:bg-emerald-400/14"
-                                    )}
-                                >
-                                    <TableCell className="text-center">
-                                        <Checkbox
-                                            checked={isSelected}
-                                            disabled={!isSelectable}
-                                            onCheckedChange={(checked) =>
-                                                toggleMovementSelection(
-                                                    movement.id,
-                                                    checked === true
-                                                )
-                                            }
-                                            aria-label={
-                                                isSelectable
-                                                    ? `Seleccionar ingreso de ${getProductName(movement.productId)}`
-                                                    : `Movimiento no seleccionable de ${getProductName(movement.productId)}`
-                                            }
-                                            className={cn(
-                                                "size-5 rounded-lg border-2 border-muted-foreground/35 transition-all dark:border-white/30",
-                                                isSelectable
-                                                    ? "cursor-pointer hover:border-emerald-500 hover:bg-emerald-500/10 hover:shadow-[0_0_0_4px_rgba(16,185,129,0.12)] data-[state=checked]:border-emerald-600 data-[state=checked]:bg-emerald-600 data-[state=checked]:text-white data-[state=checked]:shadow-[0_0_0_4px_rgba(16,185,129,0.22)] dark:hover:border-emerald-300 dark:hover:bg-emerald-300/12 dark:data-[state=checked]:border-emerald-300 dark:data-[state=checked]:bg-emerald-500 dark:data-[state=checked]:shadow-[0_0_0_4px_rgba(52,211,153,0.28)]"
-                                                    : "cursor-not-allowed opacity-45"
-                                            )}
-                                        />
-                                    </TableCell>
-                                    <TableCell className="text-sm">
-                                        {formatDate(movement.date)}
-                                    </TableCell>
-                                    <TableCell>
-                                        <div>
-                                            <p className="text-sm font-semibold">
-                                                {getProductName(movement.productId)}
-                                            </p>
-                                            <p className="text-xs text-muted-foreground">
-                                                {movement.variants.length} variante(s)
-                                            </p>
+                                            {/* Provider Combobox */}
+                                            <div className="space-y-1.5">
+                                                <Popover>
+                                                    <PopoverTrigger asChild>
+                                                        <Button 
+                                                            variant="outline" 
+                                                            role="combobox" 
+                                                            className={cn(
+                                                                "w-full justify-between h-9.5 text-xs font-medium rounded-full border-border/40 bg-background/50 hover:bg-background/80 hover:border-border/60 transition-all select-none shadow-2xs",
+                                                                filterProvider === "all" 
+                                                                    ? "text-muted-foreground" 
+                                                                    : "border-emerald-500/30 bg-emerald-500/5 text-emerald-600 hover:bg-emerald-500/10 hover:border-emerald-500/45 font-bold dark:text-emerald-400"
+                                                            )}
+                                                        >
+                                                            <span className="truncate flex items-center gap-1.5">
+                                                                {filterProvider === "all" ? (
+                                                                    <>
+                                                                        <Filter className="size-3.5 opacity-60" />
+                                                                        Proveedor: Todos
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                                                        Proveedor: {providers.find((p) => p.id === filterProvider)?.name.toUpperCase()}
+                                                                    </>
+                                                                )}
+                                                            </span>
+                                                            <ChevronsUpDown className="ml-2 size-3.5 shrink-0 opacity-50" />
+                                                        </Button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent align="start" className="w-[300px] sm:w-[380px] p-0 rounded-xl">
+                                                        <Command>
+                                                            <CommandInput placeholder="Buscar proveedor..." className="h-9" />
+                                                            <CommandList className="max-h-[220px]">
+                                                                <CommandEmpty>No se encontraron proveedores.</CommandEmpty>
+                                                                <CommandGroup>
+                                                                    <CommandItem
+                                                                        onSelect={() => { setFilterProvider("all"); }}
+                                                                        className="rounded-lg text-xs"
+                                                                    >
+                                                                        <Check className={cn("mr-2 size-4", filterProvider === "all" ? "opacity-100" : "opacity-0")} />
+                                                                        Todos los proveedores
+                                                                    </CommandItem>
+                                                                    {providers.map((p) => (
+                                                                        <CommandItem
+                                                                            key={p.id}
+                                                                            onSelect={() => { setFilterProvider(p.id); }}
+                                                                            className="rounded-lg text-xs uppercase"
+                                                                        >
+                                                                            <Check className={cn("mr-2 size-4", filterProvider === p.id ? "opacity-100" : "opacity-0")} />
+                                                                            {p.name}
+                                                                        </CommandItem>
+                                                                    ))}
+                                                                </CommandGroup>
+                                                            </CommandList>
+                                                        </Command>
+                                                    </PopoverContent>
+                                                </Popover>
+                                            </div>
+
+                                            {/* Date From */}
+                                            <div className="space-y-1.5">
+                                                <Popover>
+                                                    <PopoverTrigger asChild>
+                                                        <Button
+                                                            variant="outline"
+                                                            className={cn(
+                                                                "w-full justify-start text-left h-9.5 text-xs font-medium rounded-full border-border/40 bg-background/50 hover:bg-background/80 hover:border-border/60 transition-all select-none shadow-2xs",
+                                                                !filterDateFrom 
+                                                                    ? "text-muted-foreground" 
+                                                                    : "border-amber-500/30 bg-amber-500/5 text-amber-600 hover:bg-amber-500/10 hover:border-amber-500/45 font-bold dark:text-amber-400"
+                                                            )}
+                                                        >
+                                                            <CalendarIcon className="mr-2 size-3.5 opacity-60" />
+                                                            {filterDateFrom ? `Desde: ${format(filterDateFrom, "dd/MM/yyyy")}` : "Desde: Seleccionar"}
+                                                        </Button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent className="w-auto p-0 rounded-xl" align="start">
+                                                        <Calendar
+                                                            mode="single"
+                                                            locale={es}
+                                                            selected={filterDateFrom}
+                                                            onSelect={setFilterDateFrom}
+                                                        />
+                                                    </PopoverContent>
+                                                </Popover>
+                                            </div>
+
+                                            {/* Date To */}
+                                            <div className="space-y-1.5">
+                                                <Popover>
+                                                    <PopoverTrigger asChild>
+                                                        <Button
+                                                            variant="outline"
+                                                            className={cn(
+                                                                "w-full justify-start text-left h-9.5 text-xs font-medium rounded-full border-border/40 bg-background/50 hover:bg-background/80 hover:border-border/60 transition-all select-none shadow-2xs",
+                                                                !filterDateTo 
+                                                                    ? "text-muted-foreground" 
+                                                                    : "border-amber-500/30 bg-amber-500/5 text-amber-600 hover:bg-amber-500/10 hover:border-amber-500/45 font-bold dark:text-amber-400"
+                                                            )}
+                                                        >
+                                                            <CalendarIcon className="mr-2 size-3.5 opacity-60" />
+                                                            {filterDateTo ? `Hasta: ${format(filterDateTo, "dd/MM/yyyy")}` : "Hasta: Seleccionar"}
+                                                        </Button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent className="w-auto p-0 rounded-xl" align="start">
+                                                        <Calendar
+                                                            mode="single"
+                                                            locale={es}
+                                                            selected={filterDateTo}
+                                                            onSelect={setFilterDateTo}
+                                                        />
+                                                    </PopoverContent>
+                                                </Popover>
+                                            </div>
+                                            
+                                            {/* Quick Filters */}
+                                            <div className="col-span-full pt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-border/30 mt-1">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-[11px] font-bold text-muted-foreground/80 uppercase tracking-wider select-none">Filtros rápidos:</span>
+                                                    <div className="inline-flex rounded-full bg-muted/80 p-0.5 backdrop-blur-xs select-none shadow-inner-xs border border-border/40">
+                                                        {(() => {
+                                                            const isHoy = filterDateFrom?.toDateString() === new Date().toDateString() && filterDateTo?.toDateString() === new Date().toDateString();
+                                                            const is7Dias = filterDateFrom?.toDateString() === subDays(new Date(), 7).toDateString() && filterDateTo?.toDateString() === new Date().toDateString();
+                                                            const isEsteMes = filterDateFrom?.toDateString() === startOfMonth(new Date()).toDateString() && filterDateTo?.toDateString() === new Date().toDateString();
+                                                            
+                                                            return (
+                                                                <>
+                                                                    <button
+                                                                        onClick={() => { setFilterDateFrom(new Date()); setFilterDateTo(new Date()); }}
+                                                                        className={cn(
+                                                                            "rounded-full px-3 py-1 text-xs font-semibold transition-all cursor-pointer",
+                                                                            isHoy 
+                                                                                ? "bg-background text-foreground shadow-xs font-bold scale-102" 
+                                                                                : "text-muted-foreground hover:text-foreground"
+                                                                        )}
+                                                                    >
+                                                                        Hoy
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => { setFilterDateFrom(subDays(new Date(), 7)); setFilterDateTo(new Date()); }}
+                                                                        className={cn(
+                                                                            "rounded-full px-3 py-1 text-xs font-semibold transition-all cursor-pointer",
+                                                                            is7Dias 
+                                                                                ? "bg-background text-foreground shadow-xs font-bold scale-102" 
+                                                                                : "text-muted-foreground hover:text-foreground"
+                                                                        )}
+                                                                    >
+                                                                        Últimos 7 días
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => { setFilterDateFrom(startOfMonth(new Date())); setFilterDateTo(new Date()); }}
+                                                                        className={cn(
+                                                                            "rounded-full px-3 py-1 text-xs font-semibold transition-all cursor-pointer",
+                                                                            isEsteMes 
+                                                                                ? "bg-background text-foreground shadow-xs font-bold scale-102" 
+                                                                                : "text-muted-foreground hover:text-foreground"
+                                                                        )}
+                                                                    >
+                                                                        Este mes
+                                                                    </button>
+                                                                </>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                </div>
+                                                
+                                                {hasActiveFilters && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="gap-1.5 rounded-full text-xs font-bold text-muted-foreground hover:bg-rose-500/10 hover:text-rose-600 transition-all px-3 h-7.5 self-end sm:self-auto"
+                                                        onClick={clearFilters}
+                                                    >
+                                                        <X className="size-3.5" />
+                                                        Limpiar filtros
+                                                    </Button>
+                                                )}
+                                            </div>
                                         </div>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Badge
-                                            className={getMovementTone(movement)}
-                                        >
-                                            {getMovementLabel(movement)}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-sm text-muted-foreground">
-                                        {getProviderName(movement.providerId)}
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="gap-2"
-                                            onClick={() => setSelectedMovement(movement)}
-                                        >
-                                            <Eye className="size-4" />
-                                            Ver detalle
-                                        </Button>
-                                    </TableCell>
-                                </TableRow>
-                                );
-                            })
-                        )}
-                    </TableBody>
-                </Table>
-            </div>
-            <div className="mt-4 flex flex-col gap-3 rounded-[1.25rem] border border-border/70 bg-card/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-muted-foreground">
-                    Página {currentPage} de {totalMovementPages} · {totalMovements} movimiento(s)
-                </p>
-                <div className="flex gap-2">
-                    <Button
-                        variant="outline"
-                        onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-                        disabled={currentPage === 1}
-                    >
-                        Anterior
-                    </Button>
-                    <Button
-                        variant="outline"
-                        onClick={() => setCurrentPage((page) => Math.min(totalMovementPages, page + 1))}
-                        disabled={currentPage === totalMovementPages}
-                    >
-                        Siguiente
-                    </Button>
+                                    </div>
+                                </CollapsibleContent>
+                            </Collapsible>
+
+                            {/* Movements Table Component */}
+                            <MovementsTable
+                                paginatedMovements={paginatedMovements}
+                                filteredMovements={filteredMovements}
+                                selectedMovementIds={selectedMovementIds}
+                                currentPage={currentPage}
+                                setCurrentPage={setCurrentPage}
+                                totalMovementPages={totalMovementPages}
+                                isMovementSelectable={isMovementSelectable}
+                                toggleMovementSelection={toggleMovementSelection}
+                                getProductName={getProductName}
+                                handleQuickPrintMovement={handleQuickPrintMovement}
+                                onSelectMovement={setSelectedMovement}
+                                hasActiveFilters={hasActiveFilters}
+                            />
+                        </CardContent>
+                    </Card>
                 </div>
             </div>
-            </div>
 
-            <Dialog
+            {/* Dialogs Components */}
+            <MovementDetailsDialog
                 open={Boolean(selectedMovement)}
                 onOpenChange={(open) => {
                     if (!open) {
                         setSelectedMovement(null);
                     }
                 }}
-            >
-                <DialogContent className="max-w-4xl">
-                    {selectedMovement && (
-                        <>
-                            <DialogHeader>
-                                <DialogTitle>Detalle de Ingreso e Impresión</DialogTitle>
-                                <DialogDescription>
-                                    {getProductName(selectedMovement.productId)} - Movimiento{" "}
-                                    {formatShortDate(selectedMovement.date)}
-                                </DialogDescription>
-                            </DialogHeader>
+                selectedMovement={selectedMovement}
+                getProductName={getProductName}
+            />
 
-                            <div className="max-h-[60vh] overflow-y-auto rounded-[1.25rem] border border-border/70">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow className="hover:bg-transparent">
-                                            <TableHead>Variante</TableHead>
-                                            <TableHead>Cantidad</TableHead>
-                                            <TableHead>SKU</TableHead>
-                                            <TableHead className="text-right">
-                                                Acción
-                                            </TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {selectedMovement.variants.map((variant) => (
-                                            <TableRow key={variant.id}>
-                                                <TableCell>
-                                                    <div>
-                                                        <p className="font-medium">
-                                                            {getVariantLabel(variant)}
-                                                        </p>
-                                                        <p className="text-xs text-muted-foreground">
-                                                            {getProductName(variant.productId)}
-                                                        </p>
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Badge variant="outline">
-                                                        {variant.quantity > 0 ? "+" : ""}
-                                                        {variant.quantity} unidad(es)
-                                                    </Badge>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
-                                                        {variant.sku}
-                                                    </code>
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    {variant.quantity > 0 ? (
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            className="gap-2"
-                                                            onClick={() =>
-                                                                toast.success(
-                                                                    "Etiqueta enviada a impresión",
-                                                                    {
-                                                                        description: `${getVariantLabel(variant)} · ${variant.quantity} ticket(s)`,
-                                                                    }
-                                                                )
-                                                            }
-                                                        >
-                                                            <Printer className="size-4" />
-                                                            Impresión rápida
-                                                        </Button>
-                                                    ) : (
-                                                        <span className="text-xs text-muted-foreground">
-                                                            No aplica
-                                                        </span>
-                                                    )}
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </div>
-                        </>
-                    )}
-                </DialogContent>
-            </Dialog>
+            <StockActionDialog
+                open={stockDialogOpen}
+                onOpenChange={setStockDialogOpen}
+                stockAction={stockAction}
+                isSaving={isSaving}
+                advancedMode={advancedMode}
+                setAdvancedMode={setAdvancedMode}
+                productSearchQuery={productSearchQuery}
+                setProductSearchQuery={setProductSearchQuery}
+                providerSearchQuery={providerSearchQuery}
+                setProviderSearchQuery={setProviderSearchQuery}
+                searchedProducts={searchedProducts}
+                searchedProviders={searchedProviders}
+                selectedProductId={selectedProductId}
+                selectedProviderId={selectedProviderId}
+                handleProductChange={handleProductChange}
+                handleProviderChange={handleProviderChange}
+                selectedProduct={selectedProduct}
+                selectedProductCurrentStock={selectedProductCurrentStock}
+                currentSimpleVariantStock={currentSimpleVariantStock}
+                advancedColor={advancedColor}
+                setAdvancedColor={setAdvancedColor}
+                selectedSizes={selectedSizes}
+                toggleSize={toggleSize}
+                sizeQuantities={sizeQuantities}
+                setSizeQuantities={setSizeQuantities}
+                selectedVariantStocks={selectedVariantStocks}
+                simpleQuantity={simpleQuantity}
+                setSimpleQuantity={setSimpleQuantity}
+                handleSaveStock={handleSaveStock}
+            />
 
-            <Dialog open={stockDialogOpen} onOpenChange={setStockDialogOpen}>
-                <DialogContent className="print:hidden sm:max-w-2xl">
-                    <DialogHeader>
-                        <DialogTitle className="text-xl">
-                            {stockAction === "add"
-                                ? "Ingresar Stock"
-                                : stockAction === "remove"
-                                  ? "Reducir Stock"
-                                  : "Ajustar Stock"}
-                        </DialogTitle>
-                        <DialogDescription>
-                            {stockAction === "add"
-                                ? "Registrá un ingreso simple o cargá varias variantes del mismo producto en un solo movimiento."
-                                : stockAction === "remove"
-                                  ? "Descontá stock simple o por variantes del producto seleccionado."
-                                  : "Definí el stock final real y el sistema calculará automáticamente si el ajuste sube o baja."}
-                        </DialogDescription>
-                    </DialogHeader>
+            <PrintLabelsDialog
+                open={printDialogOpen}
+                onOpenChange={setPrintDialogOpen}
+                printableVariants={printableVariants}
+                printQuantities={printQuantities}
+                setPrintQuantities={setPrintQuantities}
+                selectedMovements={selectedMovements}
+                printableTickets={printableTickets}
+                handleConfirmPrint={handleConfirmPrint}
+                getProductName={getProductName}
+            />
 
-                    <div className="space-y-4 py-2">
-                        <div
-                            className={
-                                stockAction === "add"
-                                    ? "grid gap-4 sm:grid-cols-2"
-                                    : "grid gap-4"
-                            }
-                        >
-                            <div className="space-y-2">
-                                <Label>Producto</Label>
-                                <div className="rounded-[1.25rem] border border-border/70 bg-background">
-                                    <div className="relative border-b">
-                                        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                                        <Input
-                                            value={productSearchQuery}
-                                            onChange={(event) => setProductSearchQuery(event.target.value)}
-                                            placeholder="Buscar producto por nombre o codigo"
-                                            className="h-11 border-0 pl-9 shadow-none focus-visible:ring-0"
-                                        />
-                                    </div>
-                                    <ScrollArea className="h-44">
-                                        <div className="p-2">
-                                            {searchedProducts.length === 0 ? (
-                                                <p className="px-2 py-3 text-sm text-muted-foreground">
-                                                    No se encontraron productos
-                                                </p>
-                                            ) : (
-                                                searchedProducts.map((product) => (
-                                                    <button
-                                                        key={product.id}
-                                                        type="button"
-                                                        onClick={() => handleProductChange(product.id)}
-                                                        className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors ${
-                                                            selectedProductId === product.id
-                                                                ? "bg-emerald-950/8 text-emerald-800 dark:text-emerald-100"
-                                                                : "hover:bg-muted"
-                                                        }`}
-                                                    >
-                                                        <span className="font-medium">
-                                                            {product.name}
-                                                        </span>
-                                                        <span className="text-xs text-muted-foreground">
-                                                            {product.code}
-                                                        </span>
-                                                    </button>
-                                                ))
-                                            )}
-                                        </div>
-                                    </ScrollArea>
-                                </div>
-                            </div>
-                            {stockAction === "add" && (
-                                <div className="space-y-2">
-                                    <Label>Proveedor</Label>
-                                <div className="rounded-[1.25rem] border border-border/70 bg-background">
-                                        <div className="relative border-b">
-                                            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                                            <Input
-                                                value={providerSearchQuery}
-                                                onChange={(event) =>
-                                                    setProviderSearchQuery(event.target.value)
-                                                }
-                                                placeholder="Buscar proveedor"
-                                                className="h-11 border-0 pl-9 shadow-none focus-visible:ring-0"
-                                            />
-                                        </div>
-                                        <ScrollArea className="h-44">
-                                            <div className="p-2">
-                                                {searchedProviders.length === 0 ? (
-                                                    <p className="px-2 py-3 text-sm text-muted-foreground">
-                                                        No se encontraron proveedores
-                                                    </p>
-                                                ) : (
-                                                    searchedProviders.map((provider) => (
-                                                        <button
-                                                            key={provider.id}
-                                                            type="button"
-                                                            onClick={() =>
-                                                                handleProviderChange(provider.id)
-                                                            }
-                                                            className={`flex w-full items-center rounded-md px-3 py-2 text-left text-sm transition-colors ${
-                                                                selectedProviderId === provider.id
-                                                                    ? "bg-emerald-950/8 text-emerald-800 dark:text-emerald-100"
-                                                                    : "hover:bg-muted"
-                                                            }`}
-                                                        >
-                                                            <span className="font-medium">
-                                                                {provider.name}
-                                                            </span>
-                                                        </button>
-                                                    ))
-                                                )}
-                                            </div>
-                                        </ScrollArea>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {selectedProduct && (
-                            <div className="rounded-[1.2rem] border border-border/70 bg-muted/20 p-4">
-                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                                    Stock actual del producto
-                                </p>
-                                <p className="mt-1 text-2xl font-semibold tracking-[-0.05em] text-foreground">
-                                    {selectedProductCurrentStock}
-                                </p>
-                                <p className="mt-1 text-sm text-muted-foreground">
-                                    {selectedProduct.name}
-                                </p>
-                            </div>
-                        )}
-
-                        <div className="flex rounded-[1.15rem] border border-border/70 bg-muted/20 p-1">
-                            <Button
-                                type="button"
-                                variant={!advancedMode ? "default" : "ghost"}
-                                className="flex-1"
-                                onClick={() => setAdvancedMode(false)}
-                            >
-                                Ingreso simple
-                            </Button>
-                            <Button
-                                type="button"
-                                variant={advancedMode ? "default" : "ghost"}
-                                className="flex-1"
-                                onClick={() => setAdvancedMode(true)}
-                            >
-                                Por variantes
-                            </Button>
-                        </div>
-
-                        {advancedMode ? (
-                            <div className="space-y-4 rounded-[1.25rem] border border-border/70 bg-muted/20 p-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="advanced-color">Color</Label>
-                                    <Input
-                                        id="advanced-color"
-                                        value={advancedColor}
-                                        onChange={(event) => setAdvancedColor(event.target.value)}
-                                        placeholder="Ej: Negro"
-                                        className="h-11"
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label>Talles</Label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {commonSizes.map((size) => {
-                                            const active = selectedSizes.includes(size);
-                                            return (
-                                                <Button
-                                                    key={size}
-                                                    type="button"
-                                                    variant={active ? "default" : "outline"}
-                                                    size="sm"
-                                                    onClick={() => toggleSize(size)}
-                                                >
-                                                    {size}
-                                                </Button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-
-                                {selectedSizes.length > 0 && (
-                                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                                        {selectedSizes.map((size) => (
-                                            <div key={size} className="space-y-2">
-                                                <Label htmlFor={`qty-${size}`}>
-                                                    {stockAction === "adjust"
-                                                        ? `Nuevo stock talle ${size}`
-                                                        : stockAction === "remove"
-                                                          ? `Cantidad a descontar talle ${size}`
-                                                          : `Cantidad talle ${size}`}
-                                                </Label>
-                                                {(stockAction === "adjust" || stockAction === "remove") && (
-                                                    <p className="text-xs text-muted-foreground">
-                                                        Actual: {
-                                                            selectedVariantStocks.find((variant) => variant.size === size)?.stock ?? 0
-                                                        }
-                                                    </p>
-                                                )}
-                                                <Input
-                                                    id={`qty-${size}`}
-                                                    type="number"
-                                                    min="0"
-                                                    value={sizeQuantities[size] ?? ""}
-                                                    onChange={(event) =>
-                                                        setSizeQuantities((current) => ({
-                                                            ...current,
-                                                            [size]: event.target.value,
-                                                        }))
-                                                    }
-                                                    className="h-11"
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        ) : (
-                            <div className="space-y-2">
-                                <Label htmlFor="simple-quantity">
-                                    {stockAction === "adjust"
-                                        ? "Nuevo stock final"
-                                        : stockAction === "remove"
-                                          ? "Cantidad a descontar"
-                                          : "Cantidad"}
-                                </Label>
-                                {(stockAction === "adjust" || stockAction === "remove") && (
-                                    <p className="text-xs text-muted-foreground">
-                                        Variante simple actual: {currentSimpleVariantStock}
-                                    </p>
-                                )}
-                                <Input
-                                    id="simple-quantity"
-                                    type="number"
-                                    min="0"
-                                    value={simpleQuantity}
-                                    onChange={(event) => setSimpleQuantity(event.target.value)}
-                                    placeholder="0"
-                                    className="h-11"
-                                />
-                            </div>
-                        )}
-                    </div>
-
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setStockDialogOpen(false)} disabled={isSaving}>
-                            Cancelar
-                        </Button>
-                        <Button
-                            className={
-                                stockAction === "add"
-                                    ? "bg-emerald-600 hover:bg-emerald-700 gap-2"
-                                    : stockAction === "remove"
-                                      ? "bg-rose-600 hover:bg-rose-700 gap-2"
-                                      : "bg-amber-600 hover:bg-amber-700 gap-2"
-                            }
-                            onClick={handleSaveStock}
-                            disabled={isSaving || !selectedProductId}
-                        >
-                            {isSaving && <Loader2 className="size-4 animate-spin" />}
-                            {stockAction === "add"
-                                ? "Guardar ingreso"
-                                : stockAction === "remove"
-                                  ? "Confirmar baja"
-                                  : "Confirmar ajuste"}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            <Dialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
-                <DialogContent
-                    className="print:hidden max-h-[90vh] max-w-[calc(100%-1rem)] sm:max-w-6xl xl:max-w-7xl transform-gpu"
-                >
-                    <DialogHeader>
-                        <DialogTitle>Imprimir etiquetas</DialogTitle>
-                        <DialogDescription>
-                            Revisá todo lo que seleccionaste y elegí la cantidad de tickets a imprimir por cada variante.
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="max-h-[66vh] overflow-y-auto rounded-[1.25rem] border border-border/70">
-                        <Table>
-                            <TableHeader>
-                                <TableRow className="hover:bg-transparent">
-                                    <TableHead>Ingreso</TableHead>
-                                    <TableHead>Disponible</TableHead>
-                                    <TableHead>Tickets a imprimir</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {printableVariants.map((variant) => {
-                                    const previewQuantity = clampQuantity(printQuantities[variant.id], variant.quantity);
-                                    return (
-                                        <TableRow key={variant.id}>
-                                            <TableCell className="text-sm text-muted-foreground">
-                                                <div>
-                                                    <p className="font-medium text-foreground">
-                                                        {getProductName(variant.productId)}
-                                                    </p>
-                                                    <p>{formatDate(variant.date)}</p>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge variant="outline">{variant.quantity} ticket(s)</Badge>
-                                            </TableCell>
-                                            <TableCell>
-                                                <div className="max-w-36 space-y-1">
-                                                    <Input
-                                                        type="number"
-                                                        min={0}
-                                                        max={variant.quantity}
-                                                        value={printQuantities[variant.id] ?? String(variant.quantity)}
-                                                        onChange={(event) =>
-                                                            setPrintQuantities((current) => ({
-                                                                ...current,
-                                                                [variant.id]: normalizePrintQuantity(
-                                                                    event.target.value,
-                                                                    variant.quantity
-                                                                ),
-                                                            }))
-                                                        }
-                                                    />
-                                                    <p className="text-xs text-muted-foreground">Vista previa: {previewQuantity}</p>
-                                                </div>
-                                            </TableCell>
-                                        </TableRow>
-                                    );
-                                })}
-                            </TableBody>
-                        </Table>
-                    </div>
-
-                    <DialogFooter className="sm:justify-between">
-                        <div className="text-sm text-muted-foreground">
-                            {selectedMovements.length} ingreso(s) · {printableVariants.length} variante(s) · {printableTickets} ticket(s)
-                        </div>
-                        <Button
-                            className="bg-emerald-600 hover:bg-emerald-700"
-                            disabled={selectedMovements.length === 0 || printableTickets === 0}
-                            onClick={handleConfirmPrint}
-                        >
-                            <Printer className="size-4" />
-                            Confirmar impresión
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-        </div>
-
-        {/* 3. Insertamos las etiquetas fuera del div oculto */}
-        <BarcodeLabels items={labelsToPrint} />
-    </>
-)};
+            {/* Render print labels layout off-screen when print triggers */}
+            <BarcodeLabels items={labelsToPrint} />
+        </>
+    );
+}

@@ -7,6 +7,7 @@ import {
     type PaymentBreakdown,
     type PaymentMethod,
 } from "@/components/sales/checkout-dialog";
+import { motion } from "motion/react";
 import {
     Search,
     Plus,
@@ -20,6 +21,9 @@ import {
     ReceiptText,
     RotateCcw,
     X,
+    CalendarDays,
+    Bookmark,
+    Tag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,16 +40,16 @@ import {
     DialogFooter,
 } from "@/components/ui/dialog";
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
+    DropdownMenu,
+    DropdownMenuTrigger,
+    DropdownMenuContent,
+    DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+
 import { toast } from "sonner";
 import { cn } from "@/lib/core/utils";
 import { formatArgentinaDateTime, formatArgentinaShortDate } from "@/lib/core/datetime";
-import { barcodeFromSku } from "@/lib/printing/barcodes";
+import { barcodeFromSku, barcodeFromTicketNumber } from "@/lib/printing/barcodes";
 import type { ReceiptPrintData } from "@/lib/printing/receipt-printing";
 import { printSaleReceipt } from "@/lib/printing/printing";
 import { CACHE_TAGS } from "@/lib/core/cache-tags";
@@ -130,7 +134,6 @@ type SaleDraft = {
     checkoutOpen: boolean;
     priceMode: PriceMode;
     exchangeDialogOpen: boolean;
-    sellerSelectOpen: boolean;
     exchangeSearchQuery: string;
     selectedExchangeSale: ExchangeSaleTicket | null;
     exchangeQuantities: Record<string, string>;
@@ -158,9 +161,8 @@ function createSaleDraft(label = "Venta 1"): SaleDraft {
         searchQuery: "",
         cart: [],
         checkoutOpen: false,
-        priceMode: "retail",
+        priceMode: "wholesale",
         exchangeDialogOpen: false,
-        sellerSelectOpen: false,
         exchangeSearchQuery: "",
         selectedExchangeSale: null,
         exchangeQuantities: {},
@@ -202,7 +204,7 @@ function isSaleDraftEmpty(draft: SaleDraft) {
         draft.manualGiftSelectedLineIds.length === 0 &&
         !draft.manualGiftTargetGroupLabel &&
         draft.nextGiftGroupNumber === 1 &&
-        draft.priceMode === "retail" &&
+        draft.priceMode === "wholesale" &&
         !draft.exchangeSearchQuery.trim() &&
         !draft.selectedExchangeSale &&
         Object.keys(draft.exchangeQuantities).length === 0 &&
@@ -290,7 +292,7 @@ function AnimatedSizeContainer({
     );
 }
 
-function normalizeProductCodeSearchValue(value: string): string {
+function normalizeProductCodeSearchValue(value: string) {
     return value.trim().toLowerCase();
 }
 
@@ -369,30 +371,7 @@ function mergeGiftGroupItems(cart: CartItem[]): CartItem[] {
     return mergedCart;
 }
 
-function mergeUngroupedCartItems(cart: CartItem[]): CartItem[] {
-    const mergedCart: CartItem[] = [];
 
-    for (const item of cart) {
-        if (item.giftGroupLabel) {
-            mergedCart.push({ ...item });
-            continue;
-        }
-
-        const existingCartItem = mergedCart.find(
-            (currentItem) =>
-                !currentItem.giftGroupLabel && currentItem.product.id === item.product.id
-        );
-
-        if (existingCartItem) {
-            existingCartItem.quantity = existingCartItem.quantity + item.quantity;
-            continue;
-        }
-
-        mergedCart.push({ ...item });
-    }
-
-    return mergedCart;
-}
 
 function productCodeSearchValues(product: POSProduct): string[] {
     return [
@@ -480,7 +459,9 @@ export default function NuevaVentaPage() {
     const searchBoxRef = useRef<HTMLDivElement>(null);
     const exchangeSearchInputRef = useRef<HTMLInputElement>(null);
     const exchangeSalesRequestIdRef = useRef(0);
-    const sellerSelectTriggerRef = useRef<HTMLButtonElement>(null);
+    const exchangeSearchQueryRef = useRef("");
+    const hasLoadedExchangeSalesOnceRef = useRef(false);
+    const loadExchangeSalesRef = useRef<() => Promise<void>>(async () => {});
     const [draftTabs, setDraftTabs] = useState(() => {
         const initialDraft = createSaleDraft();
         return {
@@ -495,7 +476,6 @@ export default function NuevaVentaPage() {
     const [allProducts, setAllProducts] = useState<POSProduct[]>([]);
     const [exchangeSales, setExchangeSales] = useState<ExchangeSaleTicket[]>([]);
     const [isLoadingExchangeSales, setIsLoadingExchangeSales] = useState(false);
-    const [hasLoadedExchangeSalesOnce, setHasLoadedExchangeSalesOnce] = useState(false);
     const [isLoadingProducts, setIsLoadingProducts] = useState(true);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
     const [hasLoadedCatalogOnce, setHasLoadedCatalogOnce] = useState(false);
@@ -529,7 +509,6 @@ export default function NuevaVentaPage() {
     const checkoutOpen = activeDraft.checkoutOpen;
     const priceMode = activeDraft.priceMode;
     const exchangeDialogOpen = activeDraft.exchangeDialogOpen;
-    const sellerSelectOpen = activeDraft.sellerSelectOpen;
     const exchangeSearchQuery = activeDraft.exchangeSearchQuery;
     const selectedExchangeSale = activeDraft.selectedExchangeSale;
     const exchangeQuantities = activeDraft.exchangeQuantities;
@@ -544,6 +523,9 @@ export default function NuevaVentaPage() {
     const quickCreatePrice = activeDraft.quickCreatePrice;
     const quickCreateWholesalePrice = activeDraft.quickCreateWholesalePrice;
     const quickCreateInitialStock = activeDraft.quickCreateInitialStock;
+    useEffect(() => {
+        exchangeSearchQueryRef.current = exchangeSearchQuery;
+    }, [exchangeSearchQuery]);
     const setSearchQuery = useCallback(
         (action: SetStateAction<string>) => updateDraftField("searchQuery", action),
         [updateDraftField]
@@ -585,10 +567,6 @@ export default function NuevaVentaPage() {
     );
     const setExchangeDialogOpen = useCallback(
         (action: SetStateAction<boolean>) => updateDraftField("exchangeDialogOpen", action),
-        [updateDraftField]
-    );
-    const setSellerSelectOpen = useCallback(
-        (action: SetStateAction<boolean>) => updateDraftField("sellerSelectOpen", action),
         [updateDraftField]
     );
     const setExchangeSearchQuery = useCallback(
@@ -730,7 +708,7 @@ export default function NuevaVentaPage() {
             };
         });
         setDraftIdPendingClose(null);
-    }, []);
+    }, [setDraftIdPendingClose]);
     const completeSaleDraft = useCallback((draftId: string) => {
         setDraftTabs((currentTabs) => {
             const completedDraftIndex = currentTabs.drafts.findIndex(
@@ -767,7 +745,7 @@ export default function NuevaVentaPage() {
             };
         });
         setDraftIdPendingClose(null);
-    }, []);
+    }, [setDraftIdPendingClose]);
     const handleCloseDraftTab = useCallback((draftId: string) => {
         const draftToClose = draftTabs.drafts.find((draft) => draft.id === draftId);
         if (!draftToClose) {
@@ -780,7 +758,7 @@ export default function NuevaVentaPage() {
         }
 
         closeDraftTab(draftId);
-    }, [closeDraftTab, draftTabs.drafts]);
+    }, [closeDraftTab, draftTabs.drafts, setDraftIdPendingClose]);
     const draftPendingClose = draftTabs.drafts.find((draft) => draft.id === draftIdPendingClose);
     const pendingCloseItemCount =
         draftPendingClose?.cart.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
@@ -866,20 +844,25 @@ export default function NuevaVentaPage() {
                 posDataSource.getSellers(),
             ]);
 
-            if (productsResult.status === "rejected") {
-                console.error("Error loading products for POS:", productsResult.reason);
-                throw productsResult.reason;
-            }
-
-            if (sellersResult.status === "rejected") {
-                console.error("Error loading sellers for POS:", sellersResult.reason);
-                throw sellersResult.reason;
+            if (productsResult.status === "rejected" || sellersResult.status === "rejected") {
+                const reason = productsResult.status === "rejected" 
+                    ? (productsResult as PromiseRejectedResult).reason 
+                    : (sellersResult as PromiseRejectedResult).reason;
+                console.error("Error loading POS initial data:", reason);
+                if (!cancelled) {
+                    setProductsError("No se pudieron cargar los datos.");
+                    toast.error("Error al conectar con la base de datos");
+                    setIsLoadingProducts(false);
+                }
+                return () => {
+                    cancelled = true;
+                };
             }
 
             const products = productsResult.value;
             const sellersData = sellersResult.value;
 
-            if (cancelled) return;
+            if (cancelled) return () => {};
 
             setAllProducts(products);
             setSellers(sellersData);
@@ -894,12 +877,14 @@ export default function NuevaVentaPage() {
 
                 return "";
             });
+            if (!cancelled) {
+                setIsLoadingProducts(false);
+            }
         } catch (error) {
-            if (cancelled) return;
+            if (cancelled) return () => {};
             console.error("Error loading initial data:", error);
             setProductsError("No se pudieron cargar los datos.");
             toast.error("Error al conectar con la base de datos");
-        } finally {
             if (!cancelled) {
                 setIsLoadingProducts(false);
             }
@@ -912,11 +897,14 @@ export default function NuevaVentaPage() {
 
     useEffect(() => {
         let cleanup: (() => void) | undefined;
-        void loadCatalog({ reason: "initial-mount" }).then((nextCleanup) => {
-            cleanup = nextCleanup;
-        });
+        const timeoutId = setTimeout(() => {
+            void loadCatalog({ reason: "initial-mount" }).then((nextCleanup) => {
+                cleanup = nextCleanup;
+            });
+        }, 0);
 
         return () => {
+            clearTimeout(timeoutId);
             cleanup?.();
         };
     }, [loadCatalog]);
@@ -964,7 +952,7 @@ export default function NuevaVentaPage() {
     useEffect(() => {
         const handleGlobalScannerInput = (event: KeyboardEvent) => {
             if (event.ctrlKey || event.metaKey || event.altKey) return;
-            if (checkoutOpen || exchangeDialogOpen || sellerSelectOpen) return;
+            if (checkoutOpen || exchangeDialogOpen) return;
 
             const searchInput = searchInputRef.current;
             if (!searchInput) return;
@@ -991,7 +979,7 @@ export default function NuevaVentaPage() {
         return () => {
             window.removeEventListener("keydown", handleGlobalScannerInput, true);
         };
-    }, [checkoutOpen, exchangeDialogOpen, sellerSelectOpen, setSearchQuery]);
+    }, [checkoutOpen, exchangeDialogOpen, setSearchQuery]);
 
     useEffect(() => {
         const handlePointerDown = (event: PointerEvent) => {
@@ -1026,15 +1014,10 @@ export default function NuevaVentaPage() {
                     return;
                 }
 
-                if (sellerSelectOpen) {
-                    event.preventDefault();
-                    setSellerSelectOpen(false);
-                }
-
                 return;
             }
 
-            if (checkoutOpen || exchangeDialogOpen || sellerSelectOpen) return;
+            if (checkoutOpen || exchangeDialogOpen) return;
             if (isEditableTarget(event.target)) return;
 
             if (event.key === "j") {
@@ -1056,10 +1039,51 @@ export default function NuevaVentaPage() {
 
             if (event.key === "l") {
                 event.preventDefault();
-                setSellerSelectOpen(true);
-                setTimeout(() => {
-                    sellerSelectTriggerRef.current?.focus();
-                }, 0);
+                if (sellers.length > 0) {
+                    setSelectedSellerId((currentId) => {
+                        const currentIndex = sellers.findIndex((s) => s.id === currentId);
+                        const nextIndex = (currentIndex + 1) % sellers.length;
+                        return sellers[nextIndex]!.id;
+                    });
+                }
+                return;
+            }
+
+            if (event.key === "Tab") {
+                event.preventDefault();
+                setDraftTabs((currentTabs) => {
+                    const { drafts, activeDraftId } = currentTabs;
+                    if (drafts.length <= 1) return currentTabs;
+
+                    const currentIndex = drafts.findIndex((draft) => draft.id === activeDraftId);
+                    if (currentIndex === -1) return currentTabs;
+
+                    let nextIndex = currentIndex;
+                    if (event.shiftKey) {
+                        // Shift + Tab: Anterior pestaña (ir a la izquierda)
+                        nextIndex = (currentIndex - 1 + drafts.length) % drafts.length;
+                    } else {
+                        // Tab: Siguiente pestaña (ir a la derecha)
+                        nextIndex = (currentIndex + 1) % drafts.length;
+                    }
+
+                    return {
+                        ...currentTabs,
+                        activeDraftId: drafts[nextIndex]!.id,
+                    };
+                });
+                return;
+            }
+
+            if (event.key === " ") {
+                event.preventDefault();
+                if (!selectedSellerId) {
+                    if (sellers.length > 0) {
+                        setSelectedSellerId(sellers[0].id);
+                    }
+                } else if (cart.length > 0 || appliedExchange) {
+                    setCheckoutOpen(true);
+                }
                 return;
             }
 
@@ -1078,13 +1102,19 @@ export default function NuevaVentaPage() {
         setExchangeSearchQuery,
         setPriceMode,
         setSelectedExchangeSale,
-        setSellerSelectOpen,
-        sellerSelectOpen,
+        setDraftTabs,
+        selectedSellerId,
+        setSelectedSellerId,
+        sellers,
+        cart,
+        appliedExchange,
     ]);
+
 
     useEffect(() => {
         if (!exchangeDialogOpen) return;
-        setTimeout(() => exchangeSearchInputRef.current?.focus(), 0);
+        const timeoutId = setTimeout(() => exchangeSearchInputRef.current?.focus(), 0);
+        return () => clearTimeout(timeoutId);
     }, [exchangeDialogOpen]);
 
     const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -1128,11 +1158,10 @@ export default function NuevaVentaPage() {
             }
         }
     };
-    const filteredProducts = useMemo(() => {
-        if (!searchQuery.trim()) return allProducts;
-        return allProducts.filter((product) => productMatchesSearch(product, searchQuery));
-    }, [searchQuery, allProducts]);
-    const searchSuggestions = useMemo(() => {
+    const filteredProducts = !searchQuery.trim()
+        ? allProducts
+        : allProducts.filter((product) => productMatchesSearch(product, searchQuery));
+    const searchSuggestions = (() => {
         const q = normalizeProductCodeSearchValue(searchQuery);
         if (!q) return [];
 
@@ -1164,7 +1193,7 @@ export default function NuevaVentaPage() {
             })
             .slice(0, 5)
             .map(({ product }) => product);
-    }, [filteredProducts, searchQuery]);
+    })();
 
     const getReservedQuantityInOtherDrafts = (variantId: string) =>
         draftTabs.drafts.reduce((sum, draft) => {
@@ -1218,18 +1247,16 @@ export default function NuevaVentaPage() {
                 id: `add-to-cart-${product.id}`,
             });
 
-            if (!manualGiftGroupingActive) {
-                const existingCartItem = prev.find(
-                    (item) => item.product.id === product.id && !item.giftGroupLabel
-                );
+            const existingCartItem = prev.find(
+                (item) => item.product.id === product.id && !item.giftGroupLabel
+            );
 
-                if (existingCartItem) {
-                    return prev.map((item) =>
-                        item.lineId === existingCartItem.lineId
-                            ? { ...item, quantity: item.quantity + 1 }
-                            : item
-                    );
-                }
+            if (existingCartItem) {
+                return prev.map((item) =>
+                    item.lineId === existingCartItem.lineId
+                        ? { ...item, quantity: item.quantity + 1 }
+                        : item
+                );
             }
 
             return [...prev, createCartItem(product)];
@@ -1323,14 +1350,59 @@ export default function NuevaVentaPage() {
     };
 
     const toggleManualGiftSelection = (lineId: string) => {
-        setManualGiftSelectedLineIds((current) =>
-            current.includes(lineId)
-                ? current.filter((selectedLineId) => selectedLineId !== lineId)
-                : [...current, lineId]
-        );
+        const item = cart.find((i) => i.lineId === lineId);
+        if (!item) return;
+
+        const isSelected = manualGiftSelectedLineIds.includes(lineId);
+        if (isSelected) {
+            setManualGiftSelectedLineIds((current) =>
+                current.filter((selectedLineId) => selectedLineId !== lineId)
+            );
+            
+            setCart((prev) => {
+                const currentItem = prev.find((i) => i.lineId === lineId);
+                if (!currentItem) return prev;
+
+                const otherItem = prev.find((i) => 
+                    i.lineId !== lineId && 
+                    i.product.id === currentItem.product.id && 
+                    !i.giftGroupLabel && 
+                    !manualGiftSelectedLineIds.includes(i.lineId)
+                );
+
+                if (otherItem) {
+                    return prev.map((i) => {
+                        if (i.lineId === otherItem.lineId) {
+                            return { ...i, quantity: i.quantity + currentItem.quantity };
+                        }
+                        return i;
+                    }).filter((i) => i.lineId !== lineId);
+                }
+
+                return prev;
+            });
+            return;
+        }
+
+        if (item.quantity > 1) {
+            const newItem = createCartItem(item.product, 1, false);
+            
+            setCart((prev) =>
+                prev.map((i) =>
+                    i.lineId === lineId
+                        ? { ...i, quantity: i.quantity - 1 }
+                        : i
+                ).concat(newItem)
+            );
+            
+            setManualGiftSelectedLineIds((current) => [...current, newItem.lineId]);
+            toast.success(`Se separó 1 unidad de ${item.product.name} para regalo`);
+        } else {
+            setManualGiftSelectedLineIds((current) => [...current, lineId]);
+        }
     };
 
-    const handleCreateGiftGroup = () => {
+    const handleCreateGiftGroup = useCallback(() => {
         const selectedLineIds = manualGiftSelectedLineIds.filter((lineId) =>
             cart.some((item) => item.lineId === lineId && !item.giftGroupLabel)
         );
@@ -1355,19 +1427,88 @@ export default function NuevaVentaPage() {
                 ? `Productos agregados a ${giftGroupLabel}`
                 : `${giftGroupLabel} creado`
         );
-    };
+    }, [
+        manualGiftSelectedLineIds,
+        cart,
+        manualGiftTargetGroupLabel,
+        nextGiftGroupNumber,
+        setCart,
+        setManualGiftSelectedLineIds,
+        setManualGiftTargetGroupLabel,
+    ]);
+
+    // Atajo Shift para convertir los artículos seleccionados en regalo
+    useEffect(() => {
+        const handleShiftGiftShortcut = (event: KeyboardEvent) => {
+            if (event.key === "Shift") {
+                if (checkoutOpen || exchangeDialogOpen) return;
+                if (isEditableTarget(event.target)) return;
+                if (manualGiftSelectedLineIds.length === 0) return;
+
+                event.preventDefault();
+                handleCreateGiftGroup();
+            }
+        };
+
+        window.addEventListener("keydown", handleShiftGiftShortcut, true);
+        return () => {
+            window.removeEventListener("keydown", handleShiftGiftShortcut, true);
+        };
+    }, [checkoutOpen, exchangeDialogOpen, manualGiftSelectedLineIds, handleCreateGiftGroup]);
 
     const handleAddToGiftGroup = (giftGroupLabel: string) => {
-        if (manualGiftTargetGroupLabel === giftGroupLabel) {
-            setManualGiftTargetGroupLabel(null);
-            setManualGiftSelectedLineIds([]);
+        const selectedLineIds = manualGiftSelectedLineIds.filter((lineId) =>
+            cart.some((item) => item.lineId === lineId && !item.giftGroupLabel)
+        );
+
+        if (selectedLineIds.length === 0) {
+            toast.info("Seleccioná productos en el carrito primero y luego hacé clic aquí para agregarlos a este regalo");
             return;
         }
 
-        setManualGiftGroupingActive(true);
-        setManualGiftTargetGroupLabel(giftGroupLabel);
+        setCart((prev) =>
+            prev.map((item) =>
+                selectedLineIds.includes(item.lineId)
+                    ? { ...item, isGift: true, giftGroupLabel }
+                    : item
+            )
+        );
         setManualGiftSelectedLineIds([]);
-        toast.info(`Seleccioná productos para agregar a ${giftGroupLabel}`);
+        toast.success(`Productos agregados a ${giftGroupLabel}`);
+    };
+
+    const handleInstantGift = (lineId: string, groupLabel?: string) => {
+        const item = cart.find((i) => i.lineId === lineId);
+        if (!item) return;
+
+        const finalGroupLabel = groupLabel ?? `Regalo ${nextGiftGroupNumber}`;
+
+        if (item.quantity > 1) {
+            const newItem = createCartItem(item.product, 1, false);
+            newItem.isGift = true;
+            newItem.giftGroupLabel = finalGroupLabel;
+
+            setCart((prev) =>
+                prev.map((i) =>
+                    i.lineId === lineId
+                        ? { ...i, quantity: i.quantity - 1 }
+                        : i
+                ).concat(newItem)
+            );
+            
+            setManualGiftSelectedLineIds((current) => current.filter((id) => id !== lineId));
+            toast.success(`Se separó 1 unidad de ${item.product.name} en ${finalGroupLabel}`);
+        } else {
+            setCart((prev) =>
+                prev.map((i) =>
+                    i.lineId === lineId
+                        ? { ...i, isGift: true, giftGroupLabel: finalGroupLabel }
+                        : i
+                )
+            );
+            setManualGiftSelectedLineIds((current) => current.filter((id) => id !== lineId));
+            toast.success(`${item.product.name} agregado a ${finalGroupLabel}`);
+        }
     };
 
     const removeFromGiftGroup = (lineId: string) => {
@@ -1383,38 +1524,9 @@ export default function NuevaVentaPage() {
         );
     };
 
-    const handleToggleGiftGrouping = () => {
-        if (manualGiftGroupingActive) {
-            setCart(mergeUngroupedCartItems);
-            setManualGiftGroupingActive(false);
-            setManualGiftSelectedLineIds([]);
-            setManualGiftTargetGroupLabel(null);
-            return;
-        }
-
-        setCart((prev) =>
-            prev.flatMap((item) => {
-                if (item.giftGroupLabel || item.quantity <= 1) {
-                    return [item];
-                }
-
-                return Array.from({ length: item.quantity }, (_, index) =>
-                    index === 0
-                        ? { ...item, quantity: 1 }
-                        : createCartItem(item.product, 1, false)
-                );
-            })
-        );
-        setManualGiftGroupingActive(true);
-        setManualGiftSelectedLineIds([]);
-        setManualGiftTargetGroupLabel(null);
-        toast.info("Seleccioná los productos del carrito para crear grupos de regalo");
-    };
-
     const clearCart = () => {
         setCart([]);
         setAppliedExchange(null);
-        setManualGiftGroupingActive(false);
         setManualGiftSelectedLineIds([]);
         setManualGiftTargetGroupLabel(null);
         setNextGiftGroupNumber(1);
@@ -1622,52 +1734,48 @@ export default function NuevaVentaPage() {
         }
     };
 
-    const loadExchangeSales = useCallback(async () => {
-        const requestId = exchangeSalesRequestIdRef.current + 1;
-        exchangeSalesRequestIdRef.current = requestId;
-        const shouldShowLoading = !hasLoadedExchangeSalesOnce;
+    useEffect(() => {
+        loadExchangeSalesRef.current = async () => {
+            const requestId = exchangeSalesRequestIdRef.current + 1;
+            exchangeSalesRequestIdRef.current = requestId;
+            const shouldShowLoading = !hasLoadedExchangeSalesOnceRef.current;
 
-        if (shouldShowLoading) {
-            setIsLoadingExchangeSales(true);
-        }
-
-        try {
-            const sales = await posDataSource.getSalesHistory({
-                query: exchangeSearchQuery,
-                limit: 5,
-            });
-
-            if (exchangeSalesRequestIdRef.current !== requestId) {
-                return;
+            if (shouldShowLoading) {
+                setIsLoadingExchangeSales(true);
             }
 
-            setExchangeSales(sales);
-            setHasLoadedExchangeSalesOnce(true);
-        } catch (error) {
-            if (exchangeSalesRequestIdRef.current !== requestId) {
-                return;
-            }
+            try {
+                const sales = await posDataSource.getSalesHistory({
+                    query: exchangeSearchQueryRef.current,
+                    limit: 5,
+                });
 
-            toast.error("No se pudieron cargar las boletas");
-            console.error(error);
-        } finally {
-            if (exchangeSalesRequestIdRef.current === requestId && shouldShowLoading) {
-                setIsLoadingExchangeSales(false);
+                if (exchangeSalesRequestIdRef.current !== requestId) {
+                    return;
+                }
+
+                setExchangeSales(sales);
+                hasLoadedExchangeSalesOnceRef.current = true;
+                if (shouldShowLoading) {
+                    setIsLoadingExchangeSales(false);
+                }
+            } catch (error) {
+                if (exchangeSalesRequestIdRef.current !== requestId) {
+                    return;
+                }
+
+                toast.error("No se pudieron cargar las boletas");
+                console.error(error);
+                if (shouldShowLoading) {
+                    setIsLoadingExchangeSales(false);
+                }
             }
-        }
-    }, [exchangeSearchQuery, hasLoadedExchangeSalesOnce, posDataSource]);
+        };
+    }, [posDataSource]);
 
     const refreshCatalogData = useCallback(async () => {
         await loadCatalog({ background: true, reason: "data-sync-catalog" });
     }, [loadCatalog]);
-
-    const refreshExchangeSales = useCallback(async () => {
-        if (!exchangeDialogOpen) {
-            return;
-        }
-
-        await loadExchangeSales();
-    }, [exchangeDialogOpen, loadExchangeSales]);
 
     useDataRefresh(
         [
@@ -1685,13 +1793,60 @@ export default function NuevaVentaPage() {
 
     useDataRefresh(
         [CACHE_TAGS.sales, CACHE_TAGS.cash],
-        refreshExchangeSales,
+        async () => {
+            if (!exchangeDialogOpen) {
+                return;
+            }
+
+            await loadExchangeSalesRef.current();
+        },
         {
             debugLabel: "nueva-venta-exchange",
             pollIntervalMs: false,
             refreshOnFocus: false,
         }
     );
+
+    const handleExchangeSearchKeyDown = useCallback(async (event: React.KeyboardEvent<HTMLInputElement>) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            const scannedValue = event.currentTarget.value.trim();
+            if (!scannedValue) return;
+
+            setIsLoadingExchangeSales(true);
+            try {
+                const sales = await posDataSource.getSalesHistory({
+                    query: scannedValue,
+                    limit: 5,
+                });
+
+                setExchangeSales(sales);
+                hasLoadedExchangeSalesOnceRef.current = true;
+
+                if (sales.length > 0) {
+                    const cleanQuery = scannedValue.replace(/\D/g, "");
+                    const exactMatch = sales.find(sale => {
+                        const ticketNumberStr = sale.ticketNumber.toString().replace(/\D/g, "");
+                        const barcode = barcodeFromTicketNumber(sale.ticketNumber);
+                        return ticketNumberStr === cleanQuery || barcode === cleanQuery;
+                    });
+
+                    const saleToSelect = exactMatch || sales[0];
+                    setSelectedExchangeSale(saleToSelect);
+                    setExchangeQuantities({});
+                } else {
+                    toast.error("Boleta no encontrada", {
+                        description: `No se encontró la boleta #${scannedValue}`,
+                    });
+                }
+            } catch (error) {
+                toast.error("No se pudieron cargar las boletas");
+                console.error(error);
+            } finally {
+                setIsLoadingExchangeSales(false);
+            }
+        }
+    }, [posDataSource, setSelectedExchangeSale, setExchangeQuantities, setExchangeSales, setIsLoadingExchangeSales]);
 
     const handleOpenExchangeDialog = async () => {
         setExchangeSearchQuery("");
@@ -1704,15 +1859,61 @@ export default function NuevaVentaPage() {
         if (!exchangeDialogOpen) return;
 
         const timeoutId = window.setTimeout(() => {
-            void loadExchangeSales();
+            void loadExchangeSalesRef.current();
         }, 250);
 
         return () => {
             window.clearTimeout(timeoutId);
         };
-    }, [exchangeDialogOpen, exchangeSearchQuery, loadExchangeSales]);
+    }, [exchangeDialogOpen, exchangeSearchQuery]);
 
-    const selectedExchangeItems = useMemo(() => {
+    // Redireccionar escaneos al buscador de cambios si el modal de cambios está abierto y el input no tiene foco
+    useEffect(() => {
+        const handleExchangeScannerInput = (event: KeyboardEvent) => {
+            if (!exchangeDialogOpen) return;
+            if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+            const searchInput = exchangeSearchInputRef.current;
+            if (!searchInput) return;
+            if (document.activeElement === searchInput) return;
+            if (isEditableTarget(event.target)) return;
+
+            if (["Enter", "Escape"].includes(event.key)) {
+                return;
+            }
+
+            if (event.key.length !== 1) return;
+
+            searchInput.focus();
+            setExchangeSearchQuery((current) => `${current}${event.key}`);
+            event.preventDefault();
+        };
+
+        window.addEventListener("keydown", handleExchangeScannerInput, true);
+        return () => {
+            window.removeEventListener("keydown", handleExchangeScannerInput, true);
+        };
+    }, [exchangeDialogOpen, setExchangeSearchQuery]);
+
+    // Autoselección si hay un único resultado exacto (ej. al terminar la consulta asíncrona de un escaneo sin Enter)
+    useEffect(() => {
+        if (!exchangeDialogOpen || selectedExchangeSale) return;
+        if (exchangeSales.length !== 1) return;
+
+        const cleanQuery = exchangeSearchQuery.trim().replace(/\D/g, "");
+        if (cleanQuery.length >= 4) {
+            const singleSale = exchangeSales[0];
+            const ticketNumberStr = singleSale.ticketNumber.toString().replace(/\D/g, "");
+            const barcode = barcodeFromTicketNumber(singleSale.ticketNumber);
+
+            if (ticketNumberStr === cleanQuery || barcode === cleanQuery) {
+                setSelectedExchangeSale(singleSale);
+                setExchangeQuantities({});
+            }
+        }
+    }, [exchangeSales, exchangeSearchQuery, exchangeDialogOpen, selectedExchangeSale, setSelectedExchangeSale, setExchangeQuantities]);
+
+    const selectedExchangeItems = (() => {
         if (!selectedExchangeSale) return [];
 
         return selectedExchangeSale.items
@@ -1727,7 +1928,7 @@ export default function NuevaVentaPage() {
                 };
             })
             .filter((item) => item.selectedQuantity > 0);
-    }, [exchangeQuantities, selectedExchangeSale]);
+    })();
 
     const selectedExchangeCredit = selectedExchangeItems.reduce(
         (sum, item) => sum + item.selectedQuantity * item.priceAtTime,
@@ -1848,10 +2049,10 @@ export default function NuevaVentaPage() {
                     : "Producto creado con éxito"
             );
             setTimeout(() => searchInputRef.current?.focus(), 10);
+            setIsQuickCreating(false);
         } catch (error) {
             console.error("Quick create product failed:", error);
             toast.error("No se pudo crear el producto");
-        } finally {
             setIsQuickCreating(false);
         }
     };
@@ -1901,15 +2102,22 @@ export default function NuevaVentaPage() {
                                             className={cn(
                                                 "group relative flex min-w-[140px] max-w-[200px] items-center gap-1.5 rounded-xl px-3 py-1.5 transition-all text-sm",
                                                 isActive
-                                                    ? "bg-background text-foreground shadow-sm ring-1 ring-border/50 dark:ring-white/10"
+                                                    ? "text-foreground"
                                                     : "text-muted-foreground hover:bg-muted/60 hover:text-foreground dark:hover:bg-slate-900/50"
                                             )}
                                         >
+                                            {isActive && (
+                                                <motion.div
+                                                    layoutId="activeDraftTabPill"
+                                                    className="absolute inset-0 rounded-xl bg-background border border-stone-200/50 shadow-sm dark:border-white/10"
+                                                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                                                />
+                                            )}
                                             <button
                                                 type="button"
                                                 role="tab"
                                                 aria-selected={isActive}
-                                                className="min-w-0 flex-1 text-left outline-none"
+                                                className="relative z-10 min-w-0 flex-1 text-left outline-none"
                                                 onClick={() => handleSwitchDraftTab(draft.id)}
                                             >
                                                 <span className="block truncate font-medium">
@@ -1932,7 +2140,7 @@ export default function NuevaVentaPage() {
                                                     variant="ghost"
                                                     size="icon"
                                                     className={cn(
-                                                        "h-6 w-6 shrink-0 rounded-md transition-all",
+                                                        "relative z-10 h-6 w-6 shrink-0 rounded-md transition-all",
                                                         isActive
                                                             ? "opacity-60 hover:bg-destructive/10 hover:text-destructive hover:opacity-100 dark:hover:bg-destructive/20"
                                                             : "opacity-0 group-hover:opacity-60 hover:!bg-destructive/10 hover:!text-destructive group-hover:hover:opacity-100"
@@ -1972,9 +2180,16 @@ export default function NuevaVentaPage() {
                         <div className="min-w-0">
                             <Card className="overflow-visible rounded-[1.75rem] border-border/70 bg-card/90 shadow-[0_20px_56px_-36px_rgba(0,0,0,0.35)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(30,41,59,0.94),rgba(15,23,42,0.96))] dark:shadow-[0_28px_70px_-40px_rgba(0,0,0,0.78)]">
                                 <CardContent className="flex min-w-0 flex-col p-5 sm:p-6">
+                                    <div className="mb-4 flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <Tag className="size-5 text-muted-foreground" />
+                                            <h2 className="text-lg font-semibold">Búsqueda de productos</h2>
+                                        </div>
+                                    </div>
+
                                     <div className="relative z-30 mb-5 flex flex-col gap-3 xl:flex-row">
-                                        <div ref={searchBoxRef} className="relative min-w-0 flex-1">
-                                            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4.5 -translate-y-1/2 text-muted-foreground" />
+                                        <div ref={searchBoxRef} className="relative min-w-0 flex-1 group">
+                                            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4.5 -translate-y-1/2 text-muted-foreground/60 transition-colors duration-200 group-focus-within:text-rose-500 dark:group-focus-within:text-rose-400" />
                                             <Input
                                                 ref={searchInputRef}
                                                 type="text"
@@ -1984,7 +2199,7 @@ export default function NuevaVentaPage() {
                                                 onFocus={() => setIsSearchFocused(true)}
                                                 onBlur={() => setIsSearchFocused(false)}
                                                 onKeyDown={handleSearchKeyDown}
-                                                className="h-12 rounded-2xl border-border/70 bg-background/85 pl-11 text-base"
+                                                className="h-12 rounded-2xl border-border/70 bg-background/85 pl-11 text-base transition-all duration-200 focus:shadow-[0_8px_30px_rgba(244,63,94,0.04)]"
                                                 autoFocus
                                             />
                                             {isSearchFocused && searchSuggestions.length > 0 && (
@@ -2033,6 +2248,14 @@ export default function NuevaVentaPage() {
                                                 <RotateCcw className="size-4" />
                                                 Cambio
                                             </Button>
+                                            <Button
+                                                variant="outline"
+                                                className="h-12 rounded-2xl border-border/70 bg-background/85 px-4"
+                                                onClick={() => toast.info("Módulo de Reservas próximamente")}
+                                            >
+                                                <CalendarDays className="size-4" />
+                                                Reservas
+                                            </Button>
                                             {searchQuery.trim() && filteredProducts.length === 0 && (
                                                 <Button
                                                     className="h-12 rounded-2xl bg-[linear-gradient(135deg,#1f2937_0%,#334155_100%)] px-4 text-white shadow-[0_18px_30px_-24px_rgba(15,23,42,0.72)] hover:opacity-95 dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.98),rgba(30,41,59,0.98))] dark:text-slate-50 dark:shadow-[0_20px_34px_-24px_rgba(0,0,0,0.85)]"
@@ -2077,52 +2300,49 @@ export default function NuevaVentaPage() {
                                                 </p>
                                             </div>
                                         ) : (
-                                            <div className={cn("space-y-3 pr-2", manualGiftGroupingActive && "pb-20")}>
+                                            <div className="space-y-3 pr-2">
                                                 <div className="grid grid-cols-1 gap-3 transition-[gap,padding] duration-200 ease-out md:grid-cols-2 xl:grid-cols-3">
                                                     {appliedExchange?.items.map((item) => (
-                                                        <div
-                                                            key={item.saleItemId}
-                                                            className="animate-pos-cart-card-in flex h-[130px] flex-col justify-between rounded-[22px] border border-rose-500/10 bg-white/90 p-4 text-rose-900 shadow-[0_18px_45px_-38px_rgba(0,0,0,0.55)] backdrop-blur dark:border-rose-300/15 dark:bg-white/8 dark:text-rose-100"
-                                                        >
-                                                            <div className="flex items-start justify-between gap-3">
-                                                                <div className="min-w-0 flex-1">
-                                                                    <p className="truncate text-sm font-semibold">
-                                                                        {item.label}
-                                                                    </p>
-                                                                    <p className="mt-1 text-xs text-rose-600 dark:text-rose-300">
-                                                                        Crédito por cambio
-                                                                    </p>
-                                                                </div>
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="icon-sm"
-                                                                    className="shrink-0 rounded-xl text-rose-600 hover:bg-rose-200/60 hover:text-rose-800 dark:text-rose-300 dark:hover:bg-rose-400/15 dark:hover:text-rose-100"
-                                                                    onClick={() => handleRemoveExchangeItem(item.saleItemId)}
-                                                                    title="Quitar del cambio"
-                                                                >
-                                                                    <Trash2 className="size-3.5" />
-                                                                </Button>
-                                                            </div>
+                                                         <div
+                                                             key={item.saleItemId}
+                                                             className="animate-pos-cart-card-in group relative flex h-[112px] flex-col justify-between overflow-hidden rounded-[22px] border border-black/5 bg-neutral-50/50 p-4 shadow-sm backdrop-blur dark:border-white/5 dark:bg-slate-900/10"
+                                                         >
+                                                             <RotateCcw className="absolute left-4 top-4.5 size-3.5 text-muted-foreground/60" />
+                                                             <div className="flex items-start justify-between gap-3">
+                                                                 <div className="min-w-0 flex-1 pl-5">
+                                                                     <p className="truncate text-sm font-semibold text-foreground">
+                                                                         {item.label}
+                                                                     </p>
+                                                                     <p className="mt-0.5 text-xs font-medium text-muted-foreground">
+                                                                         Crédito por cambio
+                                                                     </p>
+                                                                 </div>
+                                                                 <Button
+                                                                     variant="ghost"
+                                                                     size="icon-sm"
+                                                                     className="shrink-0 rounded-xl text-muted-foreground hover:bg-neutral-100 hover:text-foreground dark:hover:bg-neutral-800"
+                                                                     onClick={() => handleRemoveExchangeItem(item.saleItemId)}
+                                                                     title="Quitar del cambio"
+                                                                 >
+                                                                     <Trash2 className="size-3.5" />
+                                                                 </Button>
+                                                             </div>
 
-                                                            <div className="flex items-center justify-between gap-3">
-                                                                <p className="text-xs text-rose-600/80 dark:text-rose-300/80">
-                                                                    Cambio aplicado
-                                                                </p>
-                                                                <span className="text-sm font-bold text-rose-700 dark:text-rose-200">
-                                                                    -{formatCurrency(item.amount)}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    ))}
+                                                             <div className="flex items-end justify-between gap-3">
+                                                                 <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/75">
+                                                                     Cambio aplicado
+                                                                 </p>
+                                                                 <span className="text-lg font-bold text-foreground">
+                                                                     -{formatCurrency(item.amount)}
+                                                                 </span>
+                                                             </div>
+                                                         </div>
+                                                     ))}
 
-                                                    {giftGroups.map((group) => (
+                                                     {giftGroups.map((group) => (
                                                         <div
                                                             key={group.label}
-                                                            className={cn(
-                                                                "animate-pos-cart-card-in relative overflow-hidden rounded-[22px] border border-amber-200/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,249,235,0.72))] shadow-[0_20px_48px_-38px_rgba(146,64,14,0.34)] backdrop-blur dark:border-amber-300/35 dark:bg-[linear-gradient(180deg,rgba(252,211,77,0.14),rgba(255,255,255,0.08))]",
-                                                                manualGiftTargetGroupLabel === group.label &&
-                                                                "border-amber-400/80 ring-2 ring-amber-400/35 dark:border-amber-300/55 dark:ring-amber-300/30"
-                                                            )}
+                                                            className="animate-pos-cart-card-in relative overflow-hidden rounded-[22px] border border-amber-200/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,249,235,0.72))] shadow-[0_20px_48px_-38px_rgba(146,64,14,0.34)] backdrop-blur dark:border-amber-300/35 dark:bg-[linear-gradient(180deg,rgba(252,211,77,0.14),rgba(255,255,255,0.08))]"
                                                         >
                                                             <span
                                                                 className="absolute inset-x-0 top-0 h-1.5 bg-amber-400 dark:bg-amber-300"
@@ -2138,11 +2358,7 @@ export default function NuevaVentaPage() {
                                                                             <p className="truncate text-sm font-bold text-amber-950 dark:text-amber-50">
                                                                                 {group.label}
                                                                             </p>
-                                                                            {manualGiftTargetGroupLabel === group.label && (
-                                                                                <Badge className="shrink-0 border-amber-300/50 bg-amber-50 px-2 py-0 text-[10px] text-amber-700 hover:bg-amber-50 dark:border-amber-300/25 dark:bg-amber-300/10 dark:text-amber-100">
-                                                                                    Agregando
-                                                                                </Badge>
-                                                                            )}
+                                                                            
                                                                         </div>
                                                                         <p className="mt-0.5 text-xs text-amber-900/55 dark:text-amber-100/65">
                                                                             {group.items.length} {group.items.length === 1 ? "producto" : "productos"}
@@ -2164,20 +2380,14 @@ export default function NuevaVentaPage() {
                                                                             )}
                                                                         </AnimatedValue>
                                                                     </span>
-                                                                    <Button
+                                                                                                                                        <Button
                                                                         type="button"
                                                                         variant="outline"
                                                                         size="icon-sm"
-                                                                        className={cn(
-                                                                            "shrink-0 rounded-full border-black/5 bg-white/85 text-amber-700 shadow-[0_10px_26px_-22px_rgba(0,0,0,0.55)] hover:bg-amber-50 hover:text-amber-800 dark:border-white/10 dark:bg-white/10 dark:text-amber-200 dark:hover:bg-amber-300/10 dark:hover:text-amber-100",
-                                                                            manualGiftTargetGroupLabel === group.label &&
-                                                                            "border-amber-400/40 bg-amber-500 text-white hover:bg-amber-600 hover:text-white dark:bg-amber-300 dark:text-amber-950 dark:hover:bg-amber-200"
-                                                                        )}
+                                                                        className="shrink-0 rounded-full border-black/5 bg-white/85 text-amber-700 shadow-[0_10px_26px_-22px_rgba(0,0,0,0.55)] hover:bg-amber-50 hover:text-amber-800 dark:border-white/10 dark:bg-white/10 dark:text-amber-200 dark:hover:bg-amber-300/10 dark:hover:text-amber-100"
                                                                         onClick={() => handleAddToGiftGroup(group.label)}
                                                                         title={`Agregar productos a ${group.label}`}
-                                                                        aria-label={`Agregar productos a ${group.label}`}
-                                                                        aria-pressed={manualGiftTargetGroupLabel === group.label}
-                                                                    >
+                                                                        aria-label={`Agregar productos a ${group.label}`}>
                                                                         <Plus className="size-3.5" />
                                                                     </Button>
                                                                 </div>
@@ -2245,174 +2455,112 @@ export default function NuevaVentaPage() {
                                                     ))}
 
                                                     {ungroupedCartItems.map((item) => {
-                                                        const isSelectedForGiftGroup = manualGiftSelectedLineIds.includes(item.lineId);
+const isSelectedForGiftGroup = manualGiftSelectedLineIds.includes(item.lineId);
 
-                                                        if (!manualGiftGroupingActive) {
-                                                            return (
-                                                                <div
-                                                                    key={item.lineId}
-                                                                    className="animate-pos-cart-card-in group relative flex h-[112px] flex-col justify-between overflow-hidden rounded-[22px] border border-black/5 bg-white/90 p-4 shadow-[0_18px_45px_-38px_rgba(0,0,0,0.55)] backdrop-blur transition-all hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-white/8 dark:hover:bg-white/10"
-                                                                >
-                                                                    <span
-                                                                        className="absolute left-4 top-4 size-2 rounded-full bg-emerald-500/80 dark:bg-emerald-400/80"
-                                                                        aria-hidden="true"
-                                                                    />
-                                                                    <div className="flex items-start justify-between gap-3">
-                                                                        <div className="min-w-0 flex-1 pl-4">
-                                                                            <p className="truncate text-sm font-semibold">
-                                                                                {item.product.name}
-                                                                            </p>
-                                                                        </div>
-                                                                        <div className="shrink-0 text-right">
-                                                                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                                                                                Subtotal
-                                                                            </p>
-                                                                            <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300">
-                                                                                <AnimatedValue value={`${priceMode}-${item.lineId}-${item.quantity}`}>
-                                                                                    {formatCurrency(getUnitPrice(item.product) * item.quantity)}
-                                                                                </AnimatedValue>
-                                                                            </p>
-                                                                        </div>
-                                                                    </div>
+                                                         return (
+                                                             <div
+                                                                 key={item.lineId}
+                                                                 className={cn(
+                                                                     "animate-pos-cart-card-in group relative flex h-[112px] flex-col justify-between overflow-hidden rounded-[22px] border bg-white/90 p-4 shadow-[0_18px_45px_-38px_rgba(0,0,0,0.55)] backdrop-blur transition-all hover:-translate-y-0.5 hover:bg-white dark:bg-white/8 dark:hover:bg-white/10",
+                                                                     isSelectedForGiftGroup
+                                                                         ? "border-rose-400/80 bg-rose-50/20 shadow-[0_18px_45px_-38px_rgba(124,58,237,0.25)] dark:border-rose-400/30 dark:bg-rose-950/20"
+                                                                         : "border-black/5 dark:border-white/10"
+                                                                 )}
+                                                             >
+                                                                 <button
+                                                                     type="button"
+                                                                     onClick={() => toggleManualGiftSelection(item.lineId)}
+                                                                     className={cn(
+                                                                         "absolute left-3 top-3 z-10 flex size-5 cursor-pointer items-center justify-center rounded-full border transition-all duration-200",
+                                                                         isSelectedForGiftGroup
+                                                                             ? "border-rose-300 bg-rose-600 text-white shadow-sm scale-110"
+                                                                             : "border-black/10 bg-black/5 text-transparent hover:border-rose-400 hover:bg-rose-50 hover:text-rose-600 dark:border-white/15 dark:bg-white/5 dark:hover:bg-rose-400/20"
+                                                                     )}
+                                                                     title={isSelectedForGiftGroup ? "Deseleccionar item" : "Seleccionar item"}
+                                                                 >
+                                                                     <Check className="size-3 stroke-[3]" />
+                                                                 </button>
+                                                                 <div
+                                                                      onClick={() => toggleManualGiftSelection(item.lineId)}
+                                                                      className="flex cursor-pointer select-none items-start justify-between gap-3"
+                                                                  >
+                                                                     <div className="min-w-0 flex-1 pl-6">
+                                                                         <p className="truncate text-sm font-semibold">
+                                                                             {item.product.name}
+                                                                         </p>
+                                                                     </div>
+                                                                     <div className="shrink-0 text-right">
+                                                                         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                                                             Subtotal
+                                                                         </p>
+                                                                         <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300">
+                                                                             <AnimatedValue value={`${priceMode}-${item.lineId}-${item.quantity}`}>
+                                                                                 {formatCurrency(getUnitPrice(item.product) * item.quantity)}
+                                                                             </AnimatedValue>
+                                                                         </p>
+                                                                     </div>
+                                                                 </div>
 
-                                                                    <div className="flex items-center justify-between gap-3">
-                                                                        <div className="flex h-9 items-center gap-1 rounded-full border border-black/5 bg-muted/55 p-1 shadow-inner dark:border-white/10 dark:bg-white/8">
-                                                                            <Button
-                                                                                type="button"
-                                                                                variant="ghost"
-                                                                                size="icon-sm"
-                                                                                className="size-7 rounded-full"
-                                                                                onClick={() => decreaseCartItemQuantity(item.lineId)}
-                                                                                title="Restar cantidad"
-                                                                            >
-                                                                                <Minus className="size-3.5" />
-                                                                            </Button>
-                                                                            <span className="min-w-7 text-center text-sm font-bold text-foreground">
-                                                                                <AnimatedValue value={item.quantity}>
-                                                                                    {item.quantity}
-                                                                                </AnimatedValue>
-                                                                            </span>
-                                                                            <Button
-                                                                                type="button"
-                                                                                variant="ghost"
-                                                                                size="icon-sm"
-                                                                                className="size-7 rounded-full"
-                                                                                onClick={() => increaseCartItemQuantity(item.lineId)}
-                                                                                title="Aumentar cantidad"
-                                                                            >
-                                                                                <Plus className="size-3.5" />
-                                                                            </Button>
-                                                                        </div>
+                                                                 <div className="flex items-center justify-between gap-3">
+                                                                     <div className="flex h-9 items-center gap-1 rounded-full border border-black/5 bg-muted/55 p-1 shadow-inner dark:border-white/10 dark:bg-white/8">
+                                                                         <Button
+                                                                             type="button"
+                                                                             variant="ghost"
+                                                                             size="icon-sm"
+                                                                             className="size-7 rounded-full"
+                                                                             onClick={() => decreaseCartItemQuantity(item.lineId)}
+                                                                             title="Restar cantidad"
+                                                                         >
+                                                                             <Minus className="size-3.5" />
+                                                                         </Button>
+                                                                         <span className="min-w-7 text-center text-sm font-bold text-foreground">
+                                                                             <AnimatedValue value={item.quantity}>
+                                                                                 {item.quantity}
+                                                                             </AnimatedValue>
+                                                                         </span>
+                                                                         <Button
+                                                                             type="button"
+                                                                             variant="ghost"
+                                                                             size="icon-sm"
+                                                                             className="size-7 rounded-full"
+                                                                             onClick={() => increaseCartItemQuantity(item.lineId)}
+                                                                             title="Aumentar cantidad"
+                                                                         >
+                                                                             <Plus className="size-3.5" />
+                                                                         </Button>
+                                                                     </div>
 
-                                                                        <Button
-                                                                            type="button"
-                                                                            variant="ghost"
-                                                                            size="icon-sm"
-                                                                            className="shrink-0 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                                                                            onClick={() => removeFromCart(item.lineId)}
-                                                                            title="Eliminar del carrito"
-                                                                        >
-                                                                            <Trash2 className="size-3.5" />
-                                                                        </Button>
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        }
+                                                                     <div className="flex items-center gap-1 shrink-0">
+                                                                         <Button
+                                                                              type="button"
+                                                                              variant="ghost"
+                                                                              size="icon-sm"
+                                                                              className="shrink-0 rounded-full text-muted-foreground hover:bg-rose-500/10 hover:text-rose-500"
+                                                                              onClick={() => handleInstantGift(item.lineId)}
+                                                                              title="Convertir en regalo"
+                                                                          >
+                                                                              <Gift className="size-3.5" />
+                                                                          </Button>
 
-                                                        return (
-                                                            <button
-                                                                key={item.lineId}
-                                                                type="button"
-                                                                onClick={() => toggleManualGiftSelection(item.lineId)}
-                                                                aria-pressed={isSelectedForGiftGroup}
-                                                                className={cn(
-                                                                    "animate-pos-cart-card-in group relative flex h-[112px] w-full cursor-pointer flex-col justify-between overflow-hidden rounded-[22px] border border-black/5 bg-white/90 p-4 text-left shadow-[0_18px_45px_-38px_rgba(0,0,0,0.55)] backdrop-blur transition-all hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/35 dark:border-white/10 dark:bg-white/8 dark:hover:bg-white/10",
-                                                                    isSelectedForGiftGroup &&
-                                                                    "border-amber-400/45 bg-amber-50/75 ring-2 ring-amber-400/25 dark:border-amber-300/35 dark:bg-amber-300/10 dark:ring-amber-300/20"
-                                                                )}
-                                                            >
-                                                                <span
-                                                                    className="absolute left-4 top-4 size-2 rounded-full bg-amber-400 dark:bg-amber-300"
-                                                                    aria-hidden="true"
-                                                                />
-                                                                <div className="flex w-full items-start justify-between gap-3">
-                                                                    <div className="min-w-0 flex-1 pl-4">
-                                                                        <p className="truncate text-sm font-semibold">
-                                                                            {item.product.name}
-                                                                        </p>
-                                                                    </div>
-                                                                    <div className="shrink-0 text-right">
-                                                                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                                                                            Subtotal
-                                                                        </p>
-                                                                        <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300">
-                                                                            <AnimatedValue value={`${priceMode}-${item.lineId}`}>
-                                                                                {formatCurrency(getUnitPrice(item.product))}
-                                                                            </AnimatedValue>
-                                                                        </p>
-                                                                    </div>
-                                                                </div>
-
-                                                                <div className="flex w-full items-center justify-between gap-3">
-                                                                    <span className="text-xs font-medium text-muted-foreground">
-                                                                        {manualGiftTargetGroupLabel
-                                                                            ? `Agregar a ${manualGiftTargetGroupLabel}`
-                                                                            : "Seleccionar para grupo"}
-                                                                    </span>
-                                                                    <span
-                                                                        className={cn(
-                                                                            "flex size-7 items-center justify-center rounded-full border transition-colors",
-                                                                            isSelectedForGiftGroup
-                                                                                ? "border-amber-300 bg-amber-500 text-white shadow-[0_12px_22px_-14px_rgba(217,119,6,0.9)] dark:border-amber-300/35 dark:bg-amber-400 dark:text-amber-950"
-                                                                                : "border-border/80 bg-background/80 text-transparent dark:border-white/15 dark:bg-slate-950/35"
-                                                                        )}
-                                                                        aria-hidden="true"
-                                                                    >
-                                                                        <Check className="size-4" />
-                                                                    </span>
-                                                                </div>
-                                                            </button>
-                                                        );
-                                                    })}
+                                                                         <Button
+                                                                             type="button"
+                                                                             variant="ghost"
+                                                                             size="icon-sm"
+                                                                             className="shrink-0 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                                                             onClick={() => removeFromCart(item.lineId)}
+                                                                             title="Eliminar del carrito"
+                                                                         >
+                                                                             <Trash2 className="size-3.5" />
+                                                                         </Button>
+                                                                     </div>
+                                                                 </div>
+                                                             </div>
+                                                         );
+})}
                                                 </div>
                                             </div>
                                         )}
-                                        {manualGiftGroupingActive && (
-                                            <div className="sticky bottom-3 z-20 mt-3 flex items-center justify-end gap-2 pr-2">
-                                                {manualGiftTargetGroupLabel && (
-                                                    <Button
-                                                        type="button"
-                                                        variant="outline"
-                                                        size="icon-sm"
-                                                        className="h-12 w-12 rounded-2xl border-amber-300 bg-background/95 text-amber-800 hover:bg-amber-50 dark:border-amber-300/35 dark:text-amber-200 dark:hover:bg-amber-300/10"
-                                                        onClick={() => {
-                                                            setManualGiftTargetGroupLabel(null);
-                                                            setManualGiftSelectedLineIds([]);
-                                                        }}
-                                                        title="Cancelar agregado al regalo"
-                                                        aria-label="Cancelar agregado al regalo"
-                                                    >
-                                                        <X className="size-4" />
-                                                    </Button>
-                                                )}
-                                                <Button
-                                                    type="button"
-                                                    size="lg"
-                                                    className="h-12 rounded-2xl bg-amber-600 px-5 text-white shadow-[0_20px_42px_-18px_rgba(217,119,6,0.78)] hover:bg-amber-700"
-                                                    disabled={manualGiftSelectedLineIds.length === 0}
-                                                    onClick={handleCreateGiftGroup}
-                                                >
-                                                    {manualGiftTargetGroupLabel
-                                                        ? `Agregar a ${manualGiftTargetGroupLabel}`
-                                                        : "Crear grupo"}
-                                                    {manualGiftSelectedLineIds.length > 0 && (
-                                                        <Badge className="ml-1 border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-100">
-                                                            {manualGiftSelectedLineIds.length}
-                                                        </Badge>
-                                                    )}
-                                                </Button>
-                                            </div>
-                                        )}
+                                        
                                         </AnimatedSizeContainer>
                                     </ScrollArea>
                                 </CardContent>
@@ -2428,24 +2576,7 @@ export default function NuevaVentaPage() {
                                             <h2 className="text-lg font-semibold">Orden actual</h2>
                                             
                                         </div>
-                                        <div className="flex items-center gap-1">
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="icon-sm"
-                                                className={cn(
-                                                    "rounded-xl text-amber-700 hover:bg-amber-50 hover:text-amber-800 dark:text-amber-300 dark:hover:bg-amber-400/10 dark:hover:text-amber-200",
-                                                    manualGiftGroupingActive &&
-                                                    "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-300/40 dark:bg-amber-400/10 dark:text-amber-200"
-                                                )}
-                                                disabled={cart.length === 0}
-                                                onClick={handleToggleGiftGrouping}
-                                                aria-label={manualGiftGroupingActive ? "Desactivar regalos" : "Activar regalos"}
-                                                aria-pressed={manualGiftGroupingActive}
-                                                title={manualGiftGroupingActive ? "Desactivar regalos" : "Activar regalos"}
-                                            >
-                                                <Gift className="size-3.5" />
-                                            </Button>
+<div className="flex items-center gap-1">
                                             {cart.length > 0 && (
                                                 <Button
                                                     variant="ghost"
@@ -2474,7 +2605,7 @@ export default function NuevaVentaPage() {
                                                     "absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-[0.85rem] transition-transform",
                                                     priceMode === "retail"
                                                         ? "translate-x-0 bg-[linear-gradient(135deg,#1c1c28_0%,#3f3f50_100%)] shadow-[0_18px_32px_-24px_rgba(0,0,0,0.8)] dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.98),rgba(30,41,59,0.98))]"
-                                                        : "translate-x-full bg-[linear-gradient(135deg,#2563eb_0%,#93c5fd_100%)] shadow-[0_18px_32px_-24px_rgba(37,99,235,0.55)] dark:bg-[linear-gradient(135deg,rgba(37,99,235,0.92),rgba(30,64,175,0.92))]"
+                                                        : "translate-x-full bg-[linear-gradient(135deg,#8b5cf6_0%,#c084fc_100%)] shadow-[0_18px_32px_-24px_rgba(139,92,246,0.55)] dark:bg-[linear-gradient(135deg,rgba(139,92,246,0.92),rgba(109,40,217,0.92))]"
                                                 )}
                                                 aria-hidden="true"
                                             />
@@ -2492,7 +2623,7 @@ export default function NuevaVentaPage() {
                                                 className={cn(
                                                     "relative z-10 flex items-center justify-center rounded-xl transition-colors",
                                                     priceMode === "wholesale"
-                                                        ? "text-white dark:text-sky-50"
+                                                        ? "text-white dark:text-purple-50"
                                                         : "text-muted-foreground dark:text-slate-300"
                                                 )}
                                             >
@@ -2502,34 +2633,114 @@ export default function NuevaVentaPage() {
                                     </div>
 
                                     <div className="mt-2 shrink-0 space-y-3 border-t border-border/70 bg-card/90 pt-3 dark:border-white/10 dark:bg-transparent">
-                                        <div className="space-y-2">
-                                            <Label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                                                <UserCircle className="size-3.5" />
-                                                Vendedor
-                                            </Label>
-                                            <Select
-                                                value={selectedSellerId}
-                                                open={sellerSelectOpen}
-                                                onOpenChange={setSellerSelectOpen}
-                                                onValueChange={setSelectedSellerId}
-                                            >
-                                                <SelectTrigger
-                                                    ref={sellerSelectTriggerRef}
-                                                    className="h-11 rounded-2xl bg-background/85"
-                                                >
-                                                    <SelectValue placeholder="Seleccionar vendedor" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {sellers.map((seller) => (
-                                                        <SelectItem key={seller.id} value={seller.id}>
-                                                            {seller.name}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
+                                        <AnimatedSizeContainer>
+                                            {manualGiftSelectedLineIds.length > 0 && (
+                                                <div className="space-y-2.5 border-t border-border/70 pt-4 animate-pos-cart-card-in">
+                                                    <div className="flex items-center justify-between">
+                                                        <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-rose-700 dark:text-rose-300">
+                                                            <Gift className="size-3.5" />
+                                                            Regalos
+                                                        </Label>
+                                                        
+                                                    </div>
+                                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 min-[1400px]:grid-cols-1">
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            className="h-10 justify-start rounded-xl border-rose-200 bg-background text-rose-700 hover:bg-rose-50/50 hover:text-rose-800 dark:border-rose-500/20 dark:bg-slate-900/40 dark:text-rose-300 dark:hover:bg-rose-950/20"
+                                                            disabled={manualGiftSelectedLineIds.length === 0}
+                                                            onClick={handleCreateGiftGroup}
+                                                        >
+                                                            <Plus className="size-4 text-rose-600 dark:text-rose-400" />
+                                                            Crear regalo
+                                                        </Button>
 
-                                        <div className="space-y-2 rounded-[1.5rem] bg-muted/55 p-4 dark:bg-[linear-gradient(180deg,rgba(51,65,85,0.32),rgba(30,41,59,0.42))]">
+                                                        {giftGroups.length > 0 ? (
+                                                            <DropdownMenu>
+                                                                <DropdownMenuTrigger asChild>
+                                                                    <Button
+                                                                        type="button"
+                                                                        variant="outline"
+                                                                        className="h-10 justify-start rounded-xl border-rose-200 bg-background text-rose-700 hover:bg-rose-50/50 hover:text-rose-800 dark:border-rose-500/20 dark:bg-slate-900/40 dark:text-rose-300 dark:hover:bg-rose-950/20"
+                                                                        disabled={manualGiftSelectedLineIds.length === 0}
+                                                                    >
+                                                                        <Gift className="size-4 text-rose-600 dark:text-rose-400" />
+                                                                        Agregar a regalo
+                                                                    </Button>
+                                                                </DropdownMenuTrigger>
+                                                                <DropdownMenuContent align="end" className="w-56">
+                                                                    {giftGroups.map((group) => (
+                                                                        <DropdownMenuItem
+                                                                            key={group.label}
+                                                                            onClick={() => {
+                                                                                const selectedLineIds = manualGiftSelectedLineIds.filter((lineId) =>
+                                                                                    cart.some((item) => item.lineId === lineId && !item.giftGroupLabel)
+                                                                                );
+                                                                                setCart((prev) =>
+                                                                                    prev.map((item) =>
+                                                                                        selectedLineIds.includes(item.lineId)
+                                                                                            ? { ...item, isGift: true, giftGroupLabel: group.label }
+                                                                                            : item
+                                                                                    )
+                                                                                );
+                                                                                setManualGiftSelectedLineIds([]);
+                                                                                toast.success(`Productos agregados a ${group.label}`);
+                                                                            }}
+                                                                            className="cursor-pointer font-semibold text-amber-950 dark:text-amber-100"
+                                                                        >
+                                                                            <Gift className="mr-2 size-4 text-amber-600 dark:text-amber-400" />
+                                                                            {group.label}
+                                                                        </DropdownMenuItem>
+                                                                    ))}
+                                                                </DropdownMenuContent>
+                                                            </DropdownMenu>
+                                                        ) : (
+                                                            <Button
+                                                                type="button"
+                                                                variant="outline"
+                                                                className="h-10 justify-start rounded-xl border-rose-200 bg-background text-rose-700 hover:bg-rose-50/50 hover:text-rose-800 dark:border-rose-500/20 dark:bg-slate-900/40 dark:text-rose-300 dark:hover:bg-rose-950/20"
+                                                                disabled
+                                                            >
+                                                                <Gift className="size-4" />
+                                                                Agregar a regalo
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </AnimatedSizeContainer>
+
+                                        <div className="space-y-2">
+                                             <div className="flex items-center justify-between">
+                                                 <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                                     <UserCircle className="size-3.5" />
+                                                     Vendedor
+                                                 </Label>
+                                             </div>
+                                             <div className="relative flex w-full rounded-2xl bg-neutral-100/80 p-0.5 dark:bg-slate-900/80 border border-black/5 dark:border-white/5 shadow-inner">
+                                                 {sellers.map((seller) => {
+                                                     const isSelected = selectedSellerId === seller.id;
+                                                     return (
+                                                         <button
+                                                             key={seller.id}
+                                                             type="button"
+                                                             onClick={() => setSelectedSellerId(seller.id)}
+                                                             className={cn(
+                                                                 "flex-1 py-1.5 text-center text-xs font-semibold rounded-[14px] transition-all duration-200 ease-out select-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/20",
+                                                                 isSelected
+                                                                     ? "bg-white text-rose-700 shadow-[0_2px_8px_-1px_rgba(0,0,0,0.08)] scale-[1.02] dark:bg-slate-800 dark:text-rose-300"
+                                                                     : "text-muted-foreground hover:text-foreground hover:bg-white/10 dark:hover:bg-slate-800/10"
+                                                             )}
+                                                             title={seller.name}
+                                                         >
+                                                             {seller.name.split(' ')[0]}
+                                                         </button>
+                                                     );
+                                                 })}
+                                             </div>
+                                         </div>
+
+                                        <div className="mt-2 space-y-3 border-t border-border/70 pt-4">
                                             <div className="flex items-center justify-between text-sm text-muted-foreground">
                                                 <span>Items</span>
                                                 <span className="text-2xl font-bold tracking-tight text-foreground">
@@ -2539,79 +2750,81 @@ export default function NuevaVentaPage() {
                                                 </span>
                                             </div>
                                             <AnimatedSizeContainer>
-                                                {appliedExchange && (
-                                                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 rounded-xl bg-[linear-gradient(135deg,rgba(255,241,242,0.95),rgba(255,228,230,0.82))] px-3 py-2 text-sm text-rose-700 dark:bg-[linear-gradient(135deg,rgba(76,5,25,0.58),rgba(136,19,55,0.28))] dark:text-rose-100">
-                                                        <div className="min-w-0">
-                                                            <span className="font-medium">
-                                                                Crédito por cambio
-                                                            </span>
-                                                            <div className="h-4 overflow-hidden pt-0.5 text-[11px] text-rose-600 dark:text-rose-300">
-                                                                <button
-                                                                    type="button"
-                                                                    className="truncate font-medium underline decoration-rose-400/70 underline-offset-2 hover:text-rose-700 dark:hover:text-rose-200"
-                                                                    onClick={() => setExchangeDialogOpen(true)}
-                                                                >
-                                                                    Boleta #{appliedExchange.ticketNumber.toString().padStart(5, "0")} · {appliedExchange.items.length} producto(s) · Ver detalle
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                        <span className="whitespace-nowrap text-right font-bold text-rose-700 dark:text-rose-100">
-                                                            -<AnimatedValue value={exchangeCredit}>
-                                                                {formatCurrency(exchangeCredit)}
-                                                            </AnimatedValue>
-                                                        </span>
-                                                    </div>
-                                                )}
-                                            </AnimatedSizeContainer>
-                                            <div className="flex items-center justify-between border-t border-border/70 pt-3">
-                                                <div>
-                                                    <p className="text-sm font-medium text-muted-foreground">
-                                                        Total a cobrar
-                                                    </p>
-                                                    <p className="text-xs text-muted-foreground">
-                                                        {priceMode === "wholesale"
-                                                            ? "Usando precio mayorista"
-                                                            : "Usando precio de venta"}
-                                                    </p>
-                                                    <AnimatedSizeContainer>
-                                                        {hasExchangeOverage && (
-                                                            <p className="mt-1 text-xs text-rose-600">
-                                                                El cambio supera la nueva venta.
-                                                            </p>
-                                                        )}
-                                                    </AnimatedSizeContainer>
-                                                </div>
-                                                <span className="text-3xl font-bold tracking-tight">
-                                                    <AnimatedValue
-                                                        value={`${priceMode}-${appliedExchange ? balanceAmount : payableAmount}`}
-                                                    >
-                                                        {formatCurrency(appliedExchange ? balanceAmount : payableAmount)}
-                                                    </AnimatedValue>
-                                                </span>
-                                            </div>
-                                        </div>
+                                                 {appliedExchange && (
+                                                     <div className="flex items-center justify-between text-base">
+                                                         <button
+                                                             type="button"
+                                                             onClick={() => setExchangeDialogOpen(true)}
+                                                             className="flex items-center gap-1.5 hover:underline decoration-black/30 dark:decoration-white/30 underline-offset-2 font-medium text-foreground"
+                                                             title="Ver detalle del cambio"
+                                                         >
+                                                             <span>Cambio</span>
+                                                             <span className="text-xs bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 px-1.5 py-0.5 rounded-md font-semibold">
+                                                                 {appliedExchange.items.length} {appliedExchange.items.length === 1 ? "item" : "items"}
+                                                             </span>
+                                                         </button>
+                                                         <span className="font-bold tabular-nums text-foreground">
+                                                             -{formatCurrency(exchangeCredit)}
+                                                         </span>
+                                                     </div>
+                                                 )}
+                                             </AnimatedSizeContainer>
+                                             <div className="flex items-center justify-between border-t border-border/70 pt-3">
+                                                 <div>
+                                                     <p className={cn("text-sm font-medium", hasExchangeOverage ? "text-foreground" : "text-muted-foreground")}>
+                                                         {hasExchangeOverage ? "A favor cliente" : "Total a cobrar"}
+                                                     </p>
+                                                     <p className="text-xs text-muted-foreground">
+                                                         {priceMode === "wholesale"
+                                                             ? "Usando precio mayorista"
+                                                             : "Usando precio de venta"}
+                                                     </p>
+                                                 </div>
+                                                 <span className={cn("text-3xl font-bold tracking-tight", hasExchangeOverage && "text-foreground")}>
+                                                     <AnimatedValue
+                                                         value={`${priceMode}-${appliedExchange ? balanceAmount : payableAmount}`}
+                                                     >
+                                                         {formatCurrency(appliedExchange ? balanceAmount : payableAmount)}
+                                                     </AnimatedValue>
+                                                 </span>
+                                             </div>
+                                         </div>
 
-                                        <Button
-                                            size="lg"
-                                            className="h-14 w-full rounded-2xl bg-[linear-gradient(135deg,#1c1c28_0%,#3f3f50_100%)] text-base font-semibold text-white shadow-[0_20px_36px_-22px_rgba(0,0,0,0.8)] hover:opacity-95 dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.98),rgba(30,41,59,0.98))] dark:text-slate-50 dark:shadow-[0_24px_40px_-24px_rgba(0,0,0,0.88)]"
-                                            disabled={(cart.length === 0 && !appliedExchange) || !selectedSellerId}
-                                            onClick={() =>
-                                                shouldFinalizeExchangeDirectly
-                                                    ? void handleDirectExchangeCheckout()
-                                                    : setCheckoutOpen(true)
-                                            }
-                                        >
-                                            {shouldFinalizeExchangeDirectly
-                                                ? "Finalizar cambio"
-                                                : (
-                                                    <>
-                                                        Cobrar{" "}
-                                                        <AnimatedValue value={`${priceMode}-${payableAmount}`}>
-                                                            {formatCurrency(payableAmount)}
-                                                        </AnimatedValue>
-                                                    </>
-                                                )}
-                                        </Button>
+                                         <div className="space-y-2">
+                                             <Button
+                                                 size="lg"
+                                                 className="h-14 w-full rounded-2xl bg-[linear-gradient(135deg,#1c1c28_0%,#3f3f50_100%)] text-base font-semibold text-white shadow-[0_20px_36px_-22px_rgba(0,0,0,0.8)] hover:opacity-95 dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.98),rgba(30,41,59,0.98))] dark:text-slate-50 dark:shadow-[0_24px_40px_-24px_rgba(0,0,0,0.88)]"
+                                                 disabled={(cart.length === 0 && !appliedExchange) || !selectedSellerId}
+                                                 onClick={() =>
+                                                     shouldFinalizeExchangeDirectly
+                                                         ? void handleDirectExchangeCheckout()
+                                                         : setCheckoutOpen(true)
+                                                 }
+                                             >
+                                                 {shouldFinalizeExchangeDirectly ? (
+                                                     balanceAmount === 0 ? "Finalizar cambio (Neto $0)" : "Finalizar cambio (A favor)"
+                                                 ) : (
+                                                     <>
+                                                         Cobrar{" "}
+                                                         <AnimatedValue value={`${priceMode}-${payableAmount}`}>
+                                                             {formatCurrency(payableAmount)}
+                                                         </AnimatedValue>
+                                                     </>
+                                                 )}
+                                             </Button>
+
+                                            {!shouldFinalizeExchangeDirectly && (
+                                                <Button
+                                                    variant="outline"
+                                                    className="h-11 w-full rounded-xl border-dashed border-border/80 text-muted-foreground hover:text-foreground transition-all duration-200"
+                                                    disabled={(cart.length === 0 && !appliedExchange) || !selectedSellerId}
+                                                    onClick={() => toast.info("Módulo de Reservas próximamente")}
+                                                >
+                                                    <Bookmark className="size-4 mr-2" />
+                                                    Reservar
+                                                </Button>
+                                            )}
+                                        </div>
                                     </div>
                                 </CardContent>
                             </Card>
@@ -2650,6 +2863,7 @@ export default function NuevaVentaPage() {
                 selectedCredit={selectedExchangeCredit}
                 onConfirm={handleApplyExchange}
                 searchInputRef={exchangeSearchInputRef}
+                onSearchKeyDown={handleExchangeSearchKeyDown}
             />
 
             <Dialog open={quickCreateOpen} onOpenChange={setQuickCreateOpen}>
@@ -2841,6 +3055,7 @@ function ExchangeDialog({
     selectedCredit,
     onConfirm,
     searchInputRef,
+    onSearchKeyDown,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -2855,6 +3070,7 @@ function ExchangeDialog({
     selectedCredit: number;
     onConfirm: () => void;
     searchInputRef: React.RefObject<HTMLInputElement | null>;
+    onSearchKeyDown?: (event: React.KeyboardEvent<HTMLInputElement>) => void;
 }) {
     const [referenceNow] = useState(() => new Date().toISOString());
 
@@ -2868,19 +3084,10 @@ function ExchangeDialog({
         return `Hace ${diffDays} días`;
     };
 
-    const clampExchangeQuantity = (rawValue: string, max: number) => {
-        if (rawValue.trim() === "") return "";
-
-        const parsed = Number.parseInt(rawValue, 10);
-        if (Number.isNaN(parsed)) return "";
-
-        return String(Math.max(0, Math.min(parsed, max)));
-    };
-
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-h-[85vh] overflow-hidden border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.98))] shadow-[0_28px_90px_-40px_rgba(15,23,42,0.45)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.98),rgba(17,24,39,0.98))] dark:shadow-[0_32px_100px_-36px_rgba(0,0,0,0.8)] sm:max-w-4xl">
-                <DialogHeader>
+            <DialogContent className="max-h-[85vh] h-[600px] overflow-hidden border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.98))] shadow-[0_28px_90px_-40px_rgba(15,23,42,0.45)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.98),rgba(17,24,39,0.98))] dark:shadow-[0_32px_100px_-36px_rgba(0,0,0,0.8)] sm:max-w-4xl flex flex-col">
+                <DialogHeader className="shrink-0">
                     <DialogTitle className="flex items-center gap-2 text-xl">
                         <ReceiptText className="size-5" />
                         Aplicar Cambio
@@ -2890,23 +3097,24 @@ function ExchangeDialog({
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-                    <div className="space-y-3">
-                        <div className="rounded-[1.2rem] border border-sky-200/70 bg-[linear-gradient(135deg,rgba(239,246,255,0.95),rgba(224,242,254,0.7))] px-4 py-3 text-sm text-sky-900 dark:border-sky-400/20 dark:bg-[linear-gradient(135deg,rgba(8,47,73,0.92),rgba(14,116,144,0.24))] dark:text-sky-100">
-                            <p className="font-semibold">1. Elegí la boleta</p>
-                            <p className="mt-1 text-xs leading-5 text-sky-800/80 dark:text-sky-100/75">
-                                Podés escanear el número o buscarlo manualmente.
-                            </p>
+                <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)] flex-1 min-h-0 overflow-hidden">
+                    <div className="flex flex-col h-full min-h-0 space-y-3">
+                        <div className="relative shrink-0 group">
+                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60 transition-colors duration-200 group-focus-within:text-rose-500 dark:group-focus-within:text-rose-400" />
+                            <Input
+                                ref={searchInputRef}
+                                placeholder="Buscar número de boleta..."
+                                value={searchQuery}
+                                onChange={(event) => onSearchQueryChange(event.target.value)}
+                                onKeyDown={onSearchKeyDown}
+                                className="pl-9 rounded-xl border-neutral-200 bg-neutral-50/50 hover:bg-neutral-50 focus:bg-background dark:border-neutral-800 dark:bg-neutral-900/40 dark:hover:bg-neutral-900/60 dark:focus:bg-neutral-950 transition-all text-sm shadow-sm focus:shadow-[0_8px_30px_rgba(244,63,94,0.04)]"
+                            />
                         </div>
-                        <Input
-                            ref={searchInputRef}
-                            placeholder="Escanear o buscar N° de boleta..."
-                            value={searchQuery}
-                            onChange={(event) => onSearchQueryChange(event.target.value)}
-                            className="border-border/70 bg-background/90 dark:border-white/10 dark:bg-slate-950/65 dark:text-slate-100 dark:placeholder:text-slate-400"
-                        />
 
-                        <div className="max-h-[52vh] space-y-2 overflow-y-auto rounded-[1.25rem] border border-border/70 bg-background/65 p-2 dark:border-white/10 dark:bg-slate-950/45">
+                        <div 
+                            data-lenis-prevent
+                            className="flex-1 overflow-y-auto space-y-2 rounded-[1.25rem] border border-border/70 bg-background/65 p-2 dark:border-white/10 dark:bg-slate-950/45 min-h-0"
+                        >
                             {isLoading ? (
                                 <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
                                     <Loader2 className="mr-2 size-4 animate-spin" />
@@ -2922,141 +3130,174 @@ function ExchangeDialog({
                                         key={sale.id}
                                         type="button"
                                         className={cn(
-                                            "w-full rounded-xl border px-3 py-2 text-left transition-colors",
+                                            "w-full rounded-xl border p-3 text-left transition-all duration-200 relative overflow-hidden group active:scale-[0.98]",
                                             selectedSale?.id === sale.id
-                                                ? "border-emerald-500/80 bg-[linear-gradient(135deg,rgba(236,253,245,0.96),rgba(209,250,229,0.78))] shadow-[0_14px_26px_-24px_rgba(5,150,105,0.45)] dark:border-emerald-400/45 dark:bg-[linear-gradient(135deg,rgba(6,78,59,0.88),rgba(5,150,105,0.2))] dark:text-emerald-50"
-                                                : "hover:border-muted-foreground/30 hover:bg-muted/40 dark:hover:border-white/15 dark:hover:bg-white/6"
+                                                ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-950 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-50"
+                                                : "border-neutral-200 bg-transparent hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-800/80 dark:hover:border-neutral-700/60 dark:hover:bg-neutral-800/30"
                                         )}
                                         onClick={() => onSelectSale(sale)}
                                     >
-                                        <p className="font-semibold">
+                                        {selectedSale?.id === sale.id && (
+                                            <span className="absolute top-3 right-3 h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)] animate-pulse" />
+                                        )}
+                                        <p className={cn(
+                                            "font-semibold text-sm tracking-tight",
+                                            selectedSale?.id === sale.id ? "text-emerald-900 dark:text-emerald-200" : "text-foreground"
+                                        )}>
                                             Boleta #{sale.ticketNumber.toString().padStart(5, "0")}
                                         </p>
-                                        <p className="text-xs text-muted-foreground">
-                                            {formatArgentinaShortDate(sale.date)}
-                                        </p>
-                                        <p className="text-xs text-muted-foreground">
-                                            {sale.items.length} item(s)
-                                        </p>
+                                        <div className="mt-1.5 flex items-center justify-between text-xs text-muted-foreground/80 dark:text-slate-400">
+                                            <span className="flex items-center gap-1">
+                                                {formatArgentinaShortDate(sale.date)}
+                                            </span>
+                                            <span className="bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded text-[10px] font-medium tracking-tight">
+                                                {sale.items.length} {sale.items.length === 1 ? "ítem" : "ítems"}
+                                            </span>
+                                        </div>
                                     </button>
                                 ))
                             )}
                         </div>
                     </div>
 
-                    <div className="rounded-[1.35rem] border border-border/70 bg-background/65 dark:border-white/10 dark:bg-slate-950/40">
+                    <div className="rounded-[1.35rem] border border-border/70 bg-background/65 dark:border-white/10 dark:bg-slate-950/40 overflow-hidden flex flex-col h-full min-h-0">
                         {!selectedSale ? (
-                            <div className="flex h-full min-h-[260px] items-center justify-center p-6 text-center text-sm text-muted-foreground dark:text-slate-300">
+                            <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground dark:text-slate-300">
                                 Seleccioná una boleta a la izquierda para cargar los productos disponibles para cambio.
                             </div>
                         ) : (
-                            <div className="flex h-full flex-col">
-                                <div className="border-b border-border/70 p-4 dark:border-white/10">
-                                    <div className="flex flex-wrap items-start justify-between gap-3">
-                                        <p className="font-semibold">
-                                            Boleta #{selectedSale.ticketNumber.toString().padStart(5, "0")}
-                                        </p>
-                                        <div className="rounded-2xl border border-amber-300/80 bg-[linear-gradient(135deg,rgba(254,243,199,0.98),rgba(253,230,138,0.72))] px-3 py-2 text-right text-amber-900 shadow-[0_18px_32px_-24px_rgba(217,119,6,0.5)] dark:border-amber-300/45 dark:bg-[linear-gradient(135deg,rgba(120,53,15,0.82),rgba(245,158,11,0.24))] dark:text-amber-100 dark:shadow-[0_20px_36px_-24px_rgba(251,191,36,0.4)]">
-                                            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] opacity-80">
-                                                Antigüedad
+                            <div className="flex h-full flex-col min-h-0">
+                                <div className="border-b border-border/40 p-4 dark:border-white/5 bg-neutral-50/50 dark:bg-neutral-900/20 shrink-0">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div>
+                                            <p className="font-bold text-base text-foreground tracking-tight">
+                                                Boleta #{selectedSale.ticketNumber.toString().padStart(5, "0")}
                                             </p>
-                                            <p className="text-sm font-bold leading-none">
-                                                {formatDaysSinceSale(selectedSale.date)}
-                                            </p>
+                                            <div className="flex items-center gap-2.5 flex-wrap mt-2">
+                                                <div className="inline-flex items-center gap-1.5 bg-neutral-100/80 dark:bg-neutral-800/80 px-3 py-1 rounded-full border border-neutral-200/50 dark:border-neutral-700/50 text-xs font-semibold text-neutral-800 dark:text-neutral-200 shadow-sm">
+                                                    <UserCircle className="h-4 w-4 text-neutral-500 dark:text-neutral-400" />
+                                                    <span>{selectedSale.sellerName}</span>
+                                                </div>
+                                                <span className="text-neutral-300 dark:text-neutral-700 text-xs">•</span>
+                                                <span className="text-xs text-muted-foreground/85 dark:text-slate-400">
+                                                    {formatArgentinaDateTime(selectedSale.date)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-neutral-200 bg-neutral-100 text-neutral-800 dark:border-neutral-800 dark:bg-neutral-800 dark:text-neutral-200 text-xs font-semibold shadow-sm shrink-0">
+                                            <span className="relative flex h-2 w-2">
+                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                                            </span>
+                                            {formatDaysSinceSale(selectedSale.date)}
                                         </div>
                                     </div>
-                                    <p className="text-sm text-muted-foreground dark:text-slate-300">
-                                        {selectedSale.sellerName} · {formatArgentinaDateTime(selectedSale.date)}
-                                    </p>
                                 </div>
-                                <div className="rounded-[1.1rem] border border-dashed border-rose-200/70 bg-[linear-gradient(135deg,rgba(255,241,242,0.88),rgba(255,255,255,0.4))] px-4 py-3 text-sm text-rose-900 dark:border-rose-400/20 dark:bg-[linear-gradient(135deg,rgba(76,5,25,0.52),rgba(15,23,42,0.18))] dark:text-rose-100">
-                                    <p className="font-semibold">2. Marcá cantidades a devolver</p>
-                                    <p className="mt-1 text-xs leading-5 text-rose-800/80 dark:text-rose-100/75">
-                                        Sólo podés cargar hasta la cantidad disponible de cada producto en la boleta.
-                                    </p>
-                                </div>
-                                <div className="max-h-[44vh] space-y-2 overflow-y-auto p-4">
+                                
+                                <div 
+                                    data-lenis-prevent
+                                    className="overflow-y-auto p-4 flex-1 space-y-2 min-h-0"
+                                >
                                     {selectedSale.items.map((item) => {
                                         const availableQuantity = item.quantity - item.returnedQuantity;
                                         const value = exchangeQuantities[item.id] ?? "";
+                                        const currentQty = value === "" ? 0 : parseInt(value, 10);
 
                                         return (
                                             <div
                                                 key={item.id}
-                                                className="grid gap-3 rounded-xl border border-border/70 bg-background/85 p-3 dark:border-white/10 dark:bg-slate-900/55 sm:grid-cols-[minmax(0,1fr)_100px]"
+                                                className={cn(
+                                                    "flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-xl border p-3 transition-all duration-200",
+                                                    availableQuantity > 0
+                                                        ? "border-neutral-200 bg-background hover:border-neutral-300 dark:border-neutral-800/80 dark:bg-slate-900/35 dark:hover:border-neutral-700/60"
+                                                        : "border-neutral-200/60 bg-neutral-50/50 opacity-60 dark:border-neutral-800/40 dark:bg-neutral-900/10"
+                                                )}
                                             >
-                                                <div>
-                                                    <div className="flex flex-wrap items-start justify-between gap-3">
-                                                        <div className="min-w-0">
-                                                            <p className="font-medium">{item.productName}</p>
-                                                    <p className="text-xs text-muted-foreground dark:text-slate-300">
-                                                        {item.size !== "Único" ? `Talle ${item.size} · ` : ""}
-                                                        {item.color}
-                                                    </p>
-                                                        </div>
-                                                        <div
-                                                            className={cn(
-                                                                "shrink-0 rounded-2xl px-3 py-2 shadow-sm",
-                                                                availableQuantity > 0
-                                                                    ? "border border-emerald-300/60 bg-[linear-gradient(135deg,rgba(236,253,245,0.98),rgba(209,250,229,0.82))] text-emerald-900 dark:border-emerald-400/25 dark:bg-[linear-gradient(135deg,rgba(6,78,59,0.72),rgba(5,150,105,0.18))] dark:text-emerald-50"
-                                                                    : "border border-rose-300/60 bg-[linear-gradient(135deg,rgba(255,241,242,0.98),rgba(255,228,230,0.82))] text-rose-900 dark:border-rose-400/25 dark:bg-[linear-gradient(135deg,rgba(76,5,25,0.72),rgba(190,24,93,0.16))] dark:text-rose-100"
-                                                            )}
-                                                        >
-                                                            <div className="flex items-center gap-4">
-                                                                <div className="text-right">
-                                                                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] opacity-80">
-                                                                        Máximo
-                                                                    </p>
-                                                                    <p className="text-xl font-bold leading-none">
-                                                                        {availableQuantity}
-                                                                    </p>
-                                                                </div>
-                                                                <div className="h-8 w-px bg-current/15" />
-                                                                <div className="text-right">
-                                                                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] opacity-80">
-                                                                        Precio c/u
-                                                                    </p>
-                                                                    <p className="text-sm font-semibold leading-none">
-                                                                        {formatCurrency(item.priceAtTime)}
-                                                                    </p>
-                                                                </div>
-                                                            </div>
+                                                {/* Left side: Product Info */}
+                                                <div className="flex items-start gap-3 min-w-0 flex-1">
+                                                    {/* Availability status dot indicator */}
+                                                    <span className={cn(
+                                                        "mt-1.5 h-2 w-2 shrink-0 rounded-full",
+                                                        availableQuantity > 0 
+                                                            ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]" 
+                                                            : "bg-neutral-300 dark:bg-neutral-700"
+                                                    )} />
+                                                    <div className="min-w-0">
+                                                        <p className="font-semibold text-sm leading-snug tracking-tight text-foreground">{item.productName}</p>
+                                                        <p className="text-xs text-muted-foreground/80 mt-0.5">
+                                                            {item.size !== "Único" ? `Talle ${item.size} · ` : ""}
+                                                            {item.color}
+                                                        </p>
+                                                        <div className="flex items-center gap-3 mt-1 text-xs">
+                                                            <span className="text-muted-foreground">
+                                                                Disponible: <span className="font-semibold text-foreground">{availableQuantity} ud.</span>
+                                                            </span>
+                                                            <span className="text-neutral-300 dark:text-neutral-700">•</span>
+                                                            <span className="text-muted-foreground">
+                                                                Precio: <span className="font-semibold text-foreground">{formatCurrency(item.priceAtTime)}</span>
+                                                            </span>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <Input
-                                                    type="number"
-                                                    min={0}
-                                                    max={availableQuantity}
-                                                    disabled={availableQuantity === 0}
-                                                    value={value}
-                                                    className="border-border/70 bg-background/90 dark:border-white/10 dark:bg-slate-950/70 dark:text-slate-100"
-                                                    onChange={(event) =>
-                                                        onQuantityChange(
-                                                            item.id,
-                                                            clampExchangeQuantity(
-                                                                event.target.value,
-                                                                availableQuantity
-                                                            )
-                                                        )
-                                                    }
-                                                />
+                                                
+                                                {/* Right side: iOS Stepper */}
+                                                <div className="shrink-0 flex items-center justify-end w-full sm:w-auto">
+                                                    {availableQuantity > 0 ? (
+                                                        <div className="flex items-center gap-1.5 bg-neutral-100/80 dark:bg-neutral-800/80 rounded-lg p-0.5 border border-neutral-200/50 dark:border-neutral-700/50 shadow-sm">
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-8 w-8 rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-white dark:hover:bg-neutral-700 hover:text-neutral-900 dark:hover:text-neutral-100 disabled:opacity-20 disabled:pointer-events-none transition-[background-color,color,transform] duration-150 active:scale-95"
+                                                                disabled={currentQty <= 0}
+                                                                onClick={() => {
+                                                                    const nextQty = Math.max(0, currentQty - 1);
+                                                                    onQuantityChange(item.id, nextQty === 0 ? "" : String(nextQty));
+                                                                }}
+                                                            >
+                                                                <Minus className="h-3.5 w-3.5" />
+                                                            </Button>
+                                                            <span className="w-8 text-center text-sm font-semibold tabular-nums text-neutral-800 dark:text-neutral-200">
+                                                                {currentQty}
+                                                            </span>
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-8 w-8 rounded-md text-neutral-600 dark:text-neutral-400 hover:bg-white dark:hover:bg-neutral-700 hover:text-neutral-900 dark:hover:text-neutral-100 disabled:opacity-20 disabled:pointer-events-none transition-[background-color,color,transform] duration-150 active:scale-95"
+                                                                disabled={currentQty >= availableQuantity}
+                                                                onClick={() => {
+                                                                    const nextQty = Math.min(availableQuantity, currentQty + 1);
+                                                                    onQuantityChange(item.id, String(nextQty));
+                                                                }}
+                                                            >
+                                                                <Plus className="h-3.5 w-3.5" />
+                                                            </Button>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/20 px-2.5 py-1 rounded-full border border-rose-100 dark:border-rose-950/30">
+                                                            Devuelto por completo
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
                                         );
                                     })}
                                 </div>
 
-                                <div className="border-t border-border/70 p-4 dark:border-white/10">
-                                    <div className="mb-3 flex items-center justify-between font-semibold">
-                                        <span>Crédito a aplicar</span>
-                                        <span>{formatCurrency(selectedCredit)}</span>
+                                <div className="border-t border-border/40 p-4 bg-neutral-50/50 dark:bg-neutral-900/10 dark:border-white/5 mt-auto shrink-0">
+                                    <div className="mb-4 flex items-center justify-between font-semibold">
+                                        <span className="text-sm font-medium text-muted-foreground">Crédito total a aplicar</span>
+                                        <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                                            {formatCurrency(selectedCredit)}
+                                        </span>
                                     </div>
                                     <Button
-                                        className="w-full bg-emerald-600 hover:bg-emerald-700"
+                                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl py-5 shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-40 disabled:pointer-events-none disabled:shadow-none"
                                         disabled={selectedCredit <= 0}
                                         onClick={onConfirm}
                                     >
-                                        Aplicar cambio
+                                        Confirmar y aplicar cambio
                                     </Button>
                                 </div>
                             </div>

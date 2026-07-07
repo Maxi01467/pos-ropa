@@ -6,6 +6,7 @@ import {
     getAttendanceBoard,
     getAttendanceDashboard,
     getAttendanceEmployees,
+    getAttendanceShiftsByDateRange,
 } from "@/app/actions/attendance/attendance-actions";
 import { isOfflineModeEnabled } from "@/lib/offline-config";
 import { withOfflineMutationFallback, withOfflineReadFallback } from "@/lib/offline/runtime-fallback";
@@ -77,6 +78,7 @@ export interface AttendanceRuntime {
     getAttendanceEmployees(): Promise<RuntimeAttendanceEmployee[]>;
     getAttendanceDashboard(userId: string): Promise<RuntimeAttendanceDashboard>;
     getAttendanceBoard(): Promise<RuntimeAttendanceBoard>;
+    getAttendanceShiftsByDateRange(dateFrom: string, dateTo: string): Promise<RuntimeAttendanceBoard["shifts"]>;
     checkInUser(userId: string): Promise<RuntimeAttendanceShift>;
     checkOutUser(userId: string): Promise<RuntimeAttendanceShift>;
 }
@@ -243,14 +245,87 @@ async function getLocalAttendanceBoard(): Promise<RuntimeAttendanceBoard> {
     );
 
     const cashSession = sessions[0];
+    let shifts: ShiftRow[] = [];
+
     if (!cashSession) {
-        return {
-            cashSession: null,
-            shifts: [],
-        };
+        shifts = await queryRows<ShiftRow>(
+            `
+                SELECT
+                    s.id,
+                    s.userId,
+                    u.name AS userName,
+                    s.checkIn,
+                    s.checkOut,
+                    s.totalHours,
+                    s.notes
+                FROM "Shift" s
+                INNER JOIN "User" u
+                    ON u.id = s.userId
+                WHERE s.deletedAt IS NULL
+                  AND s.checkOut IS NULL
+                ORDER BY s.checkIn DESC
+            `
+        );
+    } else {
+        const rangeEnd = cashSession.closingDate ?? new Date().toISOString();
+        shifts = await queryRows<ShiftRow>(
+            `
+                SELECT
+                    s.id,
+                    s.userId,
+                    u.name AS userName,
+                    s.checkIn,
+                    s.checkOut,
+                    s.totalHours,
+                    s.notes
+                FROM "Shift" s
+                INNER JOIN "User" u
+                    ON u.id = s.userId
+                WHERE s.deletedAt IS NULL
+                  AND (
+                    (s.checkIn >= ? AND s.checkIn <= ?)
+                    OR s.checkOut IS NULL
+                  )
+                ORDER BY
+                    CASE WHEN s.checkOut IS NULL THEN 0 ELSE 1 END ASC,
+                    s.checkIn DESC
+            `,
+            [cashSession.openingDate, rangeEnd]
+        );
     }
 
-    const rangeEnd = cashSession.closingDate ?? new Date().toISOString();
+    return {
+        cashSession: cashSession
+            ? {
+                  id: cashSession.id,
+                  status: cashSession.status,
+                  openingDate: cashSession.openingDate,
+                  closingDate: cashSession.closingDate,
+              }
+            : null,
+        shifts: shifts.map((shift) => ({
+            id: shift.id,
+            userId: shift.userId,
+            userName: shift.userName,
+            checkIn: shift.checkIn,
+            checkOut: shift.checkOut,
+            totalHours: shift.totalHours == null ? null : toNumber(shift.totalHours),
+            status: shift.checkOut ? "FINISHED" : "ACTIVE",
+        })),
+    };
+}
+
+async function getLocalAttendanceShiftsByDateRange(
+    dateFrom: string,
+    dateTo: string
+): Promise<RuntimeAttendanceBoard["shifts"]> {
+    if (!dateFrom || !dateTo) {
+        throw new Error("Faltan las fechas para filtrar la asistencia");
+    }
+
+    const start = new Date(`${dateFrom}T00:00:00`).toISOString();
+    const end = new Date(`${dateTo}T23:59:59.999`).toISOString();
+
     const shifts = await queryRows<ShiftRow>(
         `
             SELECT
@@ -267,30 +342,20 @@ async function getLocalAttendanceBoard(): Promise<RuntimeAttendanceBoard> {
             WHERE s.deletedAt IS NULL
               AND s.checkIn >= ?
               AND s.checkIn <= ?
-            ORDER BY
-                CASE WHEN s.checkOut IS NULL THEN 0 ELSE 1 END ASC,
-                s.checkIn DESC
+            ORDER BY s.checkIn DESC
         `,
-        [cashSession.openingDate, rangeEnd]
+        [start, end]
     );
 
-    return {
-        cashSession: {
-            id: cashSession.id,
-            status: cashSession.status,
-            openingDate: cashSession.openingDate,
-            closingDate: cashSession.closingDate,
-        },
-        shifts: shifts.map((shift) => ({
-            id: shift.id,
-            userId: shift.userId,
-            userName: shift.userName,
-            checkIn: shift.checkIn,
-            checkOut: shift.checkOut,
-            totalHours: shift.totalHours == null ? null : toNumber(shift.totalHours),
-            status: shift.checkOut ? "FINISHED" : "ACTIVE",
-        })),
-    };
+    return shifts.map((shift) => ({
+        id: shift.id,
+        userId: shift.userId,
+        userName: shift.userName,
+        checkIn: shift.checkIn,
+        checkOut: shift.checkOut,
+        totalHours: shift.totalHours == null ? null : toNumber(shift.totalHours),
+        status: shift.checkOut ? ("FINISHED" as const) : ("ACTIVE" as const),
+    }));
 }
 
 async function withReadFallback<T>(
@@ -329,6 +394,9 @@ const serverRuntime: AttendanceRuntime = {
     async getAttendanceBoard() {
         return (await getAttendanceBoard()) as RuntimeAttendanceBoard;
     },
+    async getAttendanceShiftsByDateRange(dateFrom, dateTo) {
+        return (await getAttendanceShiftsByDateRange(dateFrom, dateTo)) as RuntimeAttendanceBoard["shifts"];
+    },
     async checkInUser(userId) {
         return (await checkInUser(userId)) as RuntimeAttendanceShift;
     },
@@ -360,6 +428,14 @@ const powerSyncRuntime: AttendanceRuntime = {
             () => getLocalAttendanceBoard(),
             () => serverRuntime.getAttendanceBoard(),
             (board) => board.shifts.length > 0 || board.cashSession !== null
+        );
+    },
+    async getAttendanceShiftsByDateRange(dateFrom, dateTo) {
+        return withReadFallback(
+            "getAttendanceShiftsByDateRange",
+            () => getLocalAttendanceShiftsByDateRange(dateFrom, dateTo),
+            () => serverRuntime.getAttendanceShiftsByDateRange(dateFrom, dateTo),
+            (shifts) => shifts.length >= 0
         );
     },
     async checkInUser(userId) {

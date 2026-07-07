@@ -3,6 +3,7 @@
 import { revalidateTag } from "next/cache";
 import { CACHE_TAGS, unstable_cache } from "@/lib/core/cache-tags";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 
 type AttendanceShift = {
     id: string;
@@ -237,6 +238,54 @@ export async function checkOutUser(userId: string) {
 
     return serializeShift(updatedShift);
 }
+
+export async function getAttendanceShiftsByDateRange(
+    dateFrom: string,
+    dateTo: string
+): Promise<AttendanceBoardShift[]> {
+    if (!dateFrom || !dateTo) {
+        throw new Error("Faltan las fechas para filtrar la asistencia");
+    }
+
+    const start = new Date(`${dateFrom}T00:00:00`);
+    const end = new Date(`${dateTo}T23:59:59.999`);
+
+    const shifts = await prisma.shift.findMany({
+        where: {
+            deletedAt: null,
+            checkIn: {
+                gte: start,
+                lte: end,
+            },
+        },
+        select: {
+            id: true,
+            userId: true,
+            checkIn: true,
+            checkOut: true,
+            totalHours: true,
+            user: {
+                select: {
+                    name: true,
+                },
+            },
+        },
+        orderBy: {
+            checkIn: "desc",
+        },
+    });
+
+    return shifts.map((shift) => ({
+        id: shift.id,
+        userId: shift.userId,
+        userName: shift.user.name,
+        checkIn: shift.checkIn.toISOString(),
+        checkOut: shift.checkOut?.toISOString() ?? null,
+        totalHours: shift.totalHours == null ? null : Number(shift.totalHours),
+        status: shift.checkOut ? ("FINISHED" as const) : ("ACTIVE" as const),
+    }));
+}
+
 const getAttendanceEmployeesCached = unstable_cache(
     async (): Promise<AttendanceEmployee[]> =>
         prisma.user.findMany({
@@ -276,22 +325,29 @@ const getAttendanceBoardCached = unstable_cache(
             },
         });
 
-        if (!cashSession) {
-            return {
-                cashSession: null,
-                shifts: [],
-            };
+        const whereCondition: Prisma.ShiftWhereInput = {
+            deletedAt: null,
+        };
+
+        if (cashSession) {
+            const rangeEnd = cashSession.closingDate ?? new Date();
+            whereCondition.OR = [
+                {
+                    checkIn: {
+                        gte: cashSession.openingDate,
+                        lte: rangeEnd,
+                    },
+                },
+                {
+                    checkOut: null,
+                },
+            ];
+        } else {
+            whereCondition.checkOut = null;
         }
 
-        const rangeEnd = cashSession.closingDate ?? new Date();
         const shifts = await prisma.shift.findMany({
-            where: {
-                deletedAt: null,
-                checkIn: {
-                    gte: cashSession.openingDate,
-                    lte: rangeEnd,
-                },
-            },
+            where: whereCondition,
             select: {
                 id: true,
                 userId: true,
@@ -311,12 +367,14 @@ const getAttendanceBoardCached = unstable_cache(
         });
 
         return {
-            cashSession: {
-                id: cashSession.id,
-                status: cashSession.status,
-                openingDate: cashSession.openingDate.toISOString(),
-                closingDate: cashSession.closingDate?.toISOString() ?? null,
-            },
+            cashSession: cashSession
+                ? {
+                      id: cashSession.id,
+                      status: cashSession.status,
+                      openingDate: cashSession.openingDate.toISOString(),
+                      closingDate: cashSession.closingDate?.toISOString() ?? null,
+                  }
+                : null,
             shifts: shifts.map((shift) => ({
                 id: shift.id,
                 userId: shift.userId,

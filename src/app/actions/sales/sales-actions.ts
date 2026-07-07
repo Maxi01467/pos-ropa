@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import {
     buildTicketNumber,
     computeNextTicketSequence,
+    nextSequenceFromMax,
     normalizeTerminalPrefix,
 } from "@/lib/terminal/tickets";
 
@@ -138,6 +139,7 @@ const getSalesHistoryCached = unstable_cache(
                 deletedAt: null,
             },
             orderBy: { createdAt: "desc" },
+            take: 200,
             include: {
                 user: {
                     select: { name: true },
@@ -223,17 +225,20 @@ export async function createSale(input: CreateSaleInput) {
     const terminalPrefix = normalizeTerminalPrefix(input.terminalPrefix);
 
     const sale = await prisma.$transaction(async (tx) => {
+        const variantIds = input.items.map((item) => item.variantId);
+        const variants = await tx.productVariant.findMany({
+            where: {
+                id: { in: variantIds },
+                deletedAt: null,
+                product: { deletedAt: null },
+            },
+            select: { id: true, stock: true },
+        });
+
+        const variantMap = new Map(variants.map((v) => [v.id, v]));
+
         for (const item of input.items) {
-            const variant = await tx.productVariant.findFirst({
-                where: {
-                    id: item.variantId,
-                    deletedAt: null,
-                    product: {
-                        deletedAt: null,
-                    },
-                },
-                select: { id: true, stock: true },
-            });
+            const variant = variantMap.get(item.variantId);
 
             if (!variant) {
                 throw new Error("Una variante del carrito ya no existe");
@@ -244,16 +249,13 @@ export async function createSale(input: CreateSaleInput) {
             }
         }
 
-        const existingTickets = await tx.sale.findMany({
-            where: {
-                deletedAt: null,
-            },
-            select: { ticketNumber: true },
-        });
-        const nextTicket = computeNextTicketSequence(
-            existingTickets.map((saleRow) => saleRow.ticketNumber),
-            terminalPrefix
-        );
+        const maxResult = await tx.$queryRaw<[{ maxTicket: string | null }]>`
+            SELECT MAX("ticketNumber") AS "maxTicket"
+            FROM "Sale"
+            WHERE "deletedAt" IS NULL
+              AND "ticketNumber" LIKE ${terminalPrefix + "-%"}
+        `;
+        const nextTicket = nextSequenceFromMax(maxResult[0]?.maxTicket, terminalPrefix);
         const ticketStr = buildTicketNumber(terminalPrefix, nextTicket);
 
         const sale = await tx.sale.create({
@@ -281,14 +283,12 @@ export async function createSale(input: CreateSaleInput) {
             },
         });
 
-        for (const item of input.items) {
+        const updatePromises = input.items.map(async (item) => {
             const updatedVariant = await tx.productVariant.updateMany({
                 where: {
                     id: item.variantId,
                     deletedAt: null,
-                    product: {
-                        deletedAt: null,
-                    },
+                    product: { deletedAt: null },
                 },
                 data: { stock: { decrement: item.quantity } },
             });
@@ -296,7 +296,8 @@ export async function createSale(input: CreateSaleInput) {
             if (updatedVariant.count !== 1) {
                 throw new Error("No se pudo descontar stock de una variante activa");
             }
-        }
+        });
+        await Promise.all(updatePromises);
 
         return sale;
     });
@@ -393,6 +394,8 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
             throw new Error("La boleta seleccionada ya no existe");
         }
 
+        const originalSaleItemsMap = new Map(originalSale.items.map((item) => [item.id, item]));
+
         const returnMap = new Map(
             input.returnedItems.map((item) => [item.saleItemId, item.quantity])
         );
@@ -407,8 +410,8 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
             }
         }
 
-        for (const returnedItem of input.returnedItems) {
-            const saleItem = originalSale.items.find((item) => item.id === returnedItem.saleItemId);
+        const returnPromises = input.returnedItems.map(async (returnedItem) => {
+            const saleItem = originalSaleItemsMap.get(returnedItem.saleItemId);
             if (!saleItem) {
                 throw new Error("Uno de los productos seleccionados no pertenece a la boleta");
             }
@@ -422,9 +425,7 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
                 where: {
                     id: saleItem.variantId,
                     deletedAt: null,
-                    product: {
-                        deletedAt: null,
-                    },
+                    product: { deletedAt: null },
                 },
                 data: { stock: { increment: returnedItem.quantity } },
             });
@@ -432,19 +433,23 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
             if (restoredVariant.count !== 1) {
                 throw new Error("No se pudo devolver stock sobre una variante activa");
             }
-        }
+        });
+        await Promise.all(returnPromises);
+
+        const exchangeVariantIds = input.items.map((item) => item.variantId);
+        const exchangeVariants = await tx.productVariant.findMany({
+            where: {
+                id: { in: exchangeVariantIds },
+                deletedAt: null,
+                product: { deletedAt: null },
+            },
+            select: { id: true, stock: true },
+        });
+
+        const exchangeVariantMap = new Map(exchangeVariants.map((v) => [v.id, v]));
 
         for (const item of input.items) {
-            const variant = await tx.productVariant.findFirst({
-                where: {
-                    id: item.variantId,
-                    deletedAt: null,
-                    product: {
-                        deletedAt: null,
-                    },
-                },
-                select: { id: true, stock: true },
-            });
+            const variant = exchangeVariantMap.get(item.variantId);
 
             if (!variant) {
                 throw new Error("Una variante del carrito ya no existe");
@@ -455,16 +460,13 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
             }
         }
 
-        const existingTickets = await tx.sale.findMany({
-            where: {
-                deletedAt: null,
-            },
-            select: { ticketNumber: true },
-        });
-        const nextTicket = computeNextTicketSequence(
-            existingTickets.map((saleRow) => saleRow.ticketNumber),
-            terminalPrefix
-        );
+        const maxResult = await tx.$queryRaw<[{ maxTicket: string | null }]>`
+            SELECT MAX("ticketNumber") AS "maxTicket"
+            FROM "Sale"
+            WHERE "deletedAt" IS NULL
+              AND "ticketNumber" LIKE ${terminalPrefix + "-%"}
+        `;
+        const nextTicket = nextSequenceFromMax(maxResult[0]?.maxTicket, terminalPrefix);
         const ticketStr = buildTicketNumber(terminalPrefix, nextTicket);
 
         const sale = await tx.sale.create({
@@ -491,14 +493,12 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
             },
         });
 
-        for (const item of input.items) {
+        const exchangeUpdatePromises = input.items.map(async (item) => {
             const updatedVariant = await tx.productVariant.updateMany({
                 where: {
                     id: item.variantId,
                     deletedAt: null,
-                    product: {
-                        deletedAt: null,
-                    },
+                    product: { deletedAt: null },
                 },
                 data: { stock: { decrement: item.quantity } },
             });
@@ -506,7 +506,8 @@ export async function createExchangeSale(input: CreateExchangeSaleInput) {
             if (updatedVariant.count !== 1) {
                 throw new Error("No se pudo descontar stock de una variante activa");
             }
-        }
+        });
+        await Promise.all(exchangeUpdatePromises);
 
         if (requiresCashRefund && currentSession) {
             await tx.cashMovement.create({

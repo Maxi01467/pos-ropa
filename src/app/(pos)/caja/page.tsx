@@ -19,7 +19,7 @@ const CASH_TABS = [
     {
         value: "historial",
         label: "Historial",
-        description: "Sesiones de caja y boletas registradas.",
+        description: "",
         icon: History,
     },
     {

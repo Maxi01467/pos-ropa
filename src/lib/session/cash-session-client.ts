@@ -75,7 +75,15 @@ export function useCashSessionStatus() {
             }
         } catch {
             if (refreshRequestId === latestRefreshRequestId) {
-                setCashSessionStatus(localHasOpenSession ?? false);
+                // Si ambas fuentes fallan (local Y servidor), no asumimos que la caja
+                // está cerrada. Preservamos el último estado conocido para evitar que
+                // un corte de internet muestre falsamente la caja como cerrada.
+                // Solo actualizamos si tenemos información local válida.
+                if (localHasOpenSession !== null) {
+                    setCashSessionStatus(localHasOpenSession);
+                }
+                // Si localHasOpenSession es null (ambas fuentes fallaron sin datos),
+                // no llamamos a setCashSessionStatus → el estado previo se mantiene.
             }
         }
     }, []);

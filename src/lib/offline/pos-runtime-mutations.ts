@@ -8,6 +8,7 @@ import { db, initPowerSync } from "@/lib/powersync/db";
 import {
     buildTicketNumber,
     computeNextTicketSequence,
+    nextSequenceFromMax,
     normalizeTerminalPrefix,
 } from "@/lib/terminal/tickets";
 
@@ -152,16 +153,17 @@ async function getLocalUser(userId?: string): Promise<LocalUserRow | null> {
 }
 
 async function generateLocalTicketNumber(terminalPrefix?: string): Promise<string> {
-    const rows = await db.getAll<{ ticketNumber: string | number | null }>(
-        `SELECT ticketNumber FROM "Sale" WHERE deletedAt IS NULL`
-    );
-
     const normalizedPrefix = normalizeTerminalPrefix(terminalPrefix);
-    const nextSequence = computeNextTicketSequence(
-        rows.map((row) => row.ticketNumber),
-        normalizedPrefix
+
+    const row = await db.getOptional<{ maxTicket: string | null }>(
+        `SELECT MAX(ticketNumber) AS maxTicket
+         FROM "Sale"
+         WHERE deletedAt IS NULL
+           AND ticketNumber LIKE ?`,
+        [`${normalizedPrefix}-%`]
     );
 
+    const nextSequence = nextSequenceFromMax(row?.maxTicket, normalizedPrefix);
     return buildTicketNumber(normalizedPrefix, nextSequence);
 }
 
@@ -266,11 +268,17 @@ async function createLocalSaleRecord(
             }
         }
 
+        const variantIds = input.items.map((item) => item.variantId);
+        const placeholders = variantIds.map(() => "?").join(", ");
+        const variantRows = await tx.getAll<VariantStockRow>(
+            `SELECT id, stock FROM "ProductVariant" WHERE id IN (${placeholders}) AND deletedAt IS NULL`,
+            variantIds
+        );
+
+        const variantMap = new Map(variantRows.map((v) => [v.id, v]));
+
         for (const item of input.items) {
-            const variant = await tx.getOptional<VariantStockRow>(
-                `SELECT id, stock FROM "ProductVariant" WHERE id = ? AND deletedAt IS NULL`,
-                [item.variantId]
-            );
+            const variant = variantMap.get(item.variantId);
 
             if (!variant) {
                 throw new Error("La variante no existe en la base local");

@@ -542,9 +542,20 @@ export async function findSalesForExchange({
     const safeLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
     const normalizedQuery = query.trim();
 
+    const cleanDigits = normalizedQuery.replace(/\D/g, "");
+    let searchTicketQuery = normalizedQuery;
+    if (cleanDigits.length === 13) {
+        searchTicketQuery = cleanDigits.slice(0, 12).replace(/^0+/, "");
+    }
+
     const sales = await prisma.sale.findMany({
         where: {
             deletedAt: null,
+            ...(searchTicketQuery ? {
+                ticketNumber: {
+                    contains: searchTicketQuery,
+                },
+            } : {}),
         },
         orderBy: { createdAt: "desc" },
         take: normalizedQuery ? Math.max(safeLimit * 10, 50) : safeLimit,

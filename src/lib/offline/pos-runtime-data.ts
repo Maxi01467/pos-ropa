@@ -407,6 +407,12 @@ const powerSyncDataSource: PosRuntimeDataSource = {
 
                 let salesRows: SaleRow[];
                 if (queryVal) {
+                    let searchTicketQuery = queryVal;
+                    const cleanDigits = queryVal.replace(/\D/g, "");
+                    if (cleanDigits.length === 13) {
+                        searchTicketQuery = cleanDigits.slice(0, 12).replace(/^0+/, "");
+                    }
+
                     salesRows = await queryPowerSyncRows<SaleRow>(
                         `
                             SELECT
@@ -426,7 +432,7 @@ const powerSyncDataSource: PosRuntimeDataSource = {
                             ORDER BY s.createdAt DESC
                             LIMIT ?
                         `,
-                        [`%${queryVal}%`, limit]
+                        [`%${searchTicketQuery}%`, limit]
                     );
                 } else {
                     salesRows = await queryPowerSyncRows<SaleRow>(

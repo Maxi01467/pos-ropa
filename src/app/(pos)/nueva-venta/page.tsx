@@ -1825,10 +1825,11 @@ export default function NuevaVentaPage() {
 
                 if (sales.length > 0) {
                     const cleanQuery = scannedValue.replace(/\D/g, "");
+                    const paddedQuery = cleanQuery.padStart(13, "0");
                     const exactMatch = sales.find(sale => {
                         const ticketNumberStr = sale.ticketNumber.toString().replace(/\D/g, "");
                         const barcode = barcodeFromTicketNumber(sale.ticketNumber);
-                        return ticketNumberStr === cleanQuery || barcode === cleanQuery;
+                        return ticketNumberStr === cleanQuery || barcode === paddedQuery;
                     });
 
                     const saleToSelect = exactMatch || sales[0];
@@ -1901,11 +1902,12 @@ export default function NuevaVentaPage() {
         if (exchangeSales.length === 0) return;
 
         const cleanQuery = exchangeSearchQuery.trim().replace(/\D/g, "");
+        const paddedQuery = cleanQuery.padStart(13, "0");
         if (cleanQuery.length >= 4) {
             const exactMatch = exchangeSales.find(sale => {
                 const ticketNumberStr = sale.ticketNumber.toString().replace(/\D/g, "");
                 const barcode = barcodeFromTicketNumber(sale.ticketNumber);
-                return ticketNumberStr === cleanQuery || barcode === cleanQuery;
+                return ticketNumberStr === cleanQuery || barcode === paddedQuery;
             });
 
             if (exactMatch) {
@@ -1916,7 +1918,7 @@ export default function NuevaVentaPage() {
                 const ticketNumberStr = singleSale.ticketNumber.toString().replace(/\D/g, "");
                 const barcode = barcodeFromTicketNumber(singleSale.ticketNumber);
 
-                if (ticketNumberStr === cleanQuery || barcode === cleanQuery) {
+                if (ticketNumberStr === cleanQuery || barcode === paddedQuery) {
                     setSelectedExchangeSale(singleSale);
                     setExchangeQuantities({});
                 }

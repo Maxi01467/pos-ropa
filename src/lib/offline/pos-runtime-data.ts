@@ -409,8 +409,9 @@ const powerSyncDataSource: PosRuntimeDataSource = {
                 if (queryVal) {
                     let searchTicketQuery = queryVal;
                     const cleanDigits = queryVal.replace(/\D/g, "");
-                    if (cleanDigits.length === 13) {
-                        const sequenceNum = Number.parseInt(cleanDigits.slice(0, 12), 10) % 100000;
+                    if (cleanDigits.length === 12 || cleanDigits.length === 13) {
+                        const paddedDigits = cleanDigits.padStart(13, "0");
+                        const sequenceNum = Number.parseInt(paddedDigits.slice(0, 12), 10) % 100000;
                         searchTicketQuery = String(sequenceNum).padStart(5, "0");
                     }
 

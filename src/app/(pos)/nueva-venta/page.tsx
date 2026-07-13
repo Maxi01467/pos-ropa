@@ -1895,20 +1895,31 @@ export default function NuevaVentaPage() {
         };
     }, [exchangeDialogOpen, setExchangeSearchQuery]);
 
-    // Autoselección si hay un único resultado exacto (ej. al terminar la consulta asíncrona de un escaneo sin Enter)
+    // Autoselección si hay un resultado con coincidencia exacta (código de barras o ticket)
     useEffect(() => {
         if (!exchangeDialogOpen || selectedExchangeSale) return;
-        if (exchangeSales.length !== 1) return;
+        if (exchangeSales.length === 0) return;
 
         const cleanQuery = exchangeSearchQuery.trim().replace(/\D/g, "");
         if (cleanQuery.length >= 4) {
-            const singleSale = exchangeSales[0];
-            const ticketNumberStr = singleSale.ticketNumber.toString().replace(/\D/g, "");
-            const barcode = barcodeFromTicketNumber(singleSale.ticketNumber);
+            const exactMatch = exchangeSales.find(sale => {
+                const ticketNumberStr = sale.ticketNumber.toString().replace(/\D/g, "");
+                const barcode = barcodeFromTicketNumber(sale.ticketNumber);
+                return ticketNumberStr === cleanQuery || barcode === cleanQuery;
+            });
 
-            if (ticketNumberStr === cleanQuery || barcode === cleanQuery) {
-                setSelectedExchangeSale(singleSale);
+            if (exactMatch) {
+                setSelectedExchangeSale(exactMatch);
                 setExchangeQuantities({});
+            } else if (exchangeSales.length === 1) {
+                const singleSale = exchangeSales[0];
+                const ticketNumberStr = singleSale.ticketNumber.toString().replace(/\D/g, "");
+                const barcode = barcodeFromTicketNumber(singleSale.ticketNumber);
+
+                if (ticketNumberStr === cleanQuery || barcode === cleanQuery) {
+                    setSelectedExchangeSale(singleSale);
+                    setExchangeQuantities({});
+                }
             }
         }
     }, [exchangeSales, exchangeSearchQuery, exchangeDialogOpen, selectedExchangeSale, setSelectedExchangeSale, setExchangeQuantities]);

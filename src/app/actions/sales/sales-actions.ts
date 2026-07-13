@@ -545,7 +545,8 @@ export async function findSalesForExchange({
     const cleanDigits = normalizedQuery.replace(/\D/g, "");
     let searchTicketQuery = normalizedQuery;
     if (cleanDigits.length === 13) {
-        searchTicketQuery = cleanDigits.slice(0, 12).replace(/^0+/, "");
+        const sequenceNum = Number.parseInt(cleanDigits.slice(0, 12), 10) % 100000;
+        searchTicketQuery = String(sequenceNum).padStart(5, "0");
     }
 
     const sales = await prisma.sale.findMany({

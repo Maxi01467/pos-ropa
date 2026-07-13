@@ -410,7 +410,8 @@ const powerSyncDataSource: PosRuntimeDataSource = {
                     let searchTicketQuery = queryVal;
                     const cleanDigits = queryVal.replace(/\D/g, "");
                     if (cleanDigits.length === 13) {
-                        searchTicketQuery = cleanDigits.slice(0, 12).replace(/^0+/, "");
+                        const sequenceNum = Number.parseInt(cleanDigits.slice(0, 12), 10) % 100000;
+                        searchTicketQuery = String(sequenceNum).padStart(5, "0");
                     }
 
                     salesRows = await queryPowerSyncRows<SaleRow>(

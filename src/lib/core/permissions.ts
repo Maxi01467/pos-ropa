@@ -1,6 +1,6 @@
 export type SessionRole = "ADMIN" | "STAFF";
 
-export const STAFF_ALLOWED_PATHS = ["/nueva-venta", "/caja", "/asistencia"] as const;
+export const STAFF_ALLOWED_PATHS = ["/nueva-venta", "/caja", "/asistencia", "/reservas"] as const;
 
 function normalizePath(pathname: string) {
     return pathname.split(/[?#]/, 1)[0] || "/";

@@ -4,6 +4,8 @@ import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import {
+    CalendarDays,
+    Check,
     ChevronDown,
     ChevronLeft,
     ChevronRight,
@@ -12,12 +14,14 @@ import {
     LogOut,
     Menu,
     Plus,
+    RefreshCw,
     Settings,
     ShoppingCart,
     Users,
     Wallet,
     Boxes,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -41,6 +45,7 @@ import { useTerminalSnapshot } from "@/lib/terminal/terminal-client";
 const mainItems = [
     { href: "/", label: "Inicio", icon: Home },
     { href: "/nueva-venta", label: "Nueva venta", icon: ShoppingCart },
+    { href: "/reservas", label: "Reservas", icon: CalendarDays },
     { href: "/caja", label: "Caja", icon: Wallet },
 ] as const;
 
@@ -108,8 +113,29 @@ function SidebarContent({
     const { hasOpenCashSession } = useCashSessionStatus();
     const terminal = useTerminalSnapshot();
     const isDesktop = isDesktopClient || terminal.isDesktop;
+    const isDev = process.env.NODE_ENV === "development";
+    const showUpdateButton = isDesktop || isDev;
     const [menuExpanded] = useState(true);
     const [workspaceExpanded, setWorkspaceExpanded] = useState(true);
+    const [updateState, setUpdateState] = useState<"idle" | "checking" | "upToDate">("idle");
+
+    const handleCheckForUpdates = async () => {
+        if (updateState === "checking") return;
+        setUpdateState("checking");
+        try {
+            if (window.posDesktop?.checkForUpdates) {
+                await window.posDesktop.checkForUpdates();
+            } else {
+                // En dev sin Electron: simular un check de 1.5s
+                await new Promise((resolve) => setTimeout(resolve, 1500));
+            }
+            setUpdateState("upToDate");
+            setTimeout(() => setUpdateState("idle"), 3000);
+        } catch {
+            setUpdateState("idle");
+            toast.error("No se pudo buscar actualizaciones");
+        }
+    };
 
     const visibleMainItems = mainItems.filter((item) =>
         canAccessPath(role, item.href, { isDesktop })
@@ -464,7 +490,7 @@ function SidebarContent({
                     </div>
                 </ScrollArea>
 
-                {/* Footer */}
+                {/* Footer expandido: avatar + buscar actualización + logout */}
                 {!collapsed && (
                     <div className="relative shrink-0 border-t border-white/35 p-3 dark:border-white/10">
                         <div className="mb-2 flex items-center gap-3 rounded-[1.2rem] bg-card/65 px-3 py-2.5 shadow-xs">
@@ -479,6 +505,30 @@ function SidebarContent({
                             </div>
                         </div>
 
+                        {showUpdateButton && (
+                            <Button
+                                variant="ghost"
+                                onClick={handleCheckForUpdates}
+                                disabled={updateState === "checking"}
+                                className="mb-1 h-10 w-full justify-start gap-3 rounded-2xl px-3 text-muted-foreground transform-gpu transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted/70 hover:text-foreground active:scale-[0.985] disabled:opacity-60"
+                            >
+                                {updateState === "checking" && (
+                                    <RefreshCw className="size-4.5 shrink-0 animate-spin" />
+                                )}
+                                {updateState === "upToDate" && (
+                                    <Check className="size-4.5 shrink-0 text-emerald-500" />
+                                )}
+                                {updateState === "idle" && (
+                                    <RefreshCw className="size-4.5 shrink-0" />
+                                )}
+                                <span className="text-sm font-medium">
+                                    {updateState === "checking" && "Buscando..."}
+                                    {updateState === "upToDate" && "Ya tenés la última versión"}
+                                    {updateState === "idle" && "Buscar actualización"}
+                                </span>
+                            </Button>
+                        )}
+
                         <Button
                             variant="ghost"
                             onClick={handleLogout}
@@ -490,7 +540,7 @@ function SidebarContent({
                     </div>
                 )}
 
-                {/* Footer colapsado: solo avatar + logout */}
+                {/* Footer colapsado: avatar + buscar actualización + logout */}
                 {collapsed && (
                     <div className="relative flex shrink-0 flex-col items-center gap-2 border-t border-white/35 px-2 py-2 dark:border-white/10">
                         <Tooltip>
@@ -501,6 +551,31 @@ function SidebarContent({
                             </TooltipTrigger>
                             <TooltipContent side="right">{userName} — Sesion activa</TooltipContent>
                         </Tooltip>
+
+                        {showUpdateButton && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <button
+                                        onClick={handleCheckForUpdates}
+                                        disabled={updateState === "checking"}
+                                        className="flex size-9 items-center justify-center rounded-2xl text-muted-foreground transform-gpu transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted/70 hover:text-foreground active:scale-[0.97] disabled:opacity-60"
+                                        type="button"
+                                    >
+                                        {updateState === "upToDate" ? (
+                                            <Check className="size-4 text-emerald-500" />
+                                        ) : (
+                                            <RefreshCw className={updateState === "checking" ? "size-4 animate-spin" : "size-4"} />
+                                        )}
+                                    </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="right">
+                                    {updateState === "checking" && "Buscando..."}
+                                    {updateState === "upToDate" && "Ya tenés la última versión"}
+                                    {updateState === "idle" && "Buscar actualización"}
+                                </TooltipContent>
+                            </Tooltip>
+                        )}
+
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button

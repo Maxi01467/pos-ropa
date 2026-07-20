@@ -1,0 +1,22 @@
+{
+  "resolveEnvVars": true,
+  "auth": {
+    "cookies": [
+      {
+        "name": "pos_auth",
+        "value": "env[SESSION_TOKEN]",
+        "domain": "localhost",
+        "path": "/"
+      },
+      {
+        "name": "pos_auth",
+        "value": "env[SESSION_TOKEN]",
+        "domain": "127.0.0.1",
+        "path": "/"
+      }
+    ],
+    "headers": {
+      "X-Boneyard-Crawler": "true"
+    }
+  }
+}

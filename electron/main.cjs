@@ -267,6 +267,53 @@ function resetTerminalConfig() {
 // Auto-updates
 // ---------------------------------------------------------------------------
 
+/**
+ * Muestra el diálogo de "actualización lista" y, si el usuario elige "Más tarde",
+ * lo vuelve a mostrar automáticamente después de 1 hora.
+ * Se extrae como función separada para poder llamarla recursivamente.
+ */
+async function showUpdateReadyDialog(info, mainWindow) {
+    try {
+        const targetWindow =
+            mainWindow && !mainWindow.isDestroyed()
+                ? mainWindow
+                : BrowserWindow.getAllWindows()[0];
+
+        const { response } = await dialog.showMessageBox(targetWindow, {
+            type: "info",
+            buttons: ["Reiniciar ahora", "Más tarde (1 hora)"],
+            defaultId: 0,
+            cancelId: 1,
+            title: "Actualización lista",
+            message: "Hay una nueva versión de POS Ropa lista para instalar.",
+            detail: `Versión descargada: ${info?.version || "nueva versión"}. La aplicación se reiniciará para completar la instalación.`,
+        });
+
+        if (response === 0) {
+            appendDesktopLog("auto-update: user accepted restart");
+            setImmediate(() => autoUpdater.quitAndInstall());
+            return;
+        }
+
+        // "Más tarde": resetear el guard y re-mostrar en 1 hora.
+        appendDesktopLog("auto-update: user postponed — will remind in 1 hour");
+        updateReadyDialogShown = false;
+        setTimeout(() => {
+            if (!updateReadyDialogShown) {
+                updateReadyDialogShown = true;
+                void showUpdateReadyDialog(info, mainWindow);
+            }
+        }, 60 * 60 * 1000);
+    } catch (error) {
+        // Resetear el guard si el diálogo falla (p.ej. ventana destruida),
+        // para que el próximo intento pueda mostrarlo.
+        appendDesktopLog(
+            `auto-update: failed to show update dialog ${error instanceof Error ? error.stack || error.message : String(error)}`
+        );
+        updateReadyDialogShown = false;
+    }
+}
+
 function scheduleAutoUpdateCheck(mainWindow) {
     if (!app.isPackaged || updateCheckScheduled) return;
 
@@ -304,34 +351,7 @@ function scheduleAutoUpdateCheck(mainWindow) {
         if (updateReadyDialogShown) return;
         updateReadyDialogShown = true;
 
-        try {
-            const targetWindow =
-                mainWindow && !mainWindow.isDestroyed()
-                    ? mainWindow
-                    : BrowserWindow.getAllWindows()[0];
-
-            const { response } = await dialog.showMessageBox(targetWindow, {
-                type: "info",
-                buttons: ["Reiniciar ahora", "Más tarde"],
-                defaultId: 0,
-                cancelId: 1,
-                title: "Actualización lista",
-                message: "Hay una nueva versión de POS Ropa lista para instalar.",
-                detail: `Versión descargada: ${info?.version || "nueva versión"}. La aplicación se reiniciará para completar la instalación.`,
-            });
-
-            if (response === 0) {
-                appendDesktopLog("auto-update: user accepted restart");
-                setImmediate(() => autoUpdater.quitAndInstall());
-                return;
-            }
-
-            appendDesktopLog("auto-update: user postponed installation");
-        } catch (error) {
-            appendDesktopLog(
-                `auto-update: failed to show update dialog ${error instanceof Error ? error.stack || error.message : String(error)}`
-            );
-        }
+        void showUpdateReadyDialog(info, mainWindow);
     });
 
     setTimeout(() => {
@@ -969,6 +989,19 @@ app.whenReady().then(() => {
         saveTerminalConfig(payload)
     );
     ipcMain.handle("pos-desktop:reset-terminal-config", () => resetTerminalConfig());
+    ipcMain.handle("pos-desktop:check-for-updates", async () => {
+        try {
+            const result = await autoUpdater.checkForUpdatesAndNotify();
+            return {
+                updateAvailable: result !== null,
+                version: result?.updateInfo?.version ?? null,
+            };
+        } catch (error) {
+            throw new Error(
+                error instanceof Error ? error.message : String(error)
+            );
+        }
+    });
 
     void createMainWindow().then((mainWindow) => {
         scheduleAutoUpdateCheck(mainWindow);

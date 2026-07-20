@@ -12,7 +12,7 @@ import {
     Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ScreenLoader } from "@/components/ui/screen-loader";
+import { Skeleton } from "boneyard-js/react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -167,11 +167,8 @@ export default function ProveedoresPage() {
         p.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    if (isLoading) {
-        return <ScreenLoader message="Cargando proveedores..." description="Listando contactos y marcas de abastecimiento." />;
-    }
-
     return (
+        <Skeleton name="proveedores-page" loading={isLoading}>
         <div className="p-4 sm:p-5 lg:p-6">
             <div className="flex flex-col gap-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -380,5 +377,6 @@ export default function ProveedoresPage() {
                 </DialogContent>
             </Dialog>
         </div>
+        </Skeleton>
     );
 }

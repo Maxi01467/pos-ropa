@@ -25,7 +25,7 @@ import {
     TrendingUp,
     Wallet,
 } from "lucide-react";
-import { ScreenLoader } from "@/components/ui/screen-loader";
+import { Skeleton } from "boneyard-js/react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -799,11 +799,8 @@ export default function ReportesPage() {
         </div>
     );
 
-    if (isLoading) {
-        return <ScreenLoader layout="centered" message="Cargando reportes" description="Estamos consolidando ventas y productos." />;
-    }
-
     return (
+        <Skeleton name="reportes-page" loading={isLoading}>
         <div className="p-4 sm:p-5 lg:p-6">
             <div className="flex flex-col gap-5">
                 <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -1545,5 +1542,6 @@ export default function ReportesPage() {
                 </Tabs>
             </div>
         </div>
+        </Skeleton>
     );
 }

@@ -17,7 +17,7 @@ import {
     ChevronsUpDown,
 } from "lucide-react";
 import { format, subDays, startOfMonth } from "date-fns";
-import { ScreenLoader } from "@/components/ui/screen-loader";
+import { Skeleton } from "boneyard-js/react";
 import { es } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -205,11 +205,8 @@ export default function StockPage() {
         getProductName,
     } = useStock();
 
-    if (isLoading) {
-        return <ScreenLoader message="Cargando stock..." description="Verificando niveles e historial de mercadería." />;
-    }
-
     return (
+        <Skeleton name="stock-page" loading={isLoading}>
         <>
             <div className="print:hidden p-4 sm:p-5 lg:p-6">
                 <div className="flex flex-col gap-5">
@@ -687,5 +684,6 @@ export default function StockPage() {
             {/* Render print labels layout off-screen when print triggers */}
             <BarcodeLabels items={labelsToPrint} />
         </>
+        </Skeleton>
     );
 }

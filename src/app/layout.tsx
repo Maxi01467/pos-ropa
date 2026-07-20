@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/components/layout/theme-provider";
 import { PowerSyncProvider } from "@/components/layout/powersync-provider";
 import { SmoothScroll } from "@/components/layout/smooth-scroll";
 import "./globals.css";
+import "@/bones/registry";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

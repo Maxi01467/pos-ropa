@@ -26,8 +26,9 @@ model User {
   closedSessions     CashSession[] @relation("ClosedSessions")
   countedSessions    CashSession[] @relation("CountedSessions")
   
-  shifts    Shift[]
-  sales     Sale[]
+  shifts       Shift[]
+  sales        Sale[]
+  reservations Reservation[]
   
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -96,6 +97,7 @@ model CashSession {
   // Relaciones
   sales          Sale[]
   movements      CashMovement[]
+  reservations   Reservation[]
 }
 
 model CashMovement {
@@ -163,9 +165,10 @@ model ProductVariant {
   sku            String   @unique // El código de barras a imprimir
   stock          Int      @default(0) // Stock actual en mostrador
   
-  movements      StockMovement[]
-  saleItems      SaleItem[]
-  barcodeAliases BarcodeAlias[]
+  movements         StockMovement[]
+  saleItems         SaleItem[]
+  barcodeAliases    BarcodeAlias[]
+  reservationItems  ReservationItem[]
   
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -254,3 +257,56 @@ model BarcodeAlias {
   updatedAt DateTime       @updatedAt
   deletedAt DateTime?
 }
+
+// ------------------------------------------------------
+// 🗓️ RESERVAS
+// ------------------------------------------------------
+model Reservation {
+  id                String    @id @default(cuid())
+
+  // Número visible para el cliente (ej: "RES-0042")
+  reservationNumber String    @unique
+
+  clientName        String
+  clientPhone       String?
+
+  // Seña (no se devuelve si se cancela)
+  depositAmount     Decimal?
+  depositMethod     String?   // EFECTIVO | TRANSFERENCIA
+
+  userId            String
+  user              User      @relation(fields: [userId], references: [id])
+
+  cashSessionId     String?
+  cashSession       CashSession? @relation(fields: [cashSessionId], references: [id])
+
+  // PENDING | IN_PROCESS | COMPLETED | CANCELLED | EXPIRED
+  status            String    @default("PENDING")
+
+  expiresAt         DateTime?
+  notes             String?
+  estimatedTotal    Decimal
+
+  items             ReservationItem[]
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
+}
+
+model ReservationItem {
+  id              String         @id @default(cuid())
+  reservationId   String
+  reservation     Reservation    @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  variantId       String
+  variant         ProductVariant @relation(fields: [variantId], references: [id])
+
+  quantity        Int
+  priceAtTime     Decimal        // Precio congelado al momento de crear la reserva
+  priceType       String         // NORMAL | WHOLESALE
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+

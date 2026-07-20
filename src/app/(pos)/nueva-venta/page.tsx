@@ -57,6 +57,18 @@ import { notifyDataUpdated, useDataRefresh } from "@/lib/sync/data-sync-client";
 import { useTerminalSnapshot } from "@/lib/terminal/terminal-client";
 import { getPosRuntimeDataSource } from "@/lib/offline/pos-runtime-data";
 import { getPosRuntimeMutations } from "@/lib/offline/pos-runtime-mutations";
+import { Skeleton } from "boneyard-js/react";
+import {
+    ReservationDialog,
+    type AppliedReservation,
+} from "@/components/nueva-venta/reservation-dialog";
+import {
+    CreateReservationDialog,
+    type CreateReservationItemPreview,
+} from "@/components/nueva-venta/create-reservation-dialog";
+import { createReservation, completeReservation } from "@/app/actions/reservations/reservations-actions";
+import type { ReservationWithItems } from "@/app/actions/reservations/reservations-actions";
+
 
 export interface POSProduct {
     id: string;
@@ -148,6 +160,11 @@ type SaleDraft = {
     quickCreatePrice: string;
     quickCreateWholesalePrice: string;
     quickCreateInitialStock: string;
+    // Reservas
+    reservationDialogOpen: boolean;
+    reservationDialogInitialSearch: string;
+    createReservationOpen: boolean;
+    appliedReservation: AppliedReservation | null;
 };
 
 function createSaleDraft(label = "Venta 1"): SaleDraft {
@@ -177,6 +194,11 @@ function createSaleDraft(label = "Venta 1"): SaleDraft {
         quickCreatePrice: "",
         quickCreateWholesalePrice: "",
         quickCreateInitialStock: "1",
+        // Reservas
+        reservationDialogOpen: false,
+        reservationDialogInitialSearch: "",
+        createReservationOpen: false,
+        appliedReservation: null,
     };
 }
 
@@ -208,6 +230,7 @@ function isSaleDraftEmpty(draft: SaleDraft) {
         !draft.exchangeSearchQuery.trim() &&
         !draft.selectedExchangeSale &&
         Object.keys(draft.exchangeQuantities).length === 0 &&
+        !draft.appliedReservation &&
         !draft.quickCreateName.trim() &&
         !draft.quickCreatePrice.trim() &&
         !draft.quickCreateWholesalePrice.trim() &&
@@ -523,6 +546,10 @@ export default function NuevaVentaPage() {
     const quickCreatePrice = activeDraft.quickCreatePrice;
     const quickCreateWholesalePrice = activeDraft.quickCreateWholesalePrice;
     const quickCreateInitialStock = activeDraft.quickCreateInitialStock;
+    const reservationDialogOpen = activeDraft.reservationDialogOpen;
+    const reservationDialogInitialSearch = activeDraft.reservationDialogInitialSearch;
+    const createReservationOpen = activeDraft.createReservationOpen;
+    const appliedReservation = activeDraft.appliedReservation;
     useEffect(() => {
         exchangeSearchQueryRef.current = exchangeSearchQuery;
     }, [exchangeSearchQuery]);
@@ -625,6 +652,18 @@ export default function NuevaVentaPage() {
     );
     const setQuickCreateInitialStock = useCallback(
         (action: SetStateAction<string>) => updateDraftField("quickCreateInitialStock", action),
+        [updateDraftField]
+    );
+    const setReservationDialogOpen = useCallback(
+        (action: SetStateAction<boolean>) => updateDraftField("reservationDialogOpen", action),
+        [updateDraftField]
+    );
+    const setCreateReservationOpen = useCallback(
+        (action: SetStateAction<boolean>) => updateDraftField("createReservationOpen", action),
+        [updateDraftField]
+    );
+    const setAppliedReservation = useCallback(
+        (action: SetStateAction<AppliedReservation | null>) => updateDraftField("appliedReservation", action),
         [updateDraftField]
     );
     const draftTabSummaries = useMemo(
@@ -1126,6 +1165,14 @@ export default function NuevaVentaPage() {
             const scannedValue = e.currentTarget.value;
             if (!scannedValue) return;
 
+            // Si el código escaneado parece un número de reserva, abrir el dialog de reservas
+            if (/^RES-\d+$/i.test(scannedValue.trim())) {
+                setSearchQuery("");
+                updateDraftField("reservationDialogInitialSearch", scannedValue.trim().toUpperCase());
+                setReservationDialogOpen(true);
+                return;
+            }
+
             // Buscamos si el texto coincide EXACTAMENTE con el código de algún producto
             const matchedProduct = allProducts.find((product) =>
                 productMatchesExactCode(product, scannedValue)
@@ -1552,8 +1599,9 @@ export default function NuevaVentaPage() {
         return [...groups, { label: item.giftGroupLabel, items: [item] }];
     }, []);
     const exchangeCredit = appliedExchange?.credit ?? 0;
+    const reservationDeposit = appliedReservation?.depositAmount ?? 0;
     const balanceAmount = totalAmount - exchangeCredit;
-    const payableAmount = Math.max(balanceAmount, 0);
+    const payableAmount = Math.max(balanceAmount - reservationDeposit, 0);
     const hasExchangeOverage = balanceAmount < 0;
     const shouldFinalizeExchangeDirectly = Boolean(appliedExchange) && balanceAmount <= 0;
 
@@ -1712,6 +1760,11 @@ export default function NuevaVentaPage() {
             void triggerPrint(nextReceiptData);
         }, 150);
 
+        // Si había una reserva aplicada, marcarla como COMPLETADA
+        if (appliedReservation?.reservationId) {
+            void completeReservation(appliedReservation.reservationId);
+        }
+
         return sale;
     };
 
@@ -1856,6 +1909,71 @@ export default function NuevaVentaPage() {
         setExchangeDialogOpen(true);
     };
 
+    const handleOpenReservationDialog = () => {
+        updateDraftField("reservationDialogInitialSearch", "");
+        setReservationDialogOpen(true);
+    };
+
+    const handleApplyReservation = (reservation: ReservationWithItems, credit: AppliedReservation) => {
+        // Cargar los ítems de la reserva al carrito
+        for (const item of reservation.items) {
+            const product = allProducts.find((p) => p.id === item.variant.product.id && p.code === item.variant.sku);
+            if (product) {
+                setCart((currentCart) => {
+                    const existing = currentCart.find((c) => c.product.code === product.code && !c.isGift);
+                    if (existing) {
+                        return currentCart.map((c) =>
+                            c.lineId === existing.lineId
+                                ? { ...c, quantity: c.quantity + item.quantity }
+                                : c
+                        );
+                    }
+                    return [
+                        ...currentCart,
+                        {
+                            lineId: crypto.randomUUID(),
+                            product,
+                            quantity: item.quantity,
+                            isGift: false,
+                        },
+                    ];
+                });
+            }
+        }
+        setAppliedReservation(credit);
+    };
+
+    const handleCreateReservation = async (
+        input: Omit<import("@/app/actions/reservations/reservations-actions").CreateReservationInput, "userId" | "cashSessionId">
+    ) => {
+        const seller = sellers.find((s) => s.id === selectedSellerId);
+        if (!seller) {
+            toast.error("Seleccioná un vendedor antes de reservar.");
+            return;
+        }
+
+        const result = await createReservation({
+            ...input,
+            userId: selectedSellerId,
+            cashSessionId: undefined,
+        });
+
+        if (!result.success) {
+            toast.error(result.error);
+            return;
+        }
+
+        toast.success(`Reserva ${result.reservation.reservationNumber} creada`, {
+            description: `Para ${result.reservation.clientName}`,
+        });
+
+        // Vaciar el carrito y cerrar el dialog
+        setCart([]);
+        setAppliedReservation(null);
+        setAppliedExchange(null);
+        setCreateReservationOpen(false);
+    };
+
     useEffect(() => {
         if (!exchangeDialogOpen) return;
 
@@ -1998,7 +2116,7 @@ export default function NuevaVentaPage() {
     const handleQuickCreateProduct = async () => {
         const normalizedName = quickCreateName.trim();
         const price = Number.parseFloat(quickCreatePrice);
-        const wholesalePrice = Number.parseFloat(quickCreateWholesalePrice);
+        const wholesalePrice = price;
         const initialStock = Number.parseInt(quickCreateInitialStock, 10);
 
         if (!normalizedName) {
@@ -2006,11 +2124,7 @@ export default function NuevaVentaPage() {
         }
 
         if (Number.isNaN(price) || price <= 0) {
-            return toast.error("Ingresá un precio de venta válido");
-        }
-
-        if (Number.isNaN(wholesalePrice) || wholesalePrice <= 0) {
-            return toast.error("Ingresá un precio mayorista válido");
+            return toast.error("Ingresá un precio válido");
         }
 
         if (Number.isNaN(initialStock) || initialStock < 0) {
@@ -2054,7 +2168,8 @@ export default function NuevaVentaPage() {
                 CACHE_TAGS.posProducts,
                 CACHE_TAGS.quickCreations,
             ]);
-            setSearchQuery(normalizedName);
+            addToCart(quickCreatedProduct);
+            setSearchQuery("");
             setQuickCreateOpen(false);
             toast.success(
                 createdProduct.pendingReview
@@ -2264,33 +2379,25 @@ export default function NuevaVentaPage() {
                                             <Button
                                                 variant="outline"
                                                 className="h-12 rounded-2xl border-border/70 bg-background/85 px-4"
-                                                onClick={() => toast.info("Módulo de Reservas próximamente")}
+                                                onClick={handleOpenReservationDialog}
                                             >
                                                 <CalendarDays className="size-4" />
                                                 Reservas
                                             </Button>
-                                            {searchQuery.trim() && filteredProducts.length === 0 && (
-                                                <Button
-                                                    className="h-12 rounded-2xl bg-[linear-gradient(135deg,#1f2937_0%,#334155_100%)] px-4 text-white shadow-[0_18px_30px_-24px_rgba(15,23,42,0.72)] hover:opacity-95 dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.98),rgba(30,41,59,0.98))] dark:text-slate-50 dark:shadow-[0_20px_34px_-24px_rgba(0,0,0,0.85)]"
-                                                    onClick={openQuickCreateDialog}
-                                                >
-                                                    <Plus className="size-4" />
-                                                    Crear rapido
-                                                </Button>
-                                            )}
+                                            <Button
+                                                className="h-12 rounded-2xl bg-[linear-gradient(135deg,#1f2937_0%,#334155_100%)] px-4 text-white shadow-[0_18px_30px_-24px_rgba(15,23,42,0.72)] hover:opacity-95 dark:bg-[linear-gradient(135deg,rgba(51,65,85,0.98),rgba(30,41,59,0.98))] dark:text-slate-50 dark:shadow-[0_20px_34px_-24px_rgba(0,0,0,0.85)]"
+                                                onClick={openQuickCreateDialog}
+                                            >
+                                                <Plus className="size-4" />
+                                                Crear rapido
+                                            </Button>
                                         </div>
                                     </div>
 
                                     <ScrollArea className="relative max-w-full overflow-hidden min-[1400px]:max-h-[calc(100vh-16rem)]">
                                         <AnimatedSizeContainer>
-                                            {isLoadingProducts ? (
-                                            <div className="flex flex-col items-center justify-center py-24 text-center">
-                                                <Loader2 className="mb-3 size-10 animate-spin text-muted-foreground" />
-                                                <p className="text-lg font-medium text-muted-foreground">
-                                                    Cargando venta
-                                                </p>
-                                            </div>
-                                        ) : productsError ? (
+                                            <Skeleton name="nueva-venta-catalog" loading={isLoadingProducts}>
+                                            {productsError ? (
                                             <div className="flex flex-col items-center justify-center py-24 text-center">
                                                 <Search className="mb-3 size-12 text-muted-foreground/35" />
                                                 <p className="text-lg font-medium text-muted-foreground">
@@ -2574,6 +2681,7 @@ const isSelectedForGiftGroup = manualGiftSelectedLineIds.includes(item.lineId);
                                             </div>
                                         )}
                                         
+                                        </Skeleton>
                                         </AnimatedSizeContainer>
                                     </ScrollArea>
                                 </CardContent>
@@ -2781,6 +2889,24 @@ const isSelectedForGiftGroup = manualGiftSelectedLineIds.includes(item.lineId);
                                                          </span>
                                                      </div>
                                                  )}
+                                                 {appliedReservation && (appliedReservation.depositAmount ?? 0) > 0 && (
+                                                     <div className="flex items-center justify-between text-base mt-1">
+                                                         <button
+                                                             type="button"
+                                                             onClick={handleOpenReservationDialog}
+                                                             className="flex items-center gap-1.5 hover:underline decoration-black/30 dark:decoration-white/30 underline-offset-2 font-medium text-foreground"
+                                                             title="Ver detalle de la reserva"
+                                                         >
+                                                             <span>Seña reserva</span>
+                                                             <span className="text-xs bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 px-1.5 py-0.5 rounded-md font-semibold">
+                                                                 {appliedReservation.reservationNumber}
+                                                             </span>
+                                                         </button>
+                                                         <span className="font-bold tabular-nums text-violet-600 dark:text-violet-400">
+                                                             -{formatCurrency(appliedReservation.depositAmount ?? 0)}
+                                                         </span>
+                                                     </div>
+                                                 )}
                                              </AnimatedSizeContainer>
                                              <div className="flex items-center justify-between border-t border-border/70 pt-3">
                                                  <div>
@@ -2831,7 +2957,7 @@ const isSelectedForGiftGroup = manualGiftSelectedLineIds.includes(item.lineId);
                                                     variant="outline"
                                                     className="h-11 w-full rounded-xl border-dashed border-border/80 text-muted-foreground hover:text-foreground transition-all duration-200"
                                                     disabled={(cart.length === 0 && !appliedExchange) || !selectedSellerId}
-                                                    onClick={() => toast.info("Módulo de Reservas próximamente")}
+                                                    onClick={() => setCreateReservationOpen(true)}
                                                 >
                                                     <Bookmark className="size-4 mr-2" />
                                                     Reservar
@@ -2879,13 +3005,45 @@ const isSelectedForGiftGroup = manualGiftSelectedLineIds.includes(item.lineId);
                 onSearchKeyDown={handleExchangeSearchKeyDown}
             />
 
+            <ReservationDialog
+                open={reservationDialogOpen}
+                onOpenChange={setReservationDialogOpen}
+                onApply={handleApplyReservation}
+                initialSearch={reservationDialogInitialSearch}
+            />
+
+            <CreateReservationDialog
+                open={createReservationOpen}
+                onOpenChange={setCreateReservationOpen}
+                items={cart
+                    .filter((item) => !item.isGift)
+                    .map((item): CreateReservationItemPreview => ({
+                        variantId: item.product.id,
+                        productName: item.product.name,
+                        variantLabel: [
+                            item.product.sizes[0] && item.product.sizes[0] !== "Único"
+                                ? `Talle ${item.product.sizes[0]}`
+                                : null,
+                            item.product.color && item.product.color !== "Único"
+                                ? item.product.color
+                                : null,
+                        ]
+                            .filter(Boolean)
+                            .join(" · "),
+                        quantity: item.quantity,
+                        priceAtTime: priceMode === "wholesale"
+                            ? item.product.wholesalePrice
+                            : item.product.price,
+                        priceType: priceMode === "wholesale" ? "WHOLESALE" : "NORMAL",
+                    }))}
+                estimatedTotal={payableAmount + reservationDeposit}
+                onConfirm={handleCreateReservation}
+            />
+
             <Dialog open={quickCreateOpen} onOpenChange={setQuickCreateOpen}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle>Creación rápida de producto</DialogTitle>
-                        <DialogDescription>
-                            Alta mínima para seguir trabajando desde venta. Después podés completar stock o variantes desde inventario.
-                        </DialogDescription>
                     </DialogHeader>
 
                     <div className="space-y-4 py-2">
@@ -2901,28 +3059,18 @@ const isSelectedForGiftGroup = manualGiftSelectedLineIds.includes(item.lineId);
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="quick-create-price">Precio de venta</Label>
+                            <Label htmlFor="quick-create-price">Precio</Label>
                             <Input
                                 id="quick-create-price"
                                 type="number"
                                 min="0"
                                 step="0.01"
                                 value={quickCreatePrice}
-                                onChange={(event) => setQuickCreatePrice(event.target.value)}
+                                onChange={(event) => {
+                                    setQuickCreatePrice(event.target.value);
+                                    setQuickCreateWholesalePrice(event.target.value);
+                                }}
                                 placeholder="Ej: 24990"
-                            />
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="quick-create-wholesale-price">Precio mayorista</Label>
-                            <Input
-                                id="quick-create-wholesale-price"
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={quickCreateWholesalePrice}
-                                onChange={(event) => setQuickCreateWholesalePrice(event.target.value)}
-                                placeholder="Ej: 19990"
                             />
                         </div>
 

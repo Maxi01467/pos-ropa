@@ -35,11 +35,17 @@ export async function POST(request: Request) {
     const rawPayload = await request.json();
     const operations = normalizeCrudPayloads(rawPayload);
 
-    await prisma.$transaction(async (tx) => {
-      for (const operation of operations) {
-        await applyCrudOperation(tx, operation, rawPayload);
+    await prisma.$transaction(
+      async (tx) => {
+        for (const operation of operations) {
+          await applyCrudOperation(tx, operation, rawPayload);
+        }
+      },
+      {
+        maxWait: 15000, // Esperar hasta 15 segundos para obtener una conexión del pool (por defecto 2s)
+        timeout: 30000, // Permitir hasta 30 segundos para ejecutar la transacción (por defecto 5s)
       }
-    });
+    );
 
     return NextResponse.json({ ok: true, processed: operations.length });
 

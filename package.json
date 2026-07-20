@@ -16,6 +16,7 @@
     "lint": "eslint",
     "postinstall": "prisma generate",
     "migrate:productos": "tsx prisma/migrate-productos.ts",
+    "boneyard:build": "tsx scripts/build-skeletons.ts",
     "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
@@ -28,6 +29,7 @@
     "@powersync/react": "^1.10.0",
     "@powersync/web": "^1.37.2",
     "@prisma/client": "^6.19.2",
+    "boneyard-js": "^1.9.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

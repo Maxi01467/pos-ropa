@@ -29,6 +29,11 @@ declare global {
                 terminalName: string | null;
             }>;
             resetTerminalConfig: () => Promise<void>;
+            checkForUpdates: () => Promise<{
+                updateAvailable: boolean;
+                version: string | null;
+            }>;
         };
     }
 }
+

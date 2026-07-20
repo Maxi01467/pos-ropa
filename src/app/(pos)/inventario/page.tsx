@@ -18,7 +18,7 @@ import { formatArgentinaDateTime } from "@/lib/core/datetime";
 import { useInventory } from "./hooks/use-inventory";
 import { ProductCard } from "@/components/inventario/product-card";
 import { ProductFormDialog } from "@/components/inventario/product-form-dialog";
-import { ScreenLoader } from "@/components/ui/screen-loader";
+import { Skeleton } from "boneyard-js/react";
 
 export interface DBProduct {
     id: string;
@@ -116,11 +116,8 @@ export default function InventarioPage() {
         handleDelete,
     } = useInventory();
 
-    if (isLoading) {
-        return <ScreenLoader message="Cargando inventario..." description="Estamos listando tus productos." />;
-    }
-
     return (
+        <Skeleton name="inventario-page" loading={isLoading}>
         <div className="p-4 sm:p-5 lg:p-6">
             <div className="flex flex-col gap-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -409,5 +406,6 @@ export default function InventarioPage() {
                 onSave={handleSave}
             />
         </div>
+        </Skeleton>
     );
 }

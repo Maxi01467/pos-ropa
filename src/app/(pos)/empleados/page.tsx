@@ -18,7 +18,7 @@ import {
     ShieldAlert,
     KeyRound,
 } from "lucide-react";
-import { ScreenLoader } from "@/components/ui/screen-loader";
+import { Skeleton } from "boneyard-js/react";
 
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -283,107 +283,108 @@ export default function EmpleadosPage() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    {isLoading ? (
-                        <ScreenLoader layout="inline" message="Cargando empleados..." />
-                    ) : employees.length === 0 ? (
-                        <div className="rounded-xl border border-dashed p-10 text-center text-muted-foreground">
-                            Todavía no hay empleados cargados.
-                        </div>
-                    ) : (
-                        <Table>
-                            <TableHeader className="bg-stone-50/100 dark:bg-neutral-900/40">
-                                <TableRow className="hover:bg-transparent border-b border-stone-200/50 dark:border-stone-800/40">
-                                    <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5">Usuario</TableHead>
-                                    <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5">Rol</TableHead>
-                                    <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5">Contraseña</TableHead>
-                                    <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5">Estado</TableHead>
-                                    <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5">Creado</TableHead>
-                                    <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5 text-right">Acciones</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {employees.map((employee) => (
-                                    <TableRow key={employee.id}>
-                                        <TableCell>
-                                            <div className="font-semibold">{employee.name}</div>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Badge
-                                                variant="outline"
-                                                className={
-                                                    employee.role === "ADMIN"
-                                                        ? "border-blue-800/25 bg-blue-950/8 text-blue-800 dark:text-blue-100"
-                                                        : "border-slate-200 bg-slate-50 text-slate-700"
-                                                }
-                                            >
-                                                {employee.role}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell>
-                                            <div className="flex items-center gap-2 font-mono">
-                                                <KeyRound className="size-4 text-muted-foreground" />
-                                                {employee.pin}
-                                            </div>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Badge
-                                                variant="outline"
-                                                className={
-                                                    employee.active
-                                                        ? "border-emerald-800/25 bg-emerald-950/8 text-emerald-800 dark:text-emerald-100"
-                                                        : "border-rose-900/25 bg-rose-950/8 text-rose-800 dark:text-rose-100"
-                                                }
-                                            >
-                                                {employee.active ? "Activo" : "Desactivado"}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell className="text-muted-foreground">
-                                            {formatDate(employee.createdAt)}
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                            <div className="flex justify-end gap-2">
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="gap-2 rounded-xl"
-                                                    onClick={() => openEditDialog(employee)}
-                                                >
-                                                    <Pencil className="size-4" />
-                                                    Editar
-                                                </Button>
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="gap-2 rounded-xl"
-                                                    onClick={() => handleToggleStatus(employee)}
-                                                    disabled={statusUpdatingId === employee.id}
-                                                >
-                                                    {statusUpdatingId === employee.id ? (
-                                                        <Loader2 className="size-4 animate-spin" />
-                                                    ) : employee.active ? (
-                                                        <UserX className="size-4" />
-                                                    ) : (
-                                                        <UserCheck className="size-4" />
-                                                    )}
-                                                    {employee.active ? "Desactivar" : "Activar"}
-                                                </Button>
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="gap-2 rounded-xl border-rose-900/20 text-rose-700 hover:bg-rose-950/6 hover:text-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/20"
-                                                    onClick={() => setEmployeePendingDelete(employee)}
-                                                >
-                                                    <Trash2 className="size-4" />
-                                                    Eliminar
-                                                </Button>
-                                            </div>
-                                        </TableCell>
+                    <Skeleton name="empleados-table" loading={isLoading}>
+                        {employees.length === 0 ? (
+                            <div className="rounded-xl border border-dashed p-10 text-center text-muted-foreground">
+                                Todavía no hay empleados cargados.
+                            </div>
+                        ) : (
+                            <Table>
+                                <TableHeader className="bg-stone-50/100 dark:bg-neutral-900/40">
+                                    <TableRow className="hover:bg-transparent border-b border-stone-200/50 dark:border-stone-800/40">
+                                        <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5">Usuario</TableHead>
+                                        <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5">Rol</TableHead>
+                                        <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5">Contraseña</TableHead>
+                                        <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5">Estado</TableHead>
+                                        <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5">Creado</TableHead>
+                                        <TableHead className="font-semibold text-xs tracking-wider uppercase text-neutral-400 py-3.5 text-right">Acciones</TableHead>
                                     </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    )}
+                                </TableHeader>
+                                <TableBody>
+                                    {employees.map((employee) => (
+                                        <TableRow key={employee.id}>
+                                            <TableCell>
+                                                <div className="font-semibold">{employee.name}</div>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Badge
+                                                    variant="outline"
+                                                    className={
+                                                        employee.role === "ADMIN"
+                                                            ? "border-blue-800/25 bg-blue-950/8 text-blue-800 dark:text-blue-100"
+                                                            : "border-slate-200 bg-slate-50 text-slate-700"
+                                                    }
+                                                >
+                                                    {employee.role}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell>
+                                                <div className="flex items-center gap-2 font-mono">
+                                                    <KeyRound className="size-4 text-muted-foreground" />
+                                                    {employee.pin}
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Badge
+                                                    variant="outline"
+                                                    className={
+                                                        employee.active
+                                                            ? "border-emerald-800/25 bg-emerald-950/8 text-emerald-800 dark:text-emerald-100"
+                                                            : "border-rose-900/25 bg-rose-950/8 text-rose-800 dark:text-rose-100"
+                                                    }
+                                                >
+                                                    {employee.active ? "Activo" : "Desactivado"}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground">
+                                                {formatDate(employee.createdAt)}
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <div className="flex justify-end gap-2">
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="gap-2 rounded-xl"
+                                                        onClick={() => openEditDialog(employee)}
+                                                    >
+                                                        <Pencil className="size-4" />
+                                                        Editar
+                                                    </Button>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="gap-2 rounded-xl"
+                                                        onClick={() => handleToggleStatus(employee)}
+                                                        disabled={statusUpdatingId === employee.id}
+                                                    >
+                                                        {statusUpdatingId === employee.id ? (
+                                                            <Loader2 className="size-4 animate-spin" />
+                                                        ) : employee.active ? (
+                                                            <UserX className="size-4" />
+                                                        ) : (
+                                                            <UserCheck className="size-4" />
+                                                        )}
+                                                        {employee.active ? "Desactivar" : "Activar"}
+                                                    </Button>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="gap-2 rounded-xl border-rose-900/20 text-rose-700 hover:bg-rose-950/6 hover:text-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/20"
+                                                        onClick={() => setEmployeePendingDelete(employee)}
+                                                    >
+                                                        <Trash2 className="size-4" />
+                                                        Eliminar
+                                                    </Button>
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        )}
+                    </Skeleton>
                 </CardContent>
+
             </Card>
 
             <Dialog

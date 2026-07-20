@@ -7,4 +7,6 @@ contextBridge.exposeInMainWorld("posDesktop", {
     getTerminalConfig: () => ipcRenderer.invoke("pos-desktop:get-terminal-config"),
     setTerminalConfig: (payload) => ipcRenderer.invoke("pos-desktop:set-terminal-config", payload),
     resetTerminalConfig: () => ipcRenderer.invoke("pos-desktop:reset-terminal-config"),
+    checkForUpdates: () => ipcRenderer.invoke("pos-desktop:check-for-updates"),
 });
+

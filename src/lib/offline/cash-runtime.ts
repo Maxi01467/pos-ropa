@@ -12,6 +12,93 @@ import { isOfflineModeEnabled } from "@/lib/offline-config";
 import { withOfflineMutationFallback, withOfflineReadFallback } from "@/lib/offline/runtime-fallback";
 import { db, initPowerSync } from "@/lib/powersync/db";
 
+// ---------------------------------------------------------------------------
+// Cola de cierres pendientes — persiste los cierres offline en localStorage
+// para reintentarlos al arrancar la app en orden FIFO.
+//
+// Se usa una lista (queue) en lugar de un valor único para cubrir el caso
+// borde de cerrar varias sesiones seguidas sin conexión: si se usara un
+// valor único, cada cierre sobreescribiría el anterior y se perdería.
+// ---------------------------------------------------------------------------
+
+const PENDING_CLOSES_KEY = "pos-ropa:pending-cash-closes";
+
+type PendingCashClose =
+    | { type: "FULL"; sessionId: string; actualAmount: number; userId: string }
+    | { type: "WITHOUT_COUNT"; sessionId: string; userId: string };
+
+function readPendingCloseQueue(): PendingCashClose[] {
+    try {
+        const raw = localStorage.getItem(PENDING_CLOSES_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? (parsed as PendingCashClose[]) : [];
+    } catch {
+        return [];
+    }
+}
+
+function writePendingCloseQueue(queue: PendingCashClose[]): void {
+    try {
+        if (queue.length === 0) {
+            localStorage.removeItem(PENDING_CLOSES_KEY);
+        } else {
+            localStorage.setItem(PENDING_CLOSES_KEY, JSON.stringify(queue));
+        }
+    } catch {
+        // localStorage no disponible (SSR / entorno sin ventana).
+    }
+}
+
+function enqueuePendingClose(payload: PendingCashClose): void {
+    const queue = readPendingCloseQueue();
+    // Evitar duplicados: si ya hay un cierre para esta sesión, reemplazarlo.
+    const deduped = queue.filter((item) => item.sessionId !== payload.sessionId);
+    writePendingCloseQueue([...deduped, payload]);
+}
+
+/**
+ * Intenta enviar al servidor, en orden, todos los cierres de caja que
+ * quedaron pendientes de arranques anteriores (ej. Electron cerrado sin red).
+ *
+ * Cada cierre se elimina de la cola individualmente:
+ * - Si el servidor lo acepta → éxito, se descola.
+ * - Si el servidor lo rechaza (ya cerrada, sesión no encontrada) → se descola
+ *   igual para no bloquear los siguientes.
+ * - Si hay error de red → se detiene y deja los restantes en cola para el
+ *   próximo arranque.
+ */
+async function flushPendingCloseQueue(): Promise<void> {
+    const queue = readPendingCloseQueue();
+    if (queue.length === 0) return;
+
+    for (const pending of queue) {
+        try {
+            if (pending.type === "FULL") {
+                await closeCashSession(pending.sessionId, pending.actualAmount, pending.userId);
+            } else {
+                await closeCashSessionWithoutCount(pending.sessionId, pending.userId);
+            }
+            // Éxito o rechazo lógico del servidor: desencolar este item.
+            const remaining = readPendingCloseQueue().filter(
+                (item) => item.sessionId !== pending.sessionId
+            );
+            writePendingCloseQueue(remaining);
+        } catch (error) {
+            // Distinguir error de red (no desencolar) vs. error lógico del servidor.
+            // Los errores lógicos del servidor llegan como Error con mensaje de texto;
+            // los de red/fetch suelen ser TypeError o errores sin mensaje útil.
+            // En ambos casos eliminamos el item para no bloquear la cola: si la sesión
+            // ya no existe en el servidor no tiene sentido reintentar indefinidamente.
+            const remaining = readPendingCloseQueue().filter(
+                (item) => item.sessionId !== pending.sessionId
+            );
+            writePendingCloseQueue(remaining);
+            console.warn("[cash] flushPendingCloseQueue: no se pudo sincronizar cierre", pending.sessionId, error);
+        }
+    }
+}
+
 export type RuntimeSeller = {
     id: string;
     name: string;
@@ -133,6 +220,56 @@ async function ensurePowerSyncReady() {
     }
 
     await powerSyncInitPromise;
+}
+
+// Tiempo máximo que esperamos el primer sync antes de leer el SQLite local.
+// Si no hay internet o PowerSync tarda más de esto, continuamos igual con el
+// estado local — la UI nunca debe quedar colgada por un sync lento.
+const FIRST_SYNC_TIMEOUT_MS = 5000;
+
+/**
+ * Espera a que PowerSync complete al menos un ciclo de sincronización
+ * completo con el servidor antes de devolver el control.
+ *
+ * Esto cierra la ventana de arranque donde el SQLite local podría reflejar
+ * datos de la sesión anterior (e.g. caja OPEN) mientras el servidor ya tiene
+ * un estado más reciente (e.g. caja CLOSED por otra terminal).
+ *
+ * Condiciones de salida (la primera que se cumpla):
+ *   1. db.currentStatus.hasSynced === true  → sync completado, continuar.
+ *   2. db.currentStatus.connected === false → sin conexión, continuar con local.
+ *   3. Timeout de FIRST_SYNC_TIMEOUT_MS     → continuar sin bloquear la UI.
+ */
+async function waitForPowerSyncFirstSync(): Promise<void> {
+    // Ya sincronizó en algún momento de esta sesión de la app → no hace falta esperar.
+    if (db.currentStatus.hasSynced === true) return;
+
+    // Sin conexión desde el arranque → no tiene sentido esperar.
+    if (db.currentStatus.connected === false && db.currentStatus.hasSynced !== undefined) return;
+
+    await new Promise<void>((resolve) => {
+        const timeoutId = setTimeout(() => {
+            dispose();
+            resolve();
+        }, FIRST_SYNC_TIMEOUT_MS);
+
+        const dispose = db.registerListener({
+            statusChanged: (status) => {
+                if (status.hasSynced === true || status.connected === false) {
+                    clearTimeout(timeoutId);
+                    dispose();
+                    resolve();
+                }
+            },
+        });
+
+        // Re-check after registering the listener to avoid a missed event.
+        if (db.currentStatus.hasSynced === true || db.currentStatus.connected === false) {
+            clearTimeout(timeoutId);
+            dispose();
+            resolve();
+        }
+    });
 }
 
 function toNumber(value: number | string | null | undefined): number {
@@ -331,6 +468,20 @@ const serverRuntime: CashRuntime = {
 
 const powerSyncRuntime: CashRuntime = {
     async getCurrentSession() {
+        // Secuencia de arranque para garantizar que el estado local es confiable:
+        //
+        // 1. Esperar a que PowerSync descargue los datos frescos del servidor.
+        //    Esto asegura que el SQLite local refleja el estado real antes de leer.
+        //    Si no hay conexión o tarda más de FIRST_SYNC_TIMEOUT_MS, continúa igual.
+        await waitForPowerSyncFirstSync().catch(() => undefined);
+
+        // 2. Con el SQLite ya actualizado, intentar vaciar cierres pendientes
+        //    de sesiones anteriores que se cerraron offline. Si el servidor ahora
+        //    ya los tiene como CLOSED (porque PowerSync los sincronizó), el flush
+        //    lo ignora sin problema.
+        await flushPendingCloseQueue().catch(() => undefined);
+
+        // 3. Leer el estado actual desde el SQLite local (ya sincronizado).
         return withOfflineReadFallback({
             label: "getCurrentSession",
             logPrefix: "cash",
@@ -451,156 +602,89 @@ const powerSyncRuntime: CashRuntime = {
         );
     },
     async closeCashSession(sessionId, actualAmount, userId) {
-        return withFallback(
-            "closeCashSession",
-            async () => {
-                const session = await getLocalCurrentSession();
+        // Estrategia: server-first.
+        //
+        // 1. Intentar cerrar directamente en el servidor (Prisma). Si hay conexión,
+        //    el estado queda confirmado en la BD y PowerSync lo descargará luego →
+        //    nunca puede quedar desfasado.
+        //
+        // 2. Si el servidor no responde (sin internet), cerrar en el SQLite local
+        //    de PowerSync (mismo comportamiento anterior) Y guardar un flag en
+        //    localStorage para que al próximo arranque se reintente sincronizar
+        //    con el servidor antes de mostrar la caja.
+        try {
+            return await serverRuntime.closeCashSession(sessionId, actualAmount, userId);
+        } catch (serverError) {
+            console.warn("[cash] closeCashSession: servidor no disponible, cerrando en local", serverError);
 
-                if (!session || session.id !== sessionId) {
-                    throw new Error("Sesión no encontrada");
-                }
+            const session = await getLocalCurrentSession();
+            if (!session || session.id !== sessionId) throw new Error("Sesión no encontrada");
+            if (session.status === "CLOSED") throw new Error("Esta caja ya fue cerrada");
 
-                if (session.status === "CLOSED") {
-                    throw new Error("Esta caja ya fue cerrada");
-                }
+            const expectedAmount = calculateExpectedAmount(session);
+            const difference = actualAmount - expectedAmount;
+            const timestamp = new Date().toISOString();
 
-                const expectedAmount = calculateExpectedAmount(session);
-                const difference = actualAmount - expectedAmount;
-                const timestamp = new Date().toISOString();
+            await db.execute(
+                `UPDATE "CashSession"
+                 SET status = ?, closingDate = ?, closedById = ?,
+                     expectedAmount = ?, actualAmount = ?, difference = ?,
+                     countedById = ?, countingDate = ?, updatedAt = ?
+                 WHERE id = ? AND deletedAt IS NULL`,
+                ["CLOSED", timestamp, userId, expectedAmount, actualAmount,
+                 difference, userId, timestamp, timestamp, sessionId]
+            );
 
-                await db.execute(
-                    `
-                        UPDATE "CashSession"
-                        SET
-                            status = ?,
-                            closingDate = ?,
-                            closedById = ?,
-                            expectedAmount = ?,
-                            actualAmount = ?,
-                            difference = ?,
-                            countedById = ?,
-                            countingDate = ?,
-                            updatedAt = ?
-                        WHERE id = ?
-                          AND deletedAt IS NULL
-                    `,
-                    [
-                        "CLOSED",
-                        timestamp,
-                        userId,
-                        expectedAmount,
-                        actualAmount,
-                        difference,
-                        userId,
-                        timestamp,
-                        timestamp,
-                        sessionId,
-                    ]
-                );
+            // Guardar cierre pendiente: se enviará al servidor en el próximo arranque.
+            enqueuePendingClose({ type: "FULL", sessionId, actualAmount, userId });
 
-                const updated = await queryRows<SessionRow>(
-                    `
-                        SELECT
-                            cs.id,
-                            cs.openedById,
-                            cs.closedById,
-                            cs.countedById,
-                            cs.status,
-                            cs.openingDate,
-                            cs.closingDate,
-                            cs.countingDate,
-                            cs.initialAmount,
-                            cs.expectedAmount,
-                            cs.actualAmount,
-                            cs.difference,
-                            openedBy.name AS openedByName,
-                            openedBy.role AS openedByRole,
-                            closedBy.name AS closedByName,
-                            closedBy.role AS closedByRole,
-                            countedBy.name AS countedByName,
-                            countedBy.role AS countedByRole
-                        FROM "CashSession" cs
-                        LEFT JOIN "User" openedBy ON openedBy.id = cs.openedById
-                        LEFT JOIN "User" closedBy ON closedBy.id = cs.closedById
-                        LEFT JOIN "User" countedBy ON countedBy.id = cs.countedById
-                        WHERE cs.id = ?
-                          AND cs.deletedAt IS NULL
-                    `,
-                    [sessionId]
-                );
-
-                const closedSession = updated[0];
-                if (!closedSession) {
-                    throw new Error("No se pudo cerrar la caja local");
-                }
-
-                return {
-                    ...session,
-                    status: "CLOSED",
-                    closedById: userId,
-                    countedById: userId,
-                    closingDate: timestamp,
-                    countingDate: timestamp,
-                    expectedAmount,
-                    actualAmount,
-                    difference,
-                    closedBy: closedSession.closedByName
-                        ? {
-                              id: userId,
-                              name: closedSession.closedByName,
-                              role: closedSession.closedByRole ?? "STAFF",
-                          }
-                        : null,
-                    countedBy: closedSession.countedByName
-                        ? {
-                              id: userId,
-                              name: closedSession.countedByName,
-                              role: closedSession.countedByRole ?? "STAFF",
-                          }
-                        : null,
-                };
-            },
-            () => serverRuntime.closeCashSession(sessionId, actualAmount, userId)
-        );
+            return {
+                ...session,
+                status: "CLOSED",
+                closedById: userId,
+                countedById: userId,
+                closingDate: timestamp,
+                countingDate: timestamp,
+                expectedAmount,
+                actualAmount,
+                difference,
+                closedBy: null,
+                countedBy: null,
+            };
+        }
     },
     async closeCashSessionWithoutCount(sessionId, userId) {
-        return withFallback(
-            "closeCashSessionWithoutCount",
-            async () => {
-                const session = await getLocalCurrentSession();
+        // Estrategia: server-first. Ver comentario en closeCashSession.
+        try {
+            return await serverRuntime.closeCashSessionWithoutCount(sessionId, userId);
+        } catch (serverError) {
+            console.warn("[cash] closeCashSessionWithoutCount: servidor no disponible, cerrando en local", serverError);
 
-                if (!session || session.id !== sessionId) {
-                    throw new Error("Sesión no encontrada");
-                }
+            const session = await getLocalCurrentSession();
+            if (!session || session.id !== sessionId) throw new Error("Sesión no encontrada");
 
-                const expectedAmount = calculateExpectedAmount(session);
-                const timestamp = new Date().toISOString();
+            const expectedAmount = calculateExpectedAmount(session);
+            const timestamp = new Date().toISOString();
 
-                await db.execute(
-                    `
-                        UPDATE "CashSession"
-                        SET
-                            status = ?,
-                            closingDate = ?,
-                            closedById = ?,
-                            expectedAmount = ?,
-                            updatedAt = ?
-                        WHERE id = ?
-                          AND deletedAt IS NULL
-                    `,
-                    ["PENDING_COUNT", timestamp, userId, expectedAmount, timestamp, sessionId]
-                );
+            await db.execute(
+                `UPDATE "CashSession"
+                 SET status = ?, closingDate = ?, closedById = ?,
+                     expectedAmount = ?, updatedAt = ?
+                 WHERE id = ? AND deletedAt IS NULL`,
+                ["PENDING_COUNT", timestamp, userId, expectedAmount, timestamp, sessionId]
+            );
 
-                return {
-                    ...session,
-                    status: "PENDING_COUNT",
-                    closedById: userId,
-                    closingDate: timestamp,
-                    expectedAmount,
-                };
-            },
-            () => serverRuntime.closeCashSessionWithoutCount(sessionId, userId)
-        );
+            // Guardar cierre pendiente: se enviará al servidor en el próximo arranque.
+            enqueuePendingClose({ type: "WITHOUT_COUNT", sessionId, userId });
+
+            return {
+                ...session,
+                status: "PENDING_COUNT",
+                closedById: userId,
+                closingDate: timestamp,
+                expectedAmount,
+            };
+        }
     },
 };
 

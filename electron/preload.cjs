@@ -8,5 +8,12 @@ contextBridge.exposeInMainWorld("posDesktop", {
     setTerminalConfig: (payload) => ipcRenderer.invoke("pos-desktop:set-terminal-config", payload),
     resetTerminalConfig: () => ipcRenderer.invoke("pos-desktop:reset-terminal-config"),
     checkForUpdates: () => ipcRenderer.invoke("pos-desktop:check-for-updates"),
+    installUpdate: () => ipcRenderer.invoke("pos-desktop:install-update"),
+    getAppVersion: () => ipcRenderer.invoke("pos-desktop:get-app-version"),
+    getUpdateStatus: () => ipcRenderer.invoke("pos-desktop:get-update-status"),
+    onUpdateStatus: (callback) => {
+        const handler = (_event, data) => callback(data);
+        ipcRenderer.on("pos-desktop:update-status", handler);
+        return () => ipcRenderer.removeListener("pos-desktop:update-status", handler);
+    },
 });
-

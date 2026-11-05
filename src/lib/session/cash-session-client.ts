@@ -49,23 +49,24 @@ export function useCashSessionStatus() {
 
     const refreshCashSessionStatus = useCallback(async () => {
         const refreshRequestId = ++latestRefreshRequestId;
-        let localHasOpenSession: boolean | null = null;
 
+        // El runtime (getCashRuntime) ya usa estrategia server-first: consulta al
+        // servidor y solo cae al SQLite local si no hay conexión. Por eso su
+        // resultado es autoritativo y no necesitamos una segunda llamada al servidor.
+        //
+        // Si el runtime falla completamente (error inesperado en la importación o
+        // en ambas fuentes), hacemos un último intento directo a la server action.
         try {
-            // Importar dinámicamente el local-first runtime para no bloquear la UI si no está listo.
             const { getCashRuntime } = await import("@/lib/offline/cash-runtime");
             const cashRuntime = getCashRuntime();
             const session = await cashRuntime.getCurrentSession();
-            localHasOpenSession = Boolean(session);
-
-            if (localHasOpenSession) {
-                if (refreshRequestId === latestRefreshRequestId) {
-                    setCashSessionStatus(true);
-                }
-                return;
+            if (refreshRequestId === latestRefreshRequestId) {
+                setCashSessionStatus(Boolean(session));
             }
+            return;
         } catch {
-            localHasOpenSession = null;
+            // Runtime falló (ej: PowerSync no inicializado aún).
+            // Intentar directamente con el servidor como último recurso.
         }
 
         try {
@@ -74,17 +75,9 @@ export function useCashSessionStatus() {
                 setCashSessionStatus(Boolean(serverSession));
             }
         } catch {
-            if (refreshRequestId === latestRefreshRequestId) {
-                // Si ambas fuentes fallan (local Y servidor), no asumimos que la caja
-                // está cerrada. Preservamos el último estado conocido para evitar que
-                // un corte de internet muestre falsamente la caja como cerrada.
-                // Solo actualizamos si tenemos información local válida.
-                if (localHasOpenSession !== null) {
-                    setCashSessionStatus(localHasOpenSession);
-                }
-                // Si localHasOpenSession es null (ambas fuentes fallaron sin datos),
-                // no llamamos a setCashSessionStatus → el estado previo se mantiene.
-            }
+            // Ambas fuentes fallaron: preservar el último estado conocido.
+            // No llamamos a setCashSessionStatus para no mostrar un estado
+            // incorrecto por un error de red transitorio.
         }
     }, []);
 

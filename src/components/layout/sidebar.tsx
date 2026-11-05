@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import {
+    ArrowDownToLine,
+    Boxes,
     CalendarDays,
     Check,
     ChevronDown,
@@ -17,9 +19,9 @@ import {
     RefreshCw,
     Settings,
     ShoppingCart,
+    Sparkles,
     Users,
     Wallet,
-    Boxes,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -117,23 +119,105 @@ function SidebarContent({
     const showUpdateButton = isDesktop || isDev;
     const [menuExpanded] = useState(true);
     const [workspaceExpanded, setWorkspaceExpanded] = useState(true);
-    const [updateState, setUpdateState] = useState<"idle" | "checking" | "upToDate">("idle");
+    const [updateState, setUpdateState] = useState<
+        "idle" | "checking" | "downloading" | "readyToInstall" | "upToDate"
+    >("idle");
+    const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+    const [downloadPercent, setDownloadPercent] = useState<number>(0);
+
+    // Escuchar el estado de actualización de Electron en tiempo real
+    useEffect(() => {
+        if (!window.posDesktop?.onUpdateStatus) return;
+
+        // Consultar estado actual por si ya hay una descarga en curso o completada
+        window.posDesktop.getUpdateStatus?.().then((initial) => {
+            if (initial?.status === "ready-to-install") {
+                setUpdateState("readyToInstall");
+                setUpdateVersion(initial.version ?? null);
+            } else if (initial?.status === "downloading") {
+                setUpdateState("downloading");
+                setUpdateVersion(initial.version ?? null);
+                setDownloadPercent(initial.percent ?? 0);
+            }
+        }).catch(() => undefined);
+
+        const unsubscribe = window.posDesktop.onUpdateStatus((statusData) => {
+            if (statusData.status === "checking") {
+                setUpdateState("checking");
+            } else if (statusData.status === "available" || statusData.status === "downloading") {
+                setUpdateState("downloading");
+                if (statusData.version) setUpdateVersion(statusData.version);
+                if (typeof statusData.percent === "number") setDownloadPercent(statusData.percent);
+            } else if (statusData.status === "ready-to-install") {
+                setUpdateState("readyToInstall");
+                if (statusData.version) setUpdateVersion(statusData.version);
+                toast.success(
+                    `¡Versión ${statusData.version ? `v${statusData.version} ` : ""}lista para instalar!`,
+                    {
+                        description: "Hacé clic en el botón de la barra lateral para reiniciar y aplicar.",
+                        action: {
+                            label: "Reiniciar ahora",
+                            onClick: () => void window.posDesktop?.installUpdate?.(),
+                        },
+                        duration: 10000,
+                    }
+                );
+            } else if (statusData.status === "not-available") {
+                setUpdateState("upToDate");
+                setTimeout(() => setUpdateState("idle"), 4000);
+            } else if (statusData.status === "error") {
+                setUpdateState("idle");
+            }
+        });
+
+        return unsubscribe;
+    }, []);
 
     const handleCheckForUpdates = async () => {
-        if (updateState === "checking") return;
+        if (updateState === "checking" || updateState === "downloading") return;
+
+        // Si ya está descargada, reiniciar e instalar de inmediato
+        if (updateState === "readyToInstall") {
+            try {
+                if (window.posDesktop?.installUpdate) {
+                    await window.posDesktop.installUpdate();
+                } else {
+                    toast.info("Reiniciando aplicación...");
+                }
+            } catch {
+                toast.error("No se pudo iniciar la instalación");
+            }
+            return;
+        }
+
         setUpdateState("checking");
         try {
             if (window.posDesktop?.checkForUpdates) {
-                await window.posDesktop.checkForUpdates();
+                const res = await window.posDesktop.checkForUpdates();
+                if (res.updateAvailable) {
+                    setUpdateState("downloading");
+                    setUpdateVersion(res.version);
+                    toast.info(
+                        `Nueva versión ${res.version ? `v${res.version} ` : ""}disponible`,
+                        {
+                            description: "Descargando actualización en segundo plano...",
+                        }
+                    );
+                } else {
+                    setUpdateState("upToDate");
+                    toast.info("Ya tenés la última versión instalada");
+                    setTimeout(() => setUpdateState("idle"), 4000);
+                }
             } else {
-                // En dev sin Electron: simular un check de 1.5s
+                // En dev web sin Electron
                 await new Promise((resolve) => setTimeout(resolve, 1500));
+                setUpdateState("upToDate");
+                setTimeout(() => setUpdateState("idle"), 3000);
             }
-            setUpdateState("upToDate");
-            setTimeout(() => setUpdateState("idle"), 3000);
-        } catch {
+        } catch (err) {
             setUpdateState("idle");
-            toast.error("No se pudo buscar actualizaciones");
+            const msg = err instanceof Error ? err.message : "Error de conexión";
+            toast.error(`No se pudo buscar actualizaciones: ${msg}`);
         }
     };
 
@@ -510,10 +594,23 @@ function SidebarContent({
                                 variant="ghost"
                                 onClick={handleCheckForUpdates}
                                 disabled={updateState === "checking"}
-                                className="mb-1 h-10 w-full justify-start gap-3 rounded-2xl px-3 text-muted-foreground transform-gpu transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted/70 hover:text-foreground active:scale-[0.985] disabled:opacity-60"
+                                className={cn(
+                                    "mb-1 h-10 w-full justify-start gap-3 rounded-2xl px-3 transform-gpu transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.985]",
+                                    updateState === "readyToInstall"
+                                        ? "bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:bg-emerald-500/20 dark:text-emerald-300 dark:hover:bg-emerald-500/30 border border-emerald-500/30 font-semibold"
+                                        : updateState === "downloading"
+                                          ? "text-cyan-600 dark:text-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/15 cursor-default font-medium"
+                                          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground disabled:opacity-60 font-medium"
+                                )}
                             >
                                 {updateState === "checking" && (
                                     <RefreshCw className="size-4.5 shrink-0 animate-spin" />
+                                )}
+                                {updateState === "downloading" && (
+                                    <ArrowDownToLine className="size-4.5 shrink-0 animate-bounce text-cyan-500" />
+                                )}
+                                {updateState === "readyToInstall" && (
+                                    <Sparkles className="size-4.5 shrink-0 text-emerald-500 animate-pulse" />
                                 )}
                                 {updateState === "upToDate" && (
                                     <Check className="size-4.5 shrink-0 text-emerald-500" />
@@ -521,8 +618,10 @@ function SidebarContent({
                                 {updateState === "idle" && (
                                     <RefreshCw className="size-4.5 shrink-0" />
                                 )}
-                                <span className="text-sm font-medium">
+                                <span className="truncate text-sm">
                                     {updateState === "checking" && "Buscando..."}
+                                    {updateState === "downloading" && `Descargando ${updateVersion ? `v${updateVersion} ` : ""}(${downloadPercent}%)`}
+                                    {updateState === "readyToInstall" && `Reiniciar e instalar ${updateVersion ? `v${updateVersion}` : ""}`}
                                     {updateState === "upToDate" && "Ya tenés la última versión"}
                                     {updateState === "idle" && "Buscar actualización"}
                                 </span>
@@ -558,18 +657,37 @@ function SidebarContent({
                                     <button
                                         onClick={handleCheckForUpdates}
                                         disabled={updateState === "checking"}
-                                        className="flex size-9 items-center justify-center rounded-2xl text-muted-foreground transform-gpu transition-[background-color,color,transform] duration-150 ease-out hover:bg-muted/70 hover:text-foreground active:scale-[0.97] disabled:opacity-60"
+                                        className={cn(
+                                            "flex size-9 items-center justify-center rounded-2xl transform-gpu transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97]",
+                                            updateState === "readyToInstall"
+                                                ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/40"
+                                                : updateState === "downloading"
+                                                  ? "bg-cyan-500/15 text-cyan-600 dark:text-cyan-400"
+                                                  : "text-muted-foreground hover:bg-muted/70 hover:text-foreground disabled:opacity-60"
+                                        )}
                                         type="button"
                                     >
-                                        {updateState === "upToDate" ? (
+                                        {updateState === "checking" && (
+                                            <RefreshCw className="size-4 animate-spin" />
+                                        )}
+                                        {updateState === "downloading" && (
+                                            <ArrowDownToLine className="size-4 animate-bounce text-cyan-500" />
+                                        )}
+                                        {updateState === "readyToInstall" && (
+                                            <Sparkles className="size-4 text-emerald-500 animate-pulse" />
+                                        )}
+                                        {updateState === "upToDate" && (
                                             <Check className="size-4 text-emerald-500" />
-                                        ) : (
-                                            <RefreshCw className={updateState === "checking" ? "size-4 animate-spin" : "size-4"} />
+                                        )}
+                                        {updateState === "idle" && (
+                                            <RefreshCw className="size-4" />
                                         )}
                                     </button>
                                 </TooltipTrigger>
                                 <TooltipContent side="right">
                                     {updateState === "checking" && "Buscando..."}
+                                    {updateState === "downloading" && `Descargando (${downloadPercent}%)`}
+                                    {updateState === "readyToInstall" && `¡Actualización ${updateVersion ? `v${updateVersion} ` : ""}lista! Clic para reiniciar`}
                                     {updateState === "upToDate" && "Ya tenés la última versión"}
                                     {updateState === "idle" && "Buscar actualización"}
                                 </TooltipContent>

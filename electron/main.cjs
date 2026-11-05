@@ -20,6 +20,32 @@ const TERMINAL_CONFIG_BACKUP_FILENAME = `${TERMINAL_CONFIG_FILENAME}.bak`;
 let localServerPromise;
 let updateReadyDialogShown = false;
 let updateCheckScheduled = false;
+let currentUpdateState = {
+    status: "idle",
+    version: null,
+    currentVersion: null,
+    percent: 0,
+    message: null,
+};
+
+function broadcastUpdateStatus(newFields, targetWindow) {
+    currentUpdateState = {
+        ...currentUpdateState,
+        ...newFields,
+        currentVersion: app.getVersion(),
+    };
+    try {
+        const win =
+            targetWindow && !targetWindow.isDestroyed()
+                ? targetWindow
+                : BrowserWindow.getAllWindows()[0];
+        if (win && !win.isDestroyed() && win.webContents) {
+            win.webContents.send("pos-desktop:update-status", currentUpdateState);
+        }
+    } catch {
+        // Ventana destruida o no lista aún
+    }
+}
 
 function getLogPath() {
     return path.join(app.getPath("userData"), LOG_FILENAME);
@@ -323,30 +349,38 @@ function scheduleAutoUpdateCheck(mainWindow) {
 
     autoUpdater.on("checking-for-update", () => {
         appendDesktopLog("auto-update: checking for updates");
+        broadcastUpdateStatus({ status: "checking" }, mainWindow);
     });
 
     autoUpdater.on("update-available", (info) => {
         appendDesktopLog(`auto-update: update available version=${info?.version || "unknown"}`);
+        broadcastUpdateStatus({ status: "available", version: info?.version || null, percent: 0 }, mainWindow);
     });
 
     autoUpdater.on("update-not-available", (info) => {
         appendDesktopLog(`auto-update: no updates available current=${app.getVersion()} latest=${info?.version || "unknown"}`);
+        broadcastUpdateStatus({ status: "not-available", version: info?.version || app.getVersion() }, mainWindow);
     });
 
     autoUpdater.on("download-progress", (progress) => {
+        const percent = Math.round(progress?.percent || 0);
         appendDesktopLog(
-            `auto-update: download progress percent=${progress.percent?.toFixed?.(1) || "0.0"} transferred=${progress.transferred} total=${progress.total}`
+            `auto-update: download progress percent=${percent} transferred=${progress.transferred} total=${progress.total}`
         );
+        broadcastUpdateStatus({ status: "downloading", percent }, mainWindow);
     });
 
     autoUpdater.on("error", (error) => {
+        const message = error instanceof Error ? error.message : String(error);
         appendDesktopLog(
-            `auto-update: error ${error instanceof Error ? error.stack || error.message : String(error)}`
+            `auto-update: error ${error instanceof Error ? error.stack || message : message}`
         );
+        broadcastUpdateStatus({ status: "error", message }, mainWindow);
     });
 
     autoUpdater.on("update-downloaded", async (info) => {
         appendDesktopLog(`auto-update: update downloaded version=${info?.version || "unknown"}`);
+        broadcastUpdateStatus({ status: "ready-to-install", version: info?.version || null, percent: 100 }, mainWindow);
 
         if (updateReadyDialogShown) return;
         updateReadyDialogShown = true;
@@ -356,7 +390,7 @@ function scheduleAutoUpdateCheck(mainWindow) {
 
     setTimeout(() => {
         appendDesktopLog("auto-update: starting initial check");
-        void autoUpdater.checkForUpdatesAndNotify().catch((error) => {
+        void autoUpdater.checkForUpdates().catch((error) => {
             appendDesktopLog(
                 `auto-update: check failed ${error instanceof Error ? error.stack || error.message : String(error)}`
             );
@@ -991,17 +1025,45 @@ app.whenReady().then(() => {
     ipcMain.handle("pos-desktop:reset-terminal-config", () => resetTerminalConfig());
     ipcMain.handle("pos-desktop:check-for-updates", async () => {
         try {
-            const result = await autoUpdater.checkForUpdatesAndNotify();
+            if (!app.isPackaged) {
+                const devResult = {
+                    updateAvailable: false,
+                    currentVersion: app.getVersion(),
+                    version: app.getVersion(),
+                };
+                broadcastUpdateStatus({ status: "not-available", version: app.getVersion() });
+                return devResult;
+            }
+
+            broadcastUpdateStatus({ status: "checking" });
+            const result = await autoUpdater.checkForUpdates();
+            const updateAvailable = Boolean(result && result.isUpdateAvailable);
+            const latestVersion = result?.updateInfo?.version ?? null;
+
+            if (updateAvailable) {
+                broadcastUpdateStatus({ status: "available", version: latestVersion, percent: 0 });
+            } else {
+                broadcastUpdateStatus({ status: "not-available", version: latestVersion || app.getVersion() });
+            }
+
             return {
-                updateAvailable: result !== null,
-                version: result?.updateInfo?.version ?? null,
+                updateAvailable,
+                currentVersion: app.getVersion(),
+                version: latestVersion,
             };
         } catch (error) {
-            throw new Error(
-                error instanceof Error ? error.message : String(error)
-            );
+            const message = error instanceof Error ? error.message : String(error);
+            appendDesktopLog(`auto-update: check-for-updates error ${message}`);
+            broadcastUpdateStatus({ status: "error", message });
+            throw new Error(message);
         }
     });
+    ipcMain.handle("pos-desktop:install-update", () => {
+        appendDesktopLog("auto-update: user triggered install-update from UI");
+        setImmediate(() => autoUpdater.quitAndInstall());
+    });
+    ipcMain.handle("pos-desktop:get-update-status", () => currentUpdateState);
+    ipcMain.handle("pos-desktop:get-app-version", () => app.getVersion());
 
     void createMainWindow().then((mainWindow) => {
         scheduleAutoUpdateCheck(mainWindow);

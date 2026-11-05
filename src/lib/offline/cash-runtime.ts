@@ -468,28 +468,28 @@ const serverRuntime: CashRuntime = {
 
 const powerSyncRuntime: CashRuntime = {
     async getCurrentSession() {
-        // Secuencia de arranque para garantizar que el estado local es confiable:
+        // Estrategia: server-first.
         //
-        // 1. Esperar a que PowerSync descargue los datos frescos del servidor.
-        //    Esto asegura que el SQLite local refleja el estado real antes de leer.
-        //    Si no hay conexión o tarda más de FIRST_SYNC_TIMEOUT_MS, continúa igual.
-        await waitForPowerSyncFirstSync().catch(() => undefined);
+        // Consultar el servidor primero garantiza que siempre se obtiene el
+        // estado real de la caja, evitando que el SQLite local desactualizado
+        // muestre una sesión del día anterior como OPEN (ej: cierre realizado
+        // offline que aún no sincronizó, o app abierta al día siguiente).
+        //
+        // Si el servidor no responde (sin internet), se cae al SQLite local
+        // después de esperar el sync y vaciar cierres pendientes.
+        try {
+            return await serverRuntime.getCurrentSession();
+        } catch {
+            console.warn("[cash] getCurrentSession: servidor no disponible, usando estado local");
 
-        // 2. Con el SQLite ya actualizado, intentar vaciar cierres pendientes
-        //    de sesiones anteriores que se cerraron offline. Si el servidor ahora
-        //    ya los tiene como CLOSED (porque PowerSync los sincronizó), el flush
-        //    lo ignora sin problema.
-        await flushPendingCloseQueue().catch(() => undefined);
+            // Con internet caído, sincronizar lo que se pueda y vaciar la cola
+            // de cierres pendientes antes de leer el local.
+            await waitForPowerSyncFirstSync().catch(() => undefined);
+            await flushPendingCloseQueue().catch(() => undefined);
 
-        // 3. Leer el estado actual desde el SQLite local (ya sincronizado).
-        return withOfflineReadFallback({
-            label: "getCurrentSession",
-            logPrefix: "cash",
-            ensureReady: ensurePowerSyncReady,
-            local: getLocalCurrentSession,
-            server: () => serverRuntime.getCurrentSession(),
-            hasUsableLocalData: (result) => result !== null,
-        });
+            await ensurePowerSyncReady();
+            return getLocalCurrentSession();
+        }
     },
     async getSellers() {
         return withOfflineReadFallback({
@@ -502,69 +502,88 @@ const powerSyncRuntime: CashRuntime = {
         });
     },
     async openCashSession(initialAmount, userId) {
-        return withFallback(
-            "openCashSession",
-            async () => {
-                if (!Number.isFinite(initialAmount) || initialAmount < 0) {
-                    throw new Error("El monto inicial debe ser un número mayor o igual a 0");
-                }
+        // Estrategia: server-first.
+        //
+        // Abrir siempre en el servidor primero evita crear sesiones duplicadas
+        // cuando el SQLite local está desactualizado (ej: muestra la sesión de
+        // ayer como CLOSED cuando en realidad aún figura como OPEN en el servidor,
+        // o viceversa). El servidor es la única fuente de verdad para prevenir
+        // que coexistan dos sesiones OPEN simultáneamente.
+        //
+        // Solo se cae al SQLite local si el servidor no responde (sin internet).
+        if (!Number.isFinite(initialAmount) || initialAmount < 0) {
+            throw new Error("El monto inicial debe ser un número mayor o igual a 0");
+        }
 
-                const existingSession = await getLocalCurrentSession();
-                if (existingSession) {
-                    throw new Error("Ya hay una caja abierta actualmente.");
-                }
+        try {
+            return await serverRuntime.openCashSession(initialAmount, userId);
+        } catch (serverError) {
+            // Si el servidor rechazó la operación por razón lógica (ya hay una
+            // caja abierta, monto inválido, etc.), propagar el error directamente.
+            if (serverError instanceof Error) {
+                const isLogicRejection =
+                    serverError.message.includes("caja abierta") ||
+                    serverError.message.includes("monto inicial");
+                if (isLogicRejection) throw serverError;
+            }
 
-                const timestamp = new Date().toISOString();
-                const sessionId = crypto.randomUUID();
+            // Servidor no disponible → abrir en SQLite local como fallback offline.
+            console.warn("[cash] openCashSession: servidor no disponible, abriendo en local", serverError);
 
-                await db.execute(
-                    `
-                        INSERT INTO "CashSession" (
-                            id,
-                            openedById,
-                            closedById,
-                            status,
-                            openingDate,
-                            closingDate,
-                            countedById,
-                            countingDate,
-                            initialAmount,
-                            expectedAmount,
-                            actualAmount,
-                            difference,
-                            createdAt,
-                            updatedAt,
-                            deletedAt
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    `,
-                    [
-                        sessionId,
-                        userId,
-                        null,
-                        "OPEN",
-                        timestamp,
-                        null,
-                        null,
-                        null,
+            const existingSession = await getLocalCurrentSession();
+            if (existingSession) {
+                throw new Error("Ya hay una caja abierta actualmente.");
+            }
+
+            const timestamp = new Date().toISOString();
+            const sessionId = crypto.randomUUID();
+
+            await db.execute(
+                `
+                    INSERT INTO "CashSession" (
+                        id,
+                        openedById,
+                        closedById,
+                        status,
+                        openingDate,
+                        closingDate,
+                        countedById,
+                        countingDate,
                         initialAmount,
-                        null,
-                        null,
-                        null,
-                        timestamp,
-                        timestamp,
-                        null,
-                    ]
-                );
+                        expectedAmount,
+                        actualAmount,
+                        difference,
+                        createdAt,
+                        updatedAt,
+                        deletedAt
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                `,
+                [
+                    sessionId,
+                    userId,
+                    null,
+                    "OPEN",
+                    timestamp,
+                    null,
+                    null,
+                    null,
+                    initialAmount,
+                    null,
+                    null,
+                    null,
+                    timestamp,
+                    timestamp,
+                    null,
+                ]
+            );
 
-                const session = await getLocalCurrentSession();
-                if (!session) {
-                    throw new Error("No se pudo abrir la caja local");
-                }
+            const session = await getLocalCurrentSession();
+            if (!session) {
+                throw new Error("No se pudo abrir la caja local");
+            }
 
-                return session;
-            },
-            () => serverRuntime.openCashSession(initialAmount, userId)
-        );
+            return session;
+        }
     },
     async addCashMovement(sessionId, amount, type, reason) {
         return withFallback(

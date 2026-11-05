@@ -1,5 +1,13 @@
 export {};
 
+export type DesktopUpdateStatus = {
+    status: "idle" | "checking" | "available" | "downloading" | "ready-to-install" | "not-available" | "error";
+    percent?: number;
+    version?: string | null;
+    currentVersion?: string | null;
+    message?: string | null;
+};
+
 declare global {
     interface Window {
         posDesktop?: {
@@ -31,9 +39,13 @@ declare global {
             resetTerminalConfig: () => Promise<void>;
             checkForUpdates: () => Promise<{
                 updateAvailable: boolean;
+                currentVersion?: string;
                 version: string | null;
             }>;
+            installUpdate?: () => Promise<void>;
+            getAppVersion?: () => Promise<string>;
+            getUpdateStatus?: () => Promise<DesktopUpdateStatus>;
+            onUpdateStatus?: (callback: (status: DesktopUpdateStatus) => void) => () => void;
         };
     }
 }
-

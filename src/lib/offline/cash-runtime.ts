@@ -59,14 +59,14 @@ function enqueuePendingClose(payload: PendingCashClose): void {
 
 /**
  * Intenta enviar al servidor, en orden, todos los cierres de caja que
- * quedaron pendientes de arranques anteriores (ej. Electron cerrado sin red).
+ * quedaron pendientes de arranques anteriores (ej. app cerrada sin red).
  *
  * Cada cierre se elimina de la cola individualmente:
  * - Si el servidor lo acepta → éxito, se descola.
- * - Si el servidor lo rechaza (ya cerrada, sesión no encontrada) → se descola
- *   igual para no bloquear los siguientes.
- * - Si hay error de red → se detiene y deja los restantes en cola para el
- *   próximo arranque.
+ * - Si el servidor lo rechaza con error lógico (ya cerrada, sesión no
+ *   encontrada, etc.) → se descola igual para no bloquear los siguientes.
+ * - Si hay error de red (TypeError, AbortError, fetch fallido) → se detiene
+ *   y deja los restantes en cola para el próximo arranque. NO se descola.
  */
 async function flushPendingCloseQueue(): Promise<void> {
     const queue = readPendingCloseQueue();
@@ -79,22 +79,44 @@ async function flushPendingCloseQueue(): Promise<void> {
             } else {
                 await closeCashSessionWithoutCount(pending.sessionId, pending.userId);
             }
-            // Éxito o rechazo lógico del servidor: desencolar este item.
+            // ✅ Éxito: el servidor confirmó el cierre → desencolar.
             const remaining = readPendingCloseQueue().filter(
                 (item) => item.sessionId !== pending.sessionId
             );
             writePendingCloseQueue(remaining);
         } catch (error) {
-            // Distinguir error de red (no desencolar) vs. error lógico del servidor.
-            // Los errores lógicos del servidor llegan como Error con mensaje de texto;
-            // los de red/fetch suelen ser TypeError o errores sin mensaje útil.
-            // En ambos casos eliminamos el item para no bloquear la cola: si la sesión
-            // ya no existe en el servidor no tiene sentido reintentar indefinidamente.
+            // Detectar si es un error de red (sin internet real) o un error lógico
+            // del servidor (sesión inexistente, ya cerrada, datos inválidos, etc.).
+            const isNetworkError =
+                error instanceof TypeError ||
+                (error instanceof DOMException && error.name === "AbortError") ||
+                (error instanceof Error &&
+                    (error.message.toLowerCase().includes("fetch") ||
+                        error.message.toLowerCase().includes("network") ||
+                        error.message.toLowerCase().includes("failed to fetch") ||
+                        error.message.toLowerCase().includes("load failed")));
+
+            if (isNetworkError) {
+                // ❌ Sin internet: mantener el item en cola y detener el procesamiento.
+                // Se reintentará en el próximo arranque de la app.
+                console.warn(
+                    "[cash] flushPendingCloseQueue: sin conexión, reintentando después",
+                    pending.sessionId
+                );
+                break;
+            }
+
+            // ⚠️ Error lógico del servidor: desencolar para no bloquear cierres
+            // posteriores. Si la sesión ya no existe no tiene sentido reintentar.
             const remaining = readPendingCloseQueue().filter(
                 (item) => item.sessionId !== pending.sessionId
             );
             writePendingCloseQueue(remaining);
-            console.warn("[cash] flushPendingCloseQueue: no se pudo sincronizar cierre", pending.sessionId, error);
+            console.warn(
+                "[cash] flushPendingCloseQueue: error lógico del servidor, descartando",
+                pending.sessionId,
+                error
+            );
         }
     }
 }
@@ -468,25 +490,25 @@ const serverRuntime: CashRuntime = {
 
 const powerSyncRuntime: CashRuntime = {
     async getCurrentSession() {
-        // Estrategia: server-first.
+        // Estrategia: server-first con flush anticipado.
         //
-        // Consultar el servidor primero garantiza que siempre se obtiene el
-        // estado real de la caja, evitando que el SQLite local desactualizado
-        // muestre una sesión del día anterior como OPEN (ej: cierre realizado
-        // offline que aún no sincronizó, o app abierta al día siguiente).
+        // IMPORTANTE: Siempre intentamos vaciar la cola de cierres pendientes
+        // ANTES de consultar al servidor. Si no lo hacemos, un cierre guardado
+        // offline nunca llega al servidor cuando la app abre con internet, y la
+        // caja aparece como OPEN al día siguiente.
         //
-        // Si el servidor no responde (sin internet), se cae al SQLite local
-        // después de esperar el sync y vaciar cierres pendientes.
+        // La cola se vacía en background (no bloqueamos si falla), y luego
+        // consultamos el servidor para obtener el estado real. Si el servidor
+        // no responde (sin internet real), caemos al SQLite local.
+        await flushPendingCloseQueue().catch(() => undefined);
+
         try {
             return await serverRuntime.getCurrentSession();
         } catch {
             console.warn("[cash] getCurrentSession: servidor no disponible, usando estado local");
 
-            // Con internet caído, sincronizar lo que se pueda y vaciar la cola
-            // de cierres pendientes antes de leer el local.
+            // Sin internet: esperar el primer sync de PowerSync y leer local.
             await waitForPowerSyncFirstSync().catch(() => undefined);
-            await flushPendingCloseQueue().catch(() => undefined);
-
             await ensurePowerSyncReady();
             return getLocalCurrentSession();
         }

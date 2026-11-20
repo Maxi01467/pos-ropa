@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { isOfflineModeEnabled } from "@/lib/offline-config";
+import { checkRealConnectivity } from "@/lib/connectivity";
 import { db, initPowerSync } from "@/lib/powersync/db";
 
 export type OfflineBootstrapState = "unknown" | "checking" | "ready_offline" | "requires_initial_sync";
@@ -66,6 +67,26 @@ function getIsOnline() {
     }
 
     return browserOnline;
+}
+
+/**
+ * Versión asíncrona que hace un ping real al servidor para verificar
+ * conectividad efectiva (no solo si hay red local via navigator.onLine).
+ * Usado durante refreshOfflineBootstrapState para evitar que "WiFi sin
+ * internet" se trate como conectado.
+ */
+async function getIsOnlineReal(): Promise<boolean> {
+    if (typeof navigator === "undefined") return true;
+    if (!navigator.onLine) return false;
+
+    // Si PowerSync ya está conectado/sincronizado, el servidor es alcanzable.
+    if (shouldUsePowerSync()) {
+        const status = db.currentStatus;
+        if (status.connected) return true;
+    }
+
+    // Verificación real: ping al servidor con timeout corto.
+    return checkRealConnectivity();
 }
 
 function shouldUsePowerSync() {
@@ -191,13 +212,16 @@ export function assertOfflineBootstrapReady(snapshot = readStoredSnapshot()) {
 
 export async function refreshOfflineBootstrapState(): Promise<OfflineBootstrapSnapshot> {
     if (!shouldUsePowerSync()) {
+        // En modo sin PowerSync (web normal), hacer ping real para saber si
+        // el servidor es realmente alcanzable.
+        const isOnline = await getIsOnlineReal();
         return persistSnapshot({
             ...DEFAULT_SNAPSHOT,
             state: "ready_offline",
-            isOnline: getIsOnline(),
+            isOnline,
             minimumDatasetReady: true,
             checkedAt: new Date().toISOString(),
-            lastSuccessfulSyncAt: new Date().toISOString(),
+            lastSuccessfulSyncAt: isOnline ? new Date().toISOString() : readStoredSnapshot().lastSuccessfulSyncAt,
         });
     }
 
@@ -231,16 +255,19 @@ export async function refreshOfflineBootstrapState(): Promise<OfflineBootstrapSn
     const previous = readStoredSnapshot();
     const checkedAt = new Date().toISOString();
 
+    // Usar ping real para detectar "WiFi sin internet".
+    const isOnline = await getIsOnlineReal();
+
     return persistSnapshot({
         state,
-        isOnline: getIsOnline(),
+        isOnline,
         hasSynced,
         minimumDatasetReady,
         activeUsers,
         productCount,
         checkedAt,
         lastSuccessfulSyncAt:
-            hasSynced && minimumDatasetReady
+            isOnline && hasSynced && minimumDatasetReady
                 ? checkedAt
                 : previous.lastSuccessfulSyncAt,
     });
